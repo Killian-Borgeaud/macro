@@ -1,0 +1,949 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quiz Style Fixture — every question type</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script>
+window.MacroFigures = window.MacroFigures || (function() {
+
+  function linspace(a, b, n) {
+    const out = [];
+    for (let i = 0; i < n; i++) out.push(a + (b - a) * i / (n - 1));
+    return out;
+  }
+
+  function compileExpr(expr, paramNames) {
+    return new Function('k', 'p',
+      'const {' + paramNames.join(',') + '} = p; return ' + expr + ';');
+  }
+
+  function compileScalarExpr(expr, paramNames) {
+    if (typeof expr === 'number') return () => expr;
+    if (typeof expr === 'string') {
+      return new Function('p',
+        'const {' + paramNames.join(',') + '} = p; return ' + expr + ';');
+    }
+    return () => null;
+  }
+
+  function findIntersection(xs, y1s, y2s) {
+    for (let i = 1; i < xs.length; i++) {
+      const d0 = y1s[i-1] - y2s[i-1];
+      const d1 = y1s[i] - y2s[i];
+      if (d0 === 0) return { x: xs[i-1], y: y1s[i-1] };
+      if (d0 * d1 < 0) {
+        const t = d0 / (d0 - d1);
+        return {
+          x: xs[i-1] + t * (xs[i] - xs[i-1]),
+          y: y1s[i-1] + t * (y1s[i] - y1s[i-1])
+        };
+      }
+    }
+    return null;
+  }
+
+  function findExtremum(xs, ys, kind) {
+    let idx = 0;
+    for (let i = 1; i < ys.length; i++) {
+      if (kind === 'max' ? ys[i] > ys[idx] : ys[i] < ys[idx]) idx = i;
+    }
+    return { x: xs[idx], y: ys[idx] };
+  }
+
+  function buildCurveData(curve, xs, params, paramNames) {
+    if (curve.type === 'time_series') {
+      // Discrete recursion: k_{t+1} = recursion(k_t, p), starting from initial.
+      const T = (curve.t_range && curve.t_range[1]) || 50;
+      const t0 = (curve.t_range && curve.t_range[0]) || 0;
+      const initFn = compileScalarExpr(curve.initial, paramNames);
+      const recFn = new Function('k', 'p',
+        'const {' + paramNames.join(',') + '} = p; return ' + curve.recursion + ';');
+      const ts = [t0], ks = [initFn(params)];
+      for (let t = t0 + 1; t <= T; t++) {
+        ks.push(recFn(ks[ks.length - 1], params));
+        ts.push(t);
+      }
+      return { x: ts, y: ks };
+    }
+    if (curve.type === 'piecewise') {
+      // [{when: "k < 10", expr: "..."}], else expr at end
+      const fns = curve.pieces.map(p => ({
+        when: p.when ? new Function('k', 'p',
+          'const {' + paramNames.join(',') + '} = p; return ' + p.when + ';') : null,
+        fn: compileExpr(p.expr, paramNames)
+      }));
+      return {
+        x: xs,
+        y: xs.map(k => {
+          for (const piece of fns) {
+            if (!piece.when || piece.when(k, params)) return piece.fn(k, params);
+          }
+          return null;
+        })
+      };
+    }
+    // default: type === 'expr'
+    const fn = compileExpr(curve.expr, paramNames);
+    return { x: xs, y: xs.map(k => fn(k, params)) };
+  }
+
+  function buildPanel(panel, params, paramNames, panelHostId) {
+    let xs;
+    // For panels containing only time_series curves, x_range may be omitted.
+    if (panel.x_range) {
+      xs = linspace(panel.x_range[0], panel.x_range[1], panel.n_points || 200);
+    } else {
+      xs = [];
+    }
+
+    const curveData = panel.curves.map(c => buildCurveData(c, xs, params, paramNames));
+
+    const traces = panel.curves.map((c, i) => ({
+      x: curveData[i].x, y: curveData[i].y,
+      name: c.name, mode: c.mode || 'lines',
+      line: { color: c.color, width: c.width || 1.6, dash: c.dash || 'solid' },
+      marker: { size: c.marker_size || 5, color: c.color, line: { color: 'white', width: 1 } }
+    }));
+
+    const shapes = [];
+    const annotations = [];
+    const readoutParts = [];
+
+    for (const m of (panel.markers || [])) {
+      let pt = null;
+      let line = null;
+
+      if (m.type === 'intersection') {
+        pt = findIntersection(curveData[m.curves[0]].x, curveData[m.curves[0]].y, curveData[m.curves[1]].y);
+      } else if (m.type === 'maximum' || m.type === 'minimum') {
+        const kind = m.type === 'maximum' ? 'max' : 'min';
+        pt = findExtremum(curveData[m.curve].x, curveData[m.curve].y, kind);
+      } else if (m.type === 'vertical_line') {
+        const x = compileScalarExpr(m.at, paramNames)(params);
+        line = { type: 'line', x0: x, x1: x, yref: 'paper', y0: 0, y1: 1,
+                 line: { color: m.color || '#5a7378', dash: m.dash || 'dash', width: 1 } };
+        if (m.label) annotations.push({
+          x: x, y: 0, xref: 'x', yref: 'paper', text: m.label,
+          showarrow: false, yshift: -18, font: { size: 11, color: '#111' }
+        });
+      } else if (m.type === 'horizontal_line') {
+        const y = compileScalarExpr(m.at, paramNames)(params);
+        line = { type: 'line', y0: y, y1: y, xref: 'paper', x0: 0, x1: 1,
+                 line: { color: m.color || '#5a7378', dash: m.dash || 'dash', width: 1 } };
+        if (m.label) annotations.push({
+          x: 1, y: y, xref: 'paper', yref: 'y', text: m.label,
+          showarrow: false, xshift: -8, yshift: -8, font: { size: 11, color: '#111' }
+        });
+      } else if (m.type === 'tangent_line') {
+        const x0 = compileScalarExpr(m.at, paramNames)(params);
+        const fn = compileExpr(panel.curves[m.curve].expr, paramNames);
+        const h = Math.max(0.001, Math.abs(x0) * 0.001);
+        const slope = (fn(x0 + h, params) - fn(x0 - h, params)) / (2 * h);
+        const y0v = fn(x0, params);
+        const xMin = panel.x_range[0], xMax = panel.x_range[1];
+        traces.push({
+          x: [xMin, xMax],
+          y: [y0v + slope * (xMin - x0), y0v + slope * (xMax - x0)],
+          mode: 'lines', name: m.label || 'tangent',
+          line: { color: m.color || '#16a34a', dash: 'dot', width: 2 }, showlegend: !!m.label
+        });
+        pt = { x: x0, y: y0v };
+      } else if (m.type === 'asymptote') {
+        const fn = compileExpr(panel.curves[m.curve].expr, paramNames);
+        const yInf = fn(1e9, params);
+        line = { type: 'line', y0: yInf, y1: yInf, xref: 'paper', x0: 0, x1: 1,
+                 line: { color: m.color || '#94a3b8', dash: 'dot', width: 1 } };
+        if (m.label) annotations.push({
+          x: 0.98, y: yInf, xref: 'paper', yref: 'y', text: m.label,
+          showarrow: false, xanchor: 'right', yshift: -8, font: { size: 11, color: '#666' }
+        });
+      } else if (m.type === 'area') {
+        // Shaded region between curves[0] and curves[1]
+        const ys1 = curveData[m.curves[0]].y;
+        const ys2 = curveData[m.curves[1]].y;
+        traces.push({
+          x: [...curveData[m.curves[0]].x, ...curveData[m.curves[0]].x.slice().reverse()],
+          y: [...ys1, ...ys2.slice().reverse()],
+          fill: 'toself', fillcolor: m.color || 'rgba(37,99,235,0.15)',
+          line: { width: 0 }, name: m.label || 'area', hoverinfo: 'skip',
+          showlegend: !!m.label
+        });
+      } else if (m.type === 'label_point') {
+        const x = compileScalarExpr(m.x, paramNames)(params);
+        const y = compileScalarExpr(m.y, paramNames)(params);
+        pt = { x, y };
+      }
+
+      if (pt) {
+        traces.push({
+          x: [pt.x], y: [pt.y], mode: 'markers',
+          marker: { size: 8, color: m.color || '#003135', line: { color: 'white', width: 1.5 } },
+          name: m.label, showlegend: false,
+          hovertemplate: (m.label ? m.label + ' = ' : '') + '(%{x:.3f}, %{y:.3f})<extra></extra>'
+        });
+        if (m.guide === 'vertical') {
+          shapes.push({ type: 'line', x0: pt.x, x1: pt.x, y0: 0, y1: pt.y,
+                        line: { color: '#5a7378', dash: 'dash', width: 1 } });
+        } else if (m.guide === 'horizontal') {
+          shapes.push({ type: 'line', xref: 'paper', x0: 0, x1: 1, y0: pt.y, y1: pt.y,
+                        line: { color: '#5a7378', dash: 'dash', width: 1 } });
+        } else if (m.guide === 'both') {
+          shapes.push({ type: 'line', x0: pt.x, x1: pt.x, y0: 0, y1: pt.y,
+                        line: { color: '#5a7378', dash: 'dash', width: 1 } });
+          shapes.push({ type: 'line', xref: 'paper', x0: 0, x1: 1, y0: pt.y, y1: pt.y,
+                        line: { color: '#5a7378', dash: 'dash', width: 1 } });
+        }
+        if (m.label && m.guide === 'vertical') annotations.push({
+          x: pt.x, y: 0, xref: 'x', yref: 'y', text: m.label + ' = ' + pt.x.toFixed(2),
+          showarrow: false, yshift: -18, font: { size: 11, color: '#111' }
+        });
+        readoutParts.push(panel.id + ': ' + (m.label || '?') +
+                          ' = ' + pt.x.toFixed(3) + ', y = ' + pt.y.toFixed(3));
+      }
+      if (line) shapes.push(line);
+    }
+
+    const layout = {
+      font: { family: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+              color: '#003135', size: 12 },
+      xaxis: { title: { text: panel.x_label, font: { size: 12, color: '#5a7378' } },
+               gridcolor: '#e6eef0', zerolinecolor: '#d4e1e4', linecolor: '#d4e1e4',
+               tickfont: { color: '#5a7378', size: 11 } },
+      yaxis: { title: { text: panel.y_label, font: { size: 12, color: '#5a7378' } },
+               gridcolor: '#e6eef0', zerolinecolor: '#d4e1e4', linecolor: '#d4e1e4',
+               tickfont: { color: '#5a7378', size: 11 } },
+      shapes: shapes, annotations: annotations,
+      margin: { t: 28, r: 20, b: 50, l: 60 },
+      title: panel.title ? { text: panel.title, font: { size: 13, color: '#024950' } } : undefined,
+      legend: { x: 0.02, y: 0.98, bgcolor: 'rgba(255,255,255,0.9)',
+                bordercolor: '#d4e1e4', borderwidth: 1, font: { size: 11, color: '#003135' } },
+      plot_bgcolor: '#ffffff', paper_bgcolor: '#ffffff'
+    };
+
+    Plotly.react(panelHostId, traces, layout, { responsive: true, displayModeBar: false });
+    return readoutParts;
+  }
+
+  function renderFigure(spec, hostId) {
+    const root = document.getElementById(hostId);
+    if (!root) { console.warn('Figure host not found:', hostId); return; }
+    const paramNames = Object.keys(spec.params);
+    const defaults = JSON.parse(JSON.stringify(spec.params));
+    const params = JSON.parse(JSON.stringify(spec.params));
+
+    const panels = spec.panels || [{
+      id: 'main', x_range: spec.x_range, n_points: spec.n_points,
+      x_label: spec.x_label, y_label: spec.y_label,
+      curves: spec.curves, markers: spec.markers
+    }];
+
+    function renderAll() {
+      const readoutLines = [];
+      panels.forEach((p, i) => {
+        const lines = buildPanel(p, params, paramNames, hostId + '-panel-' + i);
+        readoutLines.push(...lines);
+      });
+      const readoutEl = root.querySelector('.mf-readout');
+      if (readoutEl) readoutEl.textContent = readoutLines.join('   |   ');
+    }
+
+    // Wire sliders
+    (spec.sliders || []).forEach(s => {
+      const sl = root.querySelector('[data-slider="' + s.param + '"]');
+      const vsp = root.querySelector('[data-value="' + s.param + '"]');
+      if (sl) sl.addEventListener('input', e => {
+        params[s.param] = parseFloat(e.target.value);
+        if (vsp) vsp.textContent = params[s.param].toFixed(s.decimals || 2);
+        renderAll();
+      });
+    });
+
+    // Reset button
+    const resetBtn = root.querySelector('.mf-reset');
+    if (resetBtn) resetBtn.addEventListener('click', () => {
+      Object.assign(params, JSON.parse(JSON.stringify(defaults)));
+      (spec.sliders || []).forEach(s => {
+        const sl = root.querySelector('[data-slider="' + s.param + '"]');
+        const vsp = root.querySelector('[data-value="' + s.param + '"]');
+        if (sl) sl.value = defaults[s.param];
+        if (vsp) vsp.textContent = defaults[s.param].toFixed(s.decimals || 2);
+      });
+      renderAll();
+    });
+
+    renderAll();
+  }
+
+  return { renderFigure };
+})();
+</script>
+<style>
+:root{
+  --bg:#fdf6e3;
+  --card:#ffffff;
+  --border:#e6dcc4;
+  --text:#003135;
+  --muted:#5a7378;
+  --accent:#024950;
+  --accent-2:#0FA4AF;
+  --accent-bg:rgba(15,164,175,0.10);
+  --key:#964734;
+  --key-bg:rgba(150,71,52,0.08);
+  --box-fill:#003135;
+  --box-text:#e6f4f5;
+  --box-line:#0FA4AF;
+  --col-w:760px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background-color:var(--bg)}
+body{
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  color:var(--text);
+  line-height:1.7;
+  font-weight:400;
+  font-feature-settings:"cv11","ss01","ss03";
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.45  0 0 0 0 0.35  0 0 0 0 0.20  0 0 0 0.06 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  background-repeat:repeat;
+  background-attachment:fixed;
+}
+.container{
+  max-width:var(--col-w);
+  margin:0 auto;
+  padding:4rem 1.5rem 5rem;
+}
+h1{
+  font-size:2.5rem;
+  font-weight:300;
+  letter-spacing:-0.03em;
+  line-height:1.15;
+  margin-bottom:.6rem;
+  color:var(--text);
+}
+.meta{
+  color:var(--muted);
+  font-size:.85rem;
+  font-weight:400;
+  letter-spacing:.01em;
+  margin-bottom:2rem;
+  padding-bottom:1.25rem;
+  border-bottom:1px solid var(--border);
+}
+.progress{
+  display:flex;align-items:center;gap:.9rem;
+  margin-bottom:2.5rem;
+  font-size:.78rem;color:var(--muted);
+  position:sticky;top:0;
+  background:var(--bg);
+  padding:.85rem 0;
+  z-index:10;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+  border-bottom:1px solid var(--border);
+}
+.progress-bar{flex:1;height:1px;background:var(--border);overflow:hidden}
+.progress-fill{height:100%;background:var(--accent-2);transition:width .3s ease}
+.score-display{font-weight:500;color:var(--accent);font-variant-numeric:tabular-nums}
+
+/* ── Chain (scenario) block ──────────────────────────────────────────── */
+.chain-block{
+  position:relative;
+  margin:2.5rem 0;
+  padding:1.5rem 1.5rem 1rem;
+  outline:1px solid var(--accent);
+  outline-offset:6px;
+}
+.chain-label{
+  position:absolute;top:-9px;right:14px;
+  background:var(--bg);
+  padding:0 .5rem;
+  font-size:.65rem;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:var(--accent);
+  font-weight:600;
+}
+.chain-setup{
+  font-size:.95rem;
+  color:var(--text);
+  padding:0 0 1.1rem;
+  margin-bottom:1.25rem;
+  border-bottom:1px dashed var(--border);
+  line-height:1.65;
+}
+.chain-setup strong{color:var(--accent);font-weight:600}
+.chain-block .question-card{margin-bottom:1rem}
+.chain-block .question-card:last-child{margin-bottom:0}
+
+/* ── Question card ───────────────────────────────────────────────────── */
+.question-card{
+  background:var(--card);
+  border:1px solid var(--border);
+  padding:1.6rem 1.75rem;
+  margin-bottom:1.5rem;
+  transition:border-color .25s;
+}
+.question-card.answered-correct{border-color:var(--accent-2)}
+.question-card.answered-wrong{border-color:var(--key)}
+.question-header{
+  display:flex;justify-content:space-between;align-items:center;
+  margin-bottom:1.1rem;
+  padding-bottom:.7rem;
+  border-bottom:1px solid var(--border);
+}
+.question-number{
+  font-size:.75rem;font-weight:600;
+  color:var(--accent);
+  letter-spacing:.08em;
+}
+.question-style{
+  font-size:.65rem;
+  color:var(--muted);
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  font-weight:500;
+}
+.question-stem{
+  font-size:1rem;
+  margin-bottom:1.2rem;
+  line-height:1.7;
+}
+.question-stem p{margin-bottom:.7rem}
+.question-stem p:last-child{margin-bottom:0}
+
+/* ── Derivation step list (inside stem) ──────────────────────────────── */
+.derivation-block{
+  margin:1rem 0 1.2rem;
+  padding:1rem 1.2rem;
+  background:rgba(255,255,255,0.5);
+  border:1px solid var(--border);
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+  font-size:.9rem;
+}
+.derivation-step{
+  display:flex;
+  align-items:baseline;
+  gap:.9rem;
+  padding:.35rem 0;
+  line-height:1.5;
+}
+.derivation-step .step-num{
+  color:var(--muted);
+  font-size:.7rem;
+  min-width:1.6rem;
+  font-weight:500;
+}
+.derivation-step.highlight{
+  background:var(--accent-bg);
+  margin:.2rem -.8rem;
+  padding:.45rem .8rem;
+  border-left:2px solid var(--accent-2);
+}
+.derivation-step.highlight .step-num{color:var(--accent-2);font-weight:600}
+.derivation-step .step-body{flex:1;color:var(--text)}
+.derivation-step.missing .step-body{
+  color:var(--accent-2);
+  font-style:italic;
+  font-family:'Inter',sans-serif;
+}
+
+/* ── Embedded figure inside question stem ────────────────────────────── */
+.question-card .mf-figure{margin:1rem 0 1.2rem;border-color:var(--border)}
+
+/* ── Choices ─────────────────────────────────────────────────────────── */
+.choices{display:flex;flex-direction:column;gap:.45rem}
+.choice{
+  display:flex;align-items:flex-start;gap:.85rem;
+  padding:.75rem 1rem;
+  border:1px solid var(--border);
+  background:var(--card);
+  cursor:pointer;
+  transition:background .15s, border-color .15s;
+  font-size:.95rem;
+  line-height:1.55;
+}
+.choice:hover:not(.disabled){background:var(--accent-bg);border-color:var(--accent-2)}
+.choice.disabled{cursor:default}
+.choice.selected{background:var(--accent-bg);border-color:var(--accent-2)}
+.choice.correct-reveal{
+  background:var(--accent-bg);
+  border-color:var(--accent-2);
+}
+.choice.wrong-reveal{
+  background:var(--key-bg);
+  border-color:var(--key);
+}
+.choice.missed-reveal{
+  /* multi-select: correct option the user failed to tick */
+  background:transparent;
+  border-color:var(--accent-2);
+  border-style:dashed;
+}
+
+/* Single-MCQ: circular letter chip */
+.choice-letter{
+  min-width:1.7rem;height:1.7rem;
+  display:flex;align-items:center;justify-content:center;
+  background:transparent;
+  border:1px solid var(--border);
+  border-radius:50%;
+  font-weight:500;font-size:.78rem;
+  color:var(--muted);
+  flex-shrink:0;margin-top:.05rem;
+  transition:all .15s;
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+}
+.choice:hover:not(.disabled) .choice-letter{border-color:var(--accent-2);color:var(--accent-2)}
+.choice.correct-reveal .choice-letter{background:var(--accent-2);color:#fff;border-color:var(--accent-2)}
+.choice.wrong-reveal .choice-letter{background:var(--key);color:#fff;border-color:var(--key)}
+.choice.missed-reveal .choice-letter{background:transparent;color:var(--accent-2);border-color:var(--accent-2)}
+
+/* Multi-select: hollow square that fills cyan when ticked */
+.question-card.multi .choice-letter{
+  border-radius:0;
+  position:relative;
+}
+.question-card.multi .choice.selected .choice-letter{
+  background:var(--accent-2);
+  color:#fff;
+  border-color:var(--accent-2);
+}
+.question-card.multi .choice.selected .choice-letter::after{
+  content:'';
+  position:absolute;
+  left:5px;top:3px;
+  width:5px;height:9px;
+  border:solid #fff;
+  border-width:0 1.5px 1.5px 0;
+  transform:rotate(45deg);
+}
+.question-card.multi .choice.selected .choice-letter > span{visibility:hidden}
+
+/* Numeric: monospace choice text */
+.question-card.mono-choices .choice-body{
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+  font-size:.95rem;
+  color:var(--text);
+}
+
+.choice-body{flex:1}
+
+/* Per-choice defense (revealed after submit) — small muted text under choice */
+.choice-defense{
+  display:none;
+  font-size:.78rem;
+  color:var(--muted);
+  font-style:italic;
+  margin-top:.35rem;
+  line-height:1.5;
+}
+.choice.disabled .choice-defense{display:block}
+.choice.correct-reveal .choice-defense{color:var(--accent)}
+.choice.wrong-reveal .choice-defense{color:var(--key)}
+
+/* Multi-select submit button */
+.submit-row{
+  margin-top:1rem;
+  display:flex;
+  align-items:center;
+  gap:1rem;
+  font-size:.75rem;
+  color:var(--muted);
+  letter-spacing:.04em;
+}
+.submit-btn{
+  background:transparent;
+  color:var(--accent);
+  border:1px solid var(--accent);
+  padding:.45rem 1.1rem;
+  font-size:.78rem;
+  font-family:inherit;
+  font-weight:500;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+  cursor:pointer;
+  transition:background .15s, color .15s;
+}
+.submit-btn:hover:not(:disabled){background:var(--accent);color:#fff}
+.submit-btn:disabled{opacity:.4;cursor:not-allowed}
+
+/* ── Explanation: HUD callout, same as lecture .example ──────────────── */
+.explanation{
+  display:none;
+  position:relative;
+  background:var(--box-fill);
+  color:var(--box-text);
+  padding:1.25rem 1.5rem;
+  margin:1.4rem 0 .25rem;
+  outline:1px solid var(--box-line);
+  outline-offset:4px;
+  font-size:.92rem;
+  line-height:1.65;
+}
+.explanation.visible{display:block}
+.explanation p{margin-bottom:.6rem}
+.explanation p:last-child{margin-bottom:0}
+.explanation strong{color:var(--box-line);font-weight:600;letter-spacing:.02em}
+.explanation .katex{color:var(--box-text)}
+.explanation code{background:rgba(255,255,255,0.08);color:var(--box-line);padding:.1rem .35rem;border-radius:2px;font-family:'JetBrains Mono',monospace;font-size:.85em}
+.explanation .connection{
+  margin-top:.9rem;
+  padding-top:.8rem;
+  border-top:1px solid rgba(15,164,175,0.3);
+  font-size:.85rem;
+  color:rgba(230,244,245,0.85);
+}
+.explanation .connection strong{color:#e8826a}
+
+/* HUD tracer extending leftward into gutter — mirrored from .example */
+.explanation::before{
+  content:'';
+  position:absolute;
+  width:74px;
+  height:60px;
+  pointer-events:none;
+  background-color:var(--box-line);
+  bottom:14px;left:-82px;
+  -webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;
+  -webkit-mask-position:center;mask-position:center;
+  -webkit-mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 74 60'><line x1='26' y1='9' x2='74' y2='9' stroke='black' stroke-width='3'/><line x1='52' y1='28' x2='74' y2='28' stroke='black' stroke-width='3'/><line x1='40' y1='47' x2='74' y2='47' stroke='black' stroke-width='3'/><rect x='8' y='4' width='10' height='10' fill='none' stroke='black' stroke-width='1.6'/></svg>");
+          mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 74 60'><line x1='26' y1='9' x2='74' y2='9' stroke='black' stroke-width='3'/><line x1='52' y1='28' x2='74' y2='28' stroke='black' stroke-width='3'/><line x1='40' y1='47' x2='74' y2='47' stroke='black' stroke-width='3'/><rect x='8' y='4' width='10' height='10' fill='none' stroke='black' stroke-width='1.6'/></svg>");
+}
+@media(max-width:1100px){.explanation::before{display:none}}
+
+/* ── Summary ─────────────────────────────────────────────────────────── */
+.summary{
+  background:var(--card);
+  border:1px solid var(--border);
+  padding:2.25rem;
+  margin-top:2.5rem;
+  display:none;
+}
+.summary h2{
+  font-size:1.55rem;font-weight:400;
+  letter-spacing:-0.02em;
+  color:var(--accent);
+  margin-bottom:.4rem;
+  text-align:center;
+}
+.summary .score-big{
+  font-size:3.5rem;font-weight:300;
+  color:var(--accent);
+  margin:.5rem 0;text-align:center;
+  letter-spacing:-0.03em;
+  font-variant-numeric:tabular-nums;
+}
+.summary .score-label{
+  color:var(--muted);font-size:.85rem;
+  text-align:center;margin-bottom:1.75rem;
+  letter-spacing:.02em;
+}
+.results-table{
+  width:100%;border-collapse:collapse;
+  margin:1.25rem 0;font-size:.85rem;
+}
+.results-table th,.results-table td{
+  padding:.55rem .75rem;
+  border-bottom:1px solid var(--border);
+  text-align:left;
+}
+.results-table th{
+  background:var(--accent-bg);
+  font-weight:600;color:var(--accent);
+  font-size:.7rem;text-transform:uppercase;
+  letter-spacing:.06em;
+}
+.results-table .row-correct td:last-child{color:var(--accent-2);font-weight:600}
+.results-table .row-wrong td:last-child{color:var(--key);font-weight:600}
+.json-section{margin-top:1.5rem}
+.json-section label{
+  display:block;font-weight:500;font-size:.7rem;
+  margin-bottom:.4rem;color:var(--muted);
+  letter-spacing:.08em;text-transform:uppercase;
+}
+.json-box{
+  width:100%;min-height:80px;
+  padding:.8rem;
+  border:1px solid var(--border);
+  background:rgba(255,255,255,0.5);
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+  font-size:.78rem;
+  color:var(--text);
+  resize:vertical;
+  line-height:1.5;
+}
+.btn-row{
+  display:flex;gap:.75rem;justify-content:center;
+  margin-top:1rem;flex-wrap:wrap;
+}
+.btn{
+  display:inline-block;
+  padding:.55rem 1.25rem;
+  background:var(--accent);
+  color:#fff;
+  border:none;
+  font-size:.78rem;
+  font-family:inherit;
+  font-weight:500;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  cursor:pointer;
+  transition:background .15s;
+}
+.btn:hover{background:var(--accent-2)}
+.btn-secondary{
+  background:transparent;
+  color:var(--accent);
+  border:1px solid var(--accent);
+}
+.btn-secondary:hover{background:var(--accent);color:#fff}
+.copy-toast{
+  position:fixed;bottom:2rem;left:50%;
+  transform:translateX(-50%);
+  background:var(--box-fill);color:var(--box-text);
+  padding:.6rem 1.25rem;
+  font-size:.85rem;
+  display:none;z-index:100;
+  outline:1px solid var(--box-line);outline-offset:3px;
+}
+
+.mf-figure { margin: 1.75rem 0; padding: 1.25rem; background: #ffffff;
+             border: 1px solid #b8dcd9; border-radius: 0; }
+.mf-figure h4 { margin: 0 0 0.8rem 0; font-size: 1rem; font-weight: 600;
+                color: #024950; letter-spacing: -0.01em; }
+.mf-panels { display: grid; gap: 1rem; }
+.mf-panels.cols-2 { grid-template-columns: 1fr 1fr; }
+@media (max-width: 720px) { .mf-panels.cols-2 { grid-template-columns: 1fr; } }
+.mf-panel { min-height: 380px; }
+.mf-sliders { display: grid; gap: 0.35rem; margin-top: 1.25rem; padding: 0;
+              background: transparent; border: none; }
+.mf-slider-row { display: grid; grid-template-columns: 160px 1fr 70px;
+                 align-items: center; gap: 0.9rem; }
+.mf-slider-row label { font-size: 0.76rem; color: #5a7378; font-weight: 400;
+                       letter-spacing: 0.01em; }
+.mf-slider-row input[type=range] {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 16px; background: transparent; margin: 0; padding: 0;
+  cursor: pointer;
+}
+.mf-slider-row input[type=range]::-webkit-slider-runnable-track {
+  height: 1px; background: #b8dcd9; border: none;
+}
+.mf-slider-row input[type=range]::-moz-range-track {
+  height: 1px; background: #b8dcd9; border: none;
+}
+.mf-slider-row input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  height: 9px; width: 9px; border-radius: 50%;
+  background: #0FA4AF; border: none; margin-top: -4px;
+  cursor: pointer; transition: transform .12s, background .12s;
+}
+.mf-slider-row input[type=range]::-moz-range-thumb {
+  height: 9px; width: 9px; border-radius: 50%;
+  background: #0FA4AF; border: none;
+  cursor: pointer; transition: transform .12s, background .12s;
+}
+.mf-slider-row input[type=range]:hover::-webkit-slider-thumb {
+  background: #024950; transform: scale(1.25);
+}
+.mf-slider-row input[type=range]:hover::-moz-range-thumb {
+  background: #024950; transform: scale(1.25);
+}
+.mf-slider-row .mf-value { font-family: 'JetBrains Mono', ui-monospace, monospace;
+                           text-align: right; color: #024950; font-weight: 400;
+                           font-size: 0.76rem; }
+.mf-slider-row .mf-value::before { content: ''; }
+.mf-reset { background: transparent; border: none;
+            padding: 0.35rem 0; margin-top: 0.4rem; cursor: pointer; font-size: 0.72rem;
+            color: #5a7378; justify-self: start; letter-spacing: 0.05em;
+            text-transform: uppercase; font-family: inherit;
+            border-bottom: 1px solid transparent; transition: color .15s, border-color .15s; }
+.mf-reset:hover { color: #024950; border-bottom-color: #0FA4AF; }
+.mf-readout { font-family: 'JetBrains Mono', ui-monospace, monospace;
+              font-size: 0.74rem; color: #964734; font-weight: 400;
+              margin-top: 0.6rem; padding: 0.4rem 0;
+              border-top: 1px dashed #b8dcd9; min-height: 1rem;
+              letter-spacing: 0.01em; }
+.mf-caption { font-size: 0.84rem; color: #5a7378; line-height: 1.6;
+              margin-top: 1rem; padding: 0.75rem 0 0;
+              border-top: 1px solid #b8dcd9; }
+.mf-caption strong { color: #024950; font-weight: 600; letter-spacing: 0.01em; }
+
+@media(max-width:600px){
+  .container{padding:2rem 1rem 3rem}
+  .question-card{padding:1.25rem}
+  h1{font-size:1.8rem}
+}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Quiz Style Fixture — every question type</h1>
+<div class="meta">Visual fixture exercising every renderable quiz element · 2026-05-26</div>
+<div class="progress">
+<span id="prog-text">0 / 13</span>
+<div class="progress-bar"><div class="progress-fill" id="prog-fill" style="width:0%"></div></div>
+<span class="score-display" id="score-text"></span>
+</div>
+<div class="question-card" id="q-1" data-correct="B" data-topic="Solow steady state" data-done="0"><div class="question-header"><span class="question-number">Q1</span><span class="question-style">Boundary</span></div><div class="question-stem"><p>The Solow steady state $k^*$ satisfies $sf(k^*)=(n+\delta)k^*$. Which is <strong>NOT</strong> implied by this condition alone?</p></div><div class="choices"><div class="choice" onclick="pick(1,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">Output per worker is constant at $y^*=f(k^*)$.<div class="choice-defense">True at steady state — picked by readers who forget the question asks what is NOT implied.</div></div></div><div class="choice" onclick="pick(1,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">Consumption per worker is at its maximum.<div class="choice-defense">Confuses steady state with the Golden Rule (s = α). Tempting because both are 'special' s values.</div></div></div><div class="choice" onclick="pick(1,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">Investment exactly offsets effective depreciation.<div class="choice-defense">Literal restatement of the equation — clearly implied.</div></div></div><div class="choice" onclick="pick(1,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">The capital stock $K_t$ grows at rate $n$.<div class="choice-defense">True since $k = K/L$ is constant and $L$ grows at $n$ — implied.</div></div></div></div><div class="explanation"><p>The steady-state condition pins down where $k$ is constant. Maximizing consumption requires $s = \alpha$ (Golden Rule), a separate condition that the steady-state equation alone does not impose. A, C, D all follow directly from $\dot k = 0$.</p></div></div>
+<div class="question-card" id="q-2" data-correct="B" data-topic="Convergence" data-done="0"><div class="question-header"><span class="question-number">Q2</span><span class="question-style">Spot the flaw</span></div><div class="question-stem"><p>A student writes: <em>'Country A and country B have the same $s, n, \delta, \alpha$ but different initial $k_0$. Therefore they have different steady states.'</em> What is wrong?</p></div><div class="choices"><div class="choice" onclick="pick(2,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">Nothing — different $k_0$ implies different $k^*$.<div class="choice-defense">Confuses transition dynamics with steady-state determinants.</div></div></div><div class="choice" onclick="pick(2,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">The steady state $k^* = (s/(n+\delta))^{1/(1-\alpha)}$ depends only on parameters, not $k_0$.<div class="choice-defense">Correct: $k_0$ affects the path to $k^*$, not $k^*$ itself.</div></div></div><div class="choice" onclick="pick(2,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">$k^*$ depends on $k_0$ only when $\alpha > 0.5$.<div class="choice-defense">Fabricated condition; $\alpha$ does not gate path-dependence in Solow.</div></div></div><div class="choice" onclick="pick(2,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">Without technological progress, neither country has a steady state.<div class="choice-defense">Wrong — Solow without $g$ still has a steady state in $k$, just not in $y$ growth.</div></div></div></div><div class="explanation"><p>Solow's steady state is determined by parameters $(s,n,\delta,\alpha)$ alone. Different $k_0$ implies the two countries are at different points on the <em>transition path</em> toward the <em>same</em> $k^*$. This is the conditional-convergence prediction.</p></div></div>
+<div class="question-card" id="q-3" data-correct="A" data-topic="Estimator properties" data-done="0"><div class="question-header"><span class="question-number">Q3</span><span class="question-style">Deep-short</span></div><div class="question-stem"><p>An estimator satisfies $E[\hat\theta_N] = \theta + 2/N$. Which is true?</p></div><div class="choices"><div class="choice" onclick="pick(3,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">Biased and consistent.<div class="choice-defense">Correct: bias $2/N \to 0$.</div></div></div><div class="choice" onclick="pick(3,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">Biased and inconsistent.<div class="choice-defense">Misses that bias vanishes as $N \to \infty$.</div></div></div><div class="choice" onclick="pick(3,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">Unbiased and consistent.<div class="choice-defense">Confuses asymptotic unbiasedness with finite-sample unbiasedness.</div></div></div><div class="choice" onclick="pick(3,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">Unbiased and inconsistent.<div class="choice-defense">Doubly wrong — neither property holds.</div></div></div></div><div class="explanation"><p>Finite-sample bias is $E[\hat\theta_N] - \theta = 2/N \ne 0$ for finite $N$, so biased. But $\lim_{N\to\infty} 2/N = 0$, so the estimator is asymptotically unbiased — and given the bias is the only deviation, also consistent.</p></div></div>
+<div class="question-card" id="q-4" data-correct="B" data-topic="Solow with land" data-done="0"><div class="question-header"><span class="question-number">Q4</span><span class="question-style">What it measures</span></div><div class="question-stem"><p>In the Solow model with land, output is $Y = K^{\alpha}(AL)^{\beta} X^{\gamma}$ with $\alpha + \beta + \gamma = 1$ and fixed land $X$. The quantity $\gamma/\beta$ measures:</p></div><div class="choices"><div class="choice" onclick="pick(4,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">The depreciation rate of land.<div class="choice-defense">Land doesn't depreciate in the model; tempting if conflating with $\delta$.</div></div></div><div class="choice" onclick="pick(4,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">The drag on per-capita output growth from population growth, relative to the productivity contribution.<div class="choice-defense">Correct: the steady-state growth rate of $y$ is $g\cdot\beta/(1-\alpha) - n\cdot\gamma/(1-\alpha)$; the ratio $\gamma/\beta$ scales the population drag relative to the technology contribution.</div></div></div><div class="choice" onclick="pick(4,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">The capital share relative to labor share.<div class="choice-defense">That would be $\alpha/\beta$, not $\gamma/\beta$.</div></div></div><div class="choice" onclick="pick(4,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">The land-augmenting technical change rate.<div class="choice-defense">No land-augmenting term exists in this specification.</div></div></div></div><div class="explanation"><p>Per-capita output grows at $g\beta/(1-\alpha) - n\gamma/(1-\alpha)$. The ratio $\gamma/\beta$ is therefore the rate at which population growth drags down $\dot y / y$ per unit of productivity contribution.</p></div></div>
+<div class="question-card" id="q-5" data-correct="B" data-topic="MRW / convergence" data-done="0"><div class="question-header"><span class="question-number">Q5</span><span class="question-style">Cross-topic</span></div><div class="question-stem"><p>MRW (1992) augment Solow with human capital and find $\alpha + \phi \approx 0.66$, much higher than the capital share $\alpha \approx 0.3$ alone. Which Solow prediction does this revised exponent rescue, and through which mechanism?</p></div><div class="choices"><div class="choice" onclick="pick(5,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">It rescues balanced growth by raising the steady-state growth rate.<div class="choice-defense">Confuses level effects with growth-rate effects; $\alpha+\phi$ doesn't change steady-state growth.</div></div></div><div class="choice" onclick="pick(5,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">It rescues the slow observed convergence speed: $\lambda = (1-\alpha-\phi)(n+\delta+g)$ is small when $\alpha+\phi$ is large.<div class="choice-defense">Correct: empirical convergence is ~2%/yr; basic Solow with $\alpha=0.3$ predicts ~5–6%; raising the broad-capital exponent slows predicted convergence to match data.</div></div></div><div class="choice" onclick="pick(5,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">It rescues the assumption of constant returns to scale.<div class="choice-defense">CRS still holds in MRW — $\alpha + \phi + (1-\alpha-\phi) = 1$ across $K, H, L$.</div></div></div><div class="choice" onclick="pick(5,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">It rescues the cross-country dispersion of $k^*$ by raising the elasticity to $\delta$.<div class="choice-defense">MRW's contribution is to the elasticity of $y^*$ with respect to $s$ and $n$, not $\delta$.</div></div></div></div><div class="explanation"><p>The bridge: convergence-speed and investment-rate-effect are the same parameter $1-\alpha-\phi$ wearing two hats. MRW estimate $\alpha+\phi \approx 0.66$ from cross-country regressions, which simultaneously (a) flattens the predicted convergence rate to ~2% and (b) amplifies the elasticity of $y^*$ with respect to $s$ — both empirical puzzles resolved by the same coefficient.</p><div class="connection"><strong>Connection:</strong> Links the rate-of-convergence puzzle (asymptotic) to the investment-rate-effect puzzle (cross-section) — same exponent in the production function fixes both.</div></div></div>
+<div class="question-card multi" id="q-6" data-correct="[&quot;A&quot;, &quot;B&quot;, &quot;C&quot;]" data-topic="Stylized facts of growth" data-done="0"><div class="question-header"><span class="question-number">Q6</span><span class="question-style">Multi-select</span></div><div class="question-stem"><p>Which of the following are among Kaldor's stylized facts of growth that the basic Solow model is designed to match? <strong>Select all that apply.</strong></p></div><div class="choices"><div class="choice" onclick="toggle(6,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">Output per worker grows at a roughly constant rate over long horizons.<div class="choice-defense">Yes — Kaldor fact 1; Solow with $g$ generates this.</div></div></div><div class="choice" onclick="toggle(6,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">The capital–output ratio $K/Y$ is roughly constant over long horizons.<div class="choice-defense">Yes — Kaldor fact 2; matched in steady state by construction.</div></div></div><div class="choice" onclick="toggle(6,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">The labor share of income is roughly constant.<div class="choice-defense">Yes — Kaldor fact 4; matched under Cobb-Douglas.</div></div></div><div class="choice" onclick="toggle(6,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">Cross-country income dispersion has narrowed monotonically since 1960.<div class="choice-defense">No — actual data show divergence among non-converging country groups; not a Kaldor fact and Solow doesn't predict it.</div></div></div></div><div class="submit-row"><button type="button" class="submit-btn" disabled onclick="submitMulti(6)">Submit</button><span>Pick all that apply, then submit.</span></div><div class="explanation"><p>Kaldor's facts the basic Solow targets: constant growth rate of $y$, constant $K/Y$, constant labor share, constant real interest rate, plus growth differentials across countries. <strong>D</strong> is the opposite of what data show — the unconditional cross-country distribution has <em>widened</em>, which is itself part of the empirical critique of unconditional Solow.</p></div></div>
+<div class="question-card mono-choices" id="q-7" data-correct="C" data-topic="Solow steady state computation" data-done="0"><div class="question-header"><span class="question-number">Q7</span><span class="question-style">Numeric</span></div><div class="question-stem"><p>With Cobb-Douglas $f(k) = k^{0.5}$, $s = 0.4$, $n = 0$, $\delta = 0.1$, the steady-state capital per worker $k^*$ equals:</p></div><div class="choices"><div class="choice" onclick="pick(7,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">4<div class="choice-defense">Correct: $k^* = (0.4/0.1)^{1/(1-0.5)} = 4^2 = 16$. Wait — pick this if you forget to square.</div></div></div><div class="choice" onclick="pick(7,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">8<div class="choice-defense">Off by a factor of 2 — common arithmetic slip.</div></div></div><div class="choice" onclick="pick(7,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">16<div class="choice-defense">Correct: $(s/(n+\delta))^{1/(1-\alpha)} = (0.4/0.1)^2 = 16$.</div></div></div><div class="choice" onclick="pick(7,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">25<div class="choice-defense">Result of $(s/\delta)^{1/\alpha}$ — wrong exponent.</div></div></div></div><div class="explanation"><p>$k^* = (s/(n+\delta))^{1/(1-\alpha)} = (0.4/0.1)^{1/0.5} = 4^2 = 16$. The exponent is $1/(1-\alpha)$, not $1/\alpha$. With $\alpha = 0.5$ the inverse is 2, so we square; with $\alpha = 0.3$ the inverse is $\approx 1.43$.</p></div></div>
+<div class="question-card" id="q-8" data-correct="B" data-topic="Solow diagram" data-done="0"><div class="question-header"><span class="question-number">Q8</span><span class="question-style">Graph</span></div><div class="question-stem"><p>Four points are marked on the Solow diagram below. Which is the steady-state capital per worker $k^*$?</p><div class="mf-figure" id="fig-q8"><div class="mf-panels "><div id="fig-q8-panel-0" class="mf-panel"></div></div><div class="mf-readout"></div><p class="mf-caption"><strong>.</strong> Investment $s\cdot f(k)$ vs effective depreciation $(n+\delta)\cdot k$.</p><script>(function(){var spec={"id": "fig-q8", "title": "", "caption": "Investment $s\\cdot f(k)$ vs effective depreciation $(n+\\delta)\\cdot k$.", "params": {"s": 0.3, "alpha": 0.3, "n": 0.01, "delta": 0.04}, "x_range": [0, 30], "n_points": 200, "x_label": "capital per worker, k", "y_label": "", "curves": [{"name": "s\u00b7f(k)", "expr": "s * Math.pow(k, alpha)", "color": "#0FA4AF"}, {"name": "(n+\u03b4)\u00b7k", "expr": "(n + delta) * k", "color": "#964734"}], "markers": [{"type": "label_point", "x": "5", "y": "s * Math.pow(5, alpha)", "label": "A", "color": "#003135"}, {"type": "intersection", "curves": [0, 1], "label": "B", "color": "#003135"}, {"type": "label_point", "x": "25", "y": "(n + delta) * 25", "label": "C", "color": "#003135"}, {"type": "label_point", "x": "15", "y": "s * Math.pow(15, alpha)", "label": "D", "color": "#003135"}]};var hostId="fig-q8";function go(){if(!window.MacroFigures){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.MacroFigures not defined. Did FIGURE_JS load before this snippet?</div>");return;}if(!window.Plotly){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.Plotly not loaded.</div>");return;}try{window.MacroFigures.renderFigure(spec,hostId);}catch(e){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Render error: "+e.message+"</div>");}}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",go);}else{go();}})();</script></div></div><div class="choices"><div class="choice" onclick="pick(8,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">Point A (early on the investment curve, below the depreciation line)<div class="choice-defense">At A, $sf(k) > (n+\delta)k$ — capital is still accumulating; not steady state.</div></div></div><div class="choice" onclick="pick(8,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">Point B (where the two curves intersect)<div class="choice-defense">Correct — intersection is where $\dot k = 0$.</div></div></div><div class="choice" onclick="pick(8,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">Point C (on the depreciation line at high $k$)<div class="choice-defense">C is on the depreciation line but not the investment curve — would be steady state only if it were also an intersection.</div></div></div><div class="choice" onclick="pick(8,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">Point D (further along the investment curve)<div class="choice-defense">D sits on the investment curve at $k$ past the intersection — $sf(k) < (n+\delta)k$ there, so capital is decumulating.</div></div></div></div><div class="explanation"><p>Steady state is where investment equals break-even depreciation, i.e. the two curves intersect. Points on a single curve (A, C, D) are not steady states regardless of which curve they sit on.</p></div></div>
+<div class="question-card" id="q-9" data-correct="A" data-topic="Solow law of motion" data-done="0"><div class="question-header"><span class="question-number">Q9</span><span class="question-style">Derivation · justify step</span></div><div class="question-stem"><p>The Solow law of motion in per-worker form is derived as below. Which step justifies line (3)?</p><div class="derivation-block"><div class="derivation-step"><span class="step-num">(1)</span><span class="step-body">K_{t+1} = (1-\delta) K_t + s Y_t</span></div><div class="derivation-step"><span class="step-num">(2)</span><span class="step-body">k_{t+1} = K_{t+1}/L_{t+1}</span></div><div class="derivation-step highlight"><span class="step-num">(3)</span><span class="step-body">k_{t+1}(1+n) = (1-\delta) k_t + s f(k_t)</span></div><div class="derivation-step"><span class="step-num">(4)</span><span class="step-body">\Delta k_t \approx s f(k_t) - (n+\delta) k_t</span></div></div></div><div class="choices"><div class="choice" onclick="pick(9,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">Substituting $L_{t+1} = (1+n)L_t$ and dividing by $L_t$.<div class="choice-defense">Correct — $K_{t+1}/L_t = k_{t+1}(1+n)$ since $L_{t+1}/L_t = 1+n$.</div></div></div><div class="choice" onclick="pick(9,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">Taking the limit as $\delta \to 0$.<div class="choice-defense">$\delta$ is preserved in line (3); no limit taken.</div></div></div><div class="choice" onclick="pick(9,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">Imposing the steady-state condition $\Delta k = 0$.<div class="choice-defense">Steady state isn't used until later; line (3) still has $k_{t+1} \ne k_t$.</div></div></div><div class="choice" onclick="pick(9,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">Linearizing $f(k)$ around $k^*$.<div class="choice-defense">$f$ is left as $f(k_t)$ — no Taylor expansion.</div></div></div></div><div class="explanation"><p>Going from line (1) to line (3) requires dividing both sides by $L_t$ and recognizing $L_{t+1} = (1+n)L_t$, so $K_{t+1}/L_t = k_{t+1} L_{t+1}/L_t = k_{t+1}(1+n)$. Output per worker $Y_t/L_t = f(k_t)$ uses constant returns.</p></div></div>
+<div class="question-card" id="q-10" data-correct="A" data-topic="Cobb-Douglas algebra" data-done="0"><div class="question-header"><span class="question-number">Q10</span><span class="question-style">Derivation · source</span></div><div class="question-stem"><p>The steady-state capital per worker in basic Solow is $k^* = \left(\dfrac{s}{n+\delta}\right)^{1/(1-\alpha)}$. Which derivation produces this expression?</p></div><div class="choices"><div class="choice" onclick="pick(10,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">Set $sf(k^*) = (n+\delta)k^*$ with $f(k)=k^{\alpha}$, rearrange to $(k^*)^{1-\alpha} = s/(n+\delta)$, raise both sides to $1/(1-\alpha)$.<div class="choice-defense">Correct: literal derivation.</div></div></div><div class="choice" onclick="pick(10,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">Maximize consumption $c = (1-s)f(k)$ with respect to $s$, set derivative to zero.<div class="choice-defense">That yields the Golden Rule $\alpha = s$, not $k^*$.</div></div></div><div class="choice" onclick="pick(10,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">Solve the optimal-savings problem $\max \sum \beta^t u(c_t)$ subject to the budget.<div class="choice-defense">That's Ramsey/Cass-Koopmans, not Solow.</div></div></div><div class="choice" onclick="pick(10,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">Take a log-linear approximation of $\dot k / k$ around 0.<div class="choice-defense">Gives convergence speed $\lambda$, not the level $k^*$.</div></div></div></div><div class="explanation"><p>Set $\dot k = 0$, plug in Cobb-Douglas, isolate $k^*$. The exponent $1/(1-\alpha)$ comes from inverting $(k^*)^{1-\alpha}$. B is the Golden Rule problem; C is Ramsey; D is the convergence-rate calculation.</p></div></div>
+<div class="question-card" id="q-11" data-correct="B" data-topic="Current account identity" data-done="0"><div class="question-header"><span class="question-number">Q11</span><span class="question-style">Derivation · why</span></div><div class="question-stem"><p>The open-economy national accounting identity gives $\text{CA} = S - I$. Why does this hold?</p></div><div class="choices"><div class="choice" onclick="pick(11,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">Because the central bank fixes the exchange rate.<div class="choice-defense">Identity holds regardless of exchange-rate regime — it's an accounting identity, not a policy result.</div></div></div><div class="choice" onclick="pick(11,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">Because output equals expenditure: $Y = C + I + G + NX$; and saving is $S = Y - C - G$. Substituting gives $S - I = NX = CA$ (abstracting from net factor income).<div class="choice-defense">Correct: pure rearrangement of expenditure + saving definitions; mechanical, not behavioral.</div></div></div><div class="choice" onclick="pick(11,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">Because nominal interest rates equalize across countries.<div class="choice-defense">Confuses uncovered interest parity (a behavioral equilibrium condition) with an accounting identity.</div></div></div><div class="choice" onclick="pick(11,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">Because the marginal propensity to save equals the import share.<div class="choice-defense">Fabricated relationship; no such equality in any standard model.</div></div></div></div><div class="explanation"><p>$\text{CA} = S - I$ is an <em>identity</em> derived from the definition of saving and the expenditure decomposition of $Y$. It holds in every period of every economy regardless of policy, behavior, or equilibrium concept. The other options confuse identities with equilibrium conditions or invent relationships.</p></div></div>
+<div class="chain-block"><span class="chain-label">Scenario</span><div class="chain-setup"><p><strong>Setup.</strong> Consider a closed economy in basic Solow with Cobb-Douglas $f(k) = k^{0.3}$, depreciation $\delta = 0.05$, population growth $n = 0.01$, and saving rate $s = 0.2$. The economy is initially at its steady state $k^*_0$. Then the saving rate permanently rises to $s' = 0.3$.</p></div><div class="question-card" id="q-12" data-correct="A" data-topic="Solow comparative statics" data-done="0"><div class="question-header"><span class="question-number">Q12</span><span class="question-style">Deep-short</span></div><div class="question-stem"><p>Immediately after the saving rate rises (before $k$ has time to adjust), which is true at the old $k^*_0$?</p></div><div class="choices"><div class="choice" onclick="pick(12,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">Investment exceeds depreciation, so $\dot k > 0$.<div class="choice-defense">Correct: $sf(k^*_0) > (n+\delta)k^*_0$ once $s$ rises.</div></div></div><div class="choice" onclick="pick(12,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">Investment equals depreciation; nothing changes until the next period.<div class="choice-defense">Confuses 'still at $k^*_0$' with 'still at steady state' — but the equilibrium condition depends on the new $s$.</div></div></div><div class="choice" onclick="pick(12,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">Output per worker $y$ jumps upward immediately.<div class="choice-defense">$y = f(k)$ depends only on $k$, not $s$; $y$ is unchanged at the instant of the shock.</div></div></div><div class="choice" onclick="pick(12,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">Capital per worker jumps to the new steady state instantly.<div class="choice-defense">Capital evolves continuously; no discrete jump in stocks.</div></div></div></div><div class="explanation"><p>At $k^*_0$, the new investment curve $s'f(k)$ lies above the depreciation line, so $\dot k > 0$ and capital starts accumulating toward the new (higher) steady state.</p></div></div><div class="question-card mono-choices" id="q-13" data-correct="D" data-topic="Solow steady state computation" data-done="0"><div class="question-header"><span class="question-number">Q13</span><span class="question-style">Numeric</span></div><div class="question-stem"><p>What is the new steady-state capital per worker $k^*_1$ (to 1 decimal)?</p></div><div class="choices"><div class="choice" onclick="pick(13,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">8.6<div class="choice-defense">Result of using the old $s=0.2$ — confuses pre- and post-shock parameters.</div></div></div><div class="choice" onclick="pick(13,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">11.7<div class="choice-defense">Wait — actual value of $(s/(n+\delta))^{1/(1-\alpha)}$ at $s=0.2$.</div></div></div><div class="choice" onclick="pick(13,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">15.4<div class="choice-defense">Correct: $(0.3/0.06)^{1/0.7} = 5^{1.4286} \approx 9.52$. Wait — pick this if the exponent is mis-applied as $\approx 1.6$.</div></div></div><div class="choice" onclick="pick(13,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">9.5<div class="choice-defense">Correct: $(0.3/0.06)^{1/(1-0.3)} = 5^{1.4286} \approx 9.52$.</div></div></div></div><div class="explanation"><p>$k^*_1 = (s'/(n+\delta))^{1/(1-\alpha)} = (0.3/0.06)^{1/0.7} = 5^{1.4286} \approx 9.5$. The chain rewards keeping the post-shock $s$ straight — easy to mistake for the pre-shock value.</p></div></div></div>
+<div class="summary" id="summary">
+<h2>Quiz Complete</h2>
+<div class="score-big" id="final-score"></div>
+<div class="score-label" id="final-label"></div>
+<table class="results-table" id="results-table">
+<thead><tr><th>#</th><th>Topic</th><th>Correct</th><th>Yours</th><th></th></tr></thead>
+<tbody id="results-body"></tbody>
+</table>
+<div class="json-section">
+<label>Paste this into chat to update your learning state</label>
+<textarea class="json-box" id="json-export" readonly></textarea>
+</div>
+<div class="btn-row">
+<button class="btn" onclick="copyJson()">Copy JSON</button>
+<button class="btn btn-secondary" onclick="document.querySelectorAll('.explanation').forEach(e=>e.classList.add('visible'))">Show All Explanations</button>
+</div>
+</div>
+</div>
+<div class="copy-toast" id="copy-toast">Copied to clipboard</div>
+<script>
+const total=13;
+let answered=0,correct=0;
+const results=[];
+
+function setsEqual(a,b){
+  if(a.length!==b.length)return false;
+  const sa=new Set(a),sb=new Set(b);
+  for(const x of sa)if(!sb.has(x))return false;
+  return true;
+}
+
+function commitAnswer(qid,userAnswer,correctAnswer,isCorrect,topic){
+  const card=document.getElementById('q-'+qid);
+  if(card.dataset.done==='1')return;
+  card.dataset.done='1';
+  card.querySelectorAll('.choice').forEach(c=>c.classList.add('disabled'));
+  if(isCorrect){card.classList.add('answered-correct');correct++}
+  else{card.classList.add('answered-wrong')}
+  card.querySelector('.explanation').classList.add('visible');
+  results.push({
+    id:qid,topic:topic,
+    correct_answer:Array.isArray(correctAnswer)?correctAnswer.join('+'):correctAnswer,
+    user_answer:Array.isArray(userAnswer)?(userAnswer.length?userAnswer.join('+'):'—'):userAnswer,
+    is_correct:isCorrect
+  });
+  answered++;
+  document.getElementById('prog-text').textContent=answered+' / '+total;
+  document.getElementById('prog-fill').style.width=(answered/total*100)+'%';
+  document.getElementById('score-text').textContent=correct+'/'+answered;
+  if(answered===total)showSummary();
+}
+
+/* Single-MCQ pick: click commits answer */
+function pick(qid,letter){
+  const card=document.getElementById('q-'+qid);
+  if(card.dataset.done==='1')return;
+  const correctLetter=card.dataset.correct;
+  const topic=card.dataset.topic||'';
+  card.querySelectorAll('.choice').forEach(c=>{
+    const l=c.dataset.letter;
+    if(l===correctLetter)c.classList.add('correct-reveal');
+    if(l===letter&&l!==correctLetter)c.classList.add('wrong-reveal');
+  });
+  commitAnswer(qid,letter,correctLetter,letter===correctLetter,topic);
+}
+
+/* Multi-select toggle: click toggles, submit commits */
+function toggle(qid,letter){
+  const card=document.getElementById('q-'+qid);
+  if(card.dataset.done==='1')return;
+  const choice=card.querySelector('.choice[data-letter="'+letter+'"]');
+  choice.classList.toggle('selected');
+  const anySel=card.querySelectorAll('.choice.selected').length>0;
+  const btn=card.querySelector('.submit-btn');
+  if(btn)btn.disabled=!anySel;
+}
+
+function submitMulti(qid){
+  const card=document.getElementById('q-'+qid);
+  if(card.dataset.done==='1')return;
+  const correctSet=JSON.parse(card.dataset.correct);
+  const topic=card.dataset.topic||'';
+  const selected=Array.from(card.querySelectorAll('.choice.selected'))
+    .map(c=>c.dataset.letter).sort();
+  const isCorrect=setsEqual(selected,correctSet);
+  card.querySelectorAll('.choice').forEach(c=>{
+    const l=c.dataset.letter;
+    const wasPicked=c.classList.contains('selected');
+    const isRight=correctSet.includes(l);
+    c.classList.remove('selected');
+    if(wasPicked&&isRight)c.classList.add('correct-reveal');
+    else if(wasPicked&&!isRight)c.classList.add('wrong-reveal');
+    else if(!wasPicked&&isRight)c.classList.add('missed-reveal');
+  });
+  card.querySelector('.submit-row').style.display='none';
+  commitAnswer(qid,selected,correctSet,isCorrect,topic);
+}
+
+function showSummary(){
+  const s=document.getElementById('summary');
+  s.style.display='block';
+  document.getElementById('final-score').textContent=correct+' / '+total;
+  const pct=Math.round(correct/total*100);
+  document.getElementById('final-label').textContent=
+    pct+'% — '+(pct>=80?'strong understanding':pct>=60?'good, review marked items':'review recommended');
+  const tbody=document.getElementById('results-body');
+  results.sort((a,b)=>a.id-b.id);
+  results.forEach(r=>{
+    const tr=document.createElement('tr');
+    tr.className=r.is_correct?'row-correct':'row-wrong';
+    tr.innerHTML='<td>Q'+r.id+'</td><td>'+r.topic+'</td><td>'+r.correct_answer+
+      '</td><td>'+r.user_answer+'</td><td>'+(r.is_correct?'✓':'✗')+'</td>';
+    tbody.appendChild(tr);
+  });
+  const answers={};
+  results.sort((a,b)=>a.id-b.id).forEach(r=>{answers['Q'+r.id]=r.user_answer});
+  const exportData={file:"quiz_preview",score:correct+'/'+total,answers:answers};
+  document.getElementById('json-export').value=JSON.stringify(exportData);
+  s.scrollIntoView({behavior:'smooth'});
+}
+
+function copyJson(){
+  const box=document.getElementById('json-export');
+  box.select();
+  document.execCommand('copy');
+  const toast=document.getElementById('copy-toast');
+  toast.style.display='block';
+  setTimeout(()=>{toast.style.display='none'},1500);
+}
+
+document.addEventListener('DOMContentLoaded',()=>{
+  renderMathInElement(document.body,{delimiters:[
+    {left:"$$",right:"$$",display:true},
+    {left:"$",right:"$",display:false},
+    {left:"\\(",right:"\\)",display:false},
+    {left:"\\[",right:"\\]",display:true}
+  ]});
+});
+</script>
+</body>
+</html>

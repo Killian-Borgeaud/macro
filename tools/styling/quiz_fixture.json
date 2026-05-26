@@ -1,0 +1,222 @@
+{
+  "title": "Quiz Style Fixture — every question type",
+  "meta": "Visual fixture exercising every renderable quiz element · 2026-05-26",
+  "questions": [
+    {
+      "id": 1,
+      "style": "boundary",
+      "topic": "Solow steady state",
+      "stem": "<p>The Solow steady state $k^*$ satisfies $sf(k^*)=(n+\\delta)k^*$. Which is <strong>NOT</strong> implied by this condition alone?</p>",
+      "choices": [
+        {"letter": "A", "text": "Output per worker is constant at $y^*=f(k^*)$.", "defense": "True at steady state — picked by readers who forget the question asks what is NOT implied."},
+        {"letter": "B", "text": "Consumption per worker is at its maximum.", "defense": "Confuses steady state with the Golden Rule (s = α). Tempting because both are 'special' s values."},
+        {"letter": "C", "text": "Investment exactly offsets effective depreciation.", "defense": "Literal restatement of the equation — clearly implied."},
+        {"letter": "D", "text": "The capital stock $K_t$ grows at rate $n$.", "defense": "True since $k = K/L$ is constant and $L$ grows at $n$ — implied."}
+      ],
+      "correct": "B",
+      "explanation": "<p>The steady-state condition pins down where $k$ is constant. Maximizing consumption requires $s = \\alpha$ (Golden Rule), a separate condition that the steady-state equation alone does not impose. A, C, D all follow directly from $\\dot k = 0$.</p>"
+    },
+    {
+      "id": 2,
+      "style": "flaw",
+      "topic": "Convergence",
+      "stem": "<p>A student writes: <em>'Country A and country B have the same $s, n, \\delta, \\alpha$ but different initial $k_0$. Therefore they have different steady states.'</em> What is wrong?</p>",
+      "choices": [
+        {"letter": "A", "text": "Nothing — different $k_0$ implies different $k^*$.", "defense": "Confuses transition dynamics with steady-state determinants."},
+        {"letter": "B", "text": "The steady state $k^* = (s/(n+\\delta))^{1/(1-\\alpha)}$ depends only on parameters, not $k_0$.", "defense": "Correct: $k_0$ affects the path to $k^*$, not $k^*$ itself."},
+        {"letter": "C", "text": "$k^*$ depends on $k_0$ only when $\\alpha > 0.5$.", "defense": "Fabricated condition; $\\alpha$ does not gate path-dependence in Solow."},
+        {"letter": "D", "text": "Without technological progress, neither country has a steady state.", "defense": "Wrong — Solow without $g$ still has a steady state in $k$, just not in $y$ growth."}
+      ],
+      "correct": "B",
+      "explanation": "<p>Solow's steady state is determined by parameters $(s,n,\\delta,\\alpha)$ alone. Different $k_0$ implies the two countries are at different points on the <em>transition path</em> toward the <em>same</em> $k^*$. This is the conditional-convergence prediction.</p>"
+    },
+    {
+      "id": 3,
+      "style": "deep-short",
+      "topic": "Estimator properties",
+      "stem": "<p>An estimator satisfies $E[\\hat\\theta_N] = \\theta + 2/N$. Which is true?</p>",
+      "choices": [
+        {"letter": "A", "text": "Biased and consistent.", "defense": "Correct: bias $2/N \\to 0$."},
+        {"letter": "B", "text": "Biased and inconsistent.", "defense": "Misses that bias vanishes as $N \\to \\infty$."},
+        {"letter": "C", "text": "Unbiased and consistent.", "defense": "Confuses asymptotic unbiasedness with finite-sample unbiasedness."},
+        {"letter": "D", "text": "Unbiased and inconsistent.", "defense": "Doubly wrong — neither property holds."}
+      ],
+      "correct": "A",
+      "explanation": "<p>Finite-sample bias is $E[\\hat\\theta_N] - \\theta = 2/N \\ne 0$ for finite $N$, so biased. But $\\lim_{N\\to\\infty} 2/N = 0$, so the estimator is asymptotically unbiased — and given the bias is the only deviation, also consistent.</p>"
+    },
+    {
+      "id": 4,
+      "style": "measure",
+      "topic": "Solow with land",
+      "stem": "<p>In the Solow model with land, output is $Y = K^{\\alpha}(AL)^{\\beta} X^{\\gamma}$ with $\\alpha + \\beta + \\gamma = 1$ and fixed land $X$. The quantity $\\gamma/\\beta$ measures:</p>",
+      "choices": [
+        {"letter": "A", "text": "The depreciation rate of land.", "defense": "Land doesn't depreciate in the model; tempting if conflating with $\\delta$."},
+        {"letter": "B", "text": "The drag on per-capita output growth from population growth, relative to the productivity contribution.", "defense": "Correct: the steady-state growth rate of $y$ is $g\\cdot\\beta/(1-\\alpha) - n\\cdot\\gamma/(1-\\alpha)$; the ratio $\\gamma/\\beta$ scales the population drag relative to the technology contribution."},
+        {"letter": "C", "text": "The capital share relative to labor share.", "defense": "That would be $\\alpha/\\beta$, not $\\gamma/\\beta$."},
+        {"letter": "D", "text": "The land-augmenting technical change rate.", "defense": "No land-augmenting term exists in this specification."}
+      ],
+      "correct": "B",
+      "explanation": "<p>Per-capita output grows at $g\\beta/(1-\\alpha) - n\\gamma/(1-\\alpha)$. The ratio $\\gamma/\\beta$ is therefore the rate at which population growth drags down $\\dot y / y$ per unit of productivity contribution.</p>"
+    },
+    {
+      "id": 5,
+      "style": "bridge",
+      "topic": "MRW / convergence",
+      "stem": "<p>MRW (1992) augment Solow with human capital and find $\\alpha + \\phi \\approx 0.66$, much higher than the capital share $\\alpha \\approx 0.3$ alone. Which Solow prediction does this revised exponent rescue, and through which mechanism?</p>",
+      "choices": [
+        {"letter": "A", "text": "It rescues balanced growth by raising the steady-state growth rate.", "defense": "Confuses level effects with growth-rate effects; $\\alpha+\\phi$ doesn't change steady-state growth."},
+        {"letter": "B", "text": "It rescues the slow observed convergence speed: $\\lambda = (1-\\alpha-\\phi)(n+\\delta+g)$ is small when $\\alpha+\\phi$ is large.", "defense": "Correct: empirical convergence is ~2%/yr; basic Solow with $\\alpha=0.3$ predicts ~5–6%; raising the broad-capital exponent slows predicted convergence to match data."},
+        {"letter": "C", "text": "It rescues the assumption of constant returns to scale.", "defense": "CRS still holds in MRW — $\\alpha + \\phi + (1-\\alpha-\\phi) = 1$ across $K, H, L$."},
+        {"letter": "D", "text": "It rescues the cross-country dispersion of $k^*$ by raising the elasticity to $\\delta$.", "defense": "MRW's contribution is to the elasticity of $y^*$ with respect to $s$ and $n$, not $\\delta$."}
+      ],
+      "correct": "B",
+      "explanation": "<p>The bridge: convergence-speed and investment-rate-effect are the same parameter $1-\\alpha-\\phi$ wearing two hats. MRW estimate $\\alpha+\\phi \\approx 0.66$ from cross-country regressions, which simultaneously (a) flattens the predicted convergence rate to ~2% and (b) amplifies the elasticity of $y^*$ with respect to $s$ — both empirical puzzles resolved by the same coefficient.</p>",
+      "connection": "Links the rate-of-convergence puzzle (asymptotic) to the investment-rate-effect puzzle (cross-section) — same exponent in the production function fixes both."
+    },
+    {
+      "id": 6,
+      "style": "multi-select",
+      "topic": "Stylized facts of growth",
+      "stem": "<p>Which of the following are among Kaldor's stylized facts of growth that the basic Solow model is designed to match? <strong>Select all that apply.</strong></p>",
+      "choices": [
+        {"letter": "A", "text": "Output per worker grows at a roughly constant rate over long horizons.", "defense": "Yes — Kaldor fact 1; Solow with $g$ generates this."},
+        {"letter": "B", "text": "The capital–output ratio $K/Y$ is roughly constant over long horizons.", "defense": "Yes — Kaldor fact 2; matched in steady state by construction."},
+        {"letter": "C", "text": "The labor share of income is roughly constant.", "defense": "Yes — Kaldor fact 4; matched under Cobb-Douglas."},
+        {"letter": "D", "text": "Cross-country income dispersion has narrowed monotonically since 1960.", "defense": "No — actual data show divergence among non-converging country groups; not a Kaldor fact and Solow doesn't predict it."}
+      ],
+      "correct": ["A", "B", "C"],
+      "explanation": "<p>Kaldor's facts the basic Solow targets: constant growth rate of $y$, constant $K/Y$, constant labor share, constant real interest rate, plus growth differentials across countries. <strong>D</strong> is the opposite of what data show — the unconditional cross-country distribution has <em>widened</em>, which is itself part of the empirical critique of unconditional Solow.</p>"
+    },
+    {
+      "id": 7,
+      "style": "numeric",
+      "topic": "Solow steady state computation",
+      "stem": "<p>With Cobb-Douglas $f(k) = k^{0.5}$, $s = 0.4$, $n = 0$, $\\delta = 0.1$, the steady-state capital per worker $k^*$ equals:</p>",
+      "choices": [
+        {"letter": "A", "text": "4", "defense": "Correct: $k^* = (0.4/0.1)^{1/(1-0.5)} = 4^2 = 16$. Wait — pick this if you forget to square."},
+        {"letter": "B", "text": "8", "defense": "Off by a factor of 2 — common arithmetic slip."},
+        {"letter": "C", "text": "16", "defense": "Correct: $(s/(n+\\delta))^{1/(1-\\alpha)} = (0.4/0.1)^2 = 16$."},
+        {"letter": "D", "text": "25", "defense": "Result of $(s/\\delta)^{1/\\alpha}$ — wrong exponent."}
+      ],
+      "correct": "C",
+      "explanation": "<p>$k^* = (s/(n+\\delta))^{1/(1-\\alpha)} = (0.4/0.1)^{1/0.5} = 4^2 = 16$. The exponent is $1/(1-\\alpha)$, not $1/\\alpha$. With $\\alpha = 0.5$ the inverse is 2, so we square; with $\\alpha = 0.3$ the inverse is $\\approx 1.43$.</p>"
+    },
+    {
+      "id": 8,
+      "style": "graph",
+      "topic": "Solow diagram",
+      "stem": "<p>Four points are marked on the Solow diagram below. Which is the steady-state capital per worker $k^*$?</p>",
+      "figure": {
+        "id": "fig-q8",
+        "title": "",
+        "caption": "Investment $s\\cdot f(k)$ vs effective depreciation $(n+\\delta)\\cdot k$.",
+        "params": {"s": 0.3, "alpha": 0.3, "n": 0.01, "delta": 0.04},
+        "x_range": [0, 30],
+        "n_points": 200,
+        "x_label": "capital per worker, k",
+        "y_label": "",
+        "curves": [
+          {"name": "s·f(k)",  "expr": "s * Math.pow(k, alpha)", "color": "#0FA4AF"},
+          {"name": "(n+δ)·k", "expr": "(n + delta) * k",       "color": "#964734"}
+        ],
+        "markers": [
+          {"type": "label_point", "x": "5",    "y": "s * Math.pow(5, alpha)",  "label": "A", "color": "#003135"},
+          {"type": "intersection", "curves": [0, 1], "label": "B", "color": "#003135"},
+          {"type": "label_point", "x": "25",   "y": "(n + delta) * 25",        "label": "C", "color": "#003135"},
+          {"type": "label_point", "x": "15",   "y": "s * Math.pow(15, alpha)", "label": "D", "color": "#003135"}
+        ]
+      },
+      "choices": [
+        {"letter": "A", "text": "Point A (early on the investment curve, below the depreciation line)", "defense": "At A, $sf(k) > (n+\\delta)k$ — capital is still accumulating; not steady state."},
+        {"letter": "B", "text": "Point B (where the two curves intersect)", "defense": "Correct — intersection is where $\\dot k = 0$."},
+        {"letter": "C", "text": "Point C (on the depreciation line at high $k$)", "defense": "C is on the depreciation line but not the investment curve — would be steady state only if it were also an intersection."},
+        {"letter": "D", "text": "Point D (further along the investment curve)", "defense": "D sits on the investment curve at $k$ past the intersection — $sf(k) < (n+\\delta)k$ there, so capital is decumulating."}
+      ],
+      "correct": "B",
+      "explanation": "<p>Steady state is where investment equals break-even depreciation, i.e. the two curves intersect. Points on a single curve (A, C, D) are not steady states regardless of which curve they sit on.</p>"
+    },
+    {
+      "id": 9,
+      "style": "derivation-justify",
+      "topic": "Solow law of motion",
+      "stem": "<p>The Solow law of motion in per-worker form is derived as below. Which step justifies line (3)?</p>",
+      "derivation": [
+        "K_{t+1} = (1-\\delta) K_t + s Y_t",
+        "k_{t+1} = K_{t+1}/L_{t+1}",
+        "k_{t+1}(1+n) = (1-\\delta) k_t + s f(k_t)",
+        "\\Delta k_t \\approx s f(k_t) - (n+\\delta) k_t"
+      ],
+      "highlight": 3,
+      "choices": [
+        {"letter": "A", "text": "Substituting $L_{t+1} = (1+n)L_t$ and dividing by $L_t$.", "defense": "Correct — $K_{t+1}/L_t = k_{t+1}(1+n)$ since $L_{t+1}/L_t = 1+n$."},
+        {"letter": "B", "text": "Taking the limit as $\\delta \\to 0$.", "defense": "$\\delta$ is preserved in line (3); no limit taken."},
+        {"letter": "C", "text": "Imposing the steady-state condition $\\Delta k = 0$.", "defense": "Steady state isn't used until later; line (3) still has $k_{t+1} \\ne k_t$."},
+        {"letter": "D", "text": "Linearizing $f(k)$ around $k^*$.", "defense": "$f$ is left as $f(k_t)$ — no Taylor expansion."}
+      ],
+      "correct": "A",
+      "explanation": "<p>Going from line (1) to line (3) requires dividing both sides by $L_t$ and recognizing $L_{t+1} = (1+n)L_t$, so $K_{t+1}/L_t = k_{t+1} L_{t+1}/L_t = k_{t+1}(1+n)$. Output per worker $Y_t/L_t = f(k_t)$ uses constant returns.</p>"
+    },
+    {
+      "id": 10,
+      "style": "derivation-source",
+      "topic": "Cobb-Douglas algebra",
+      "stem": "<p>The steady-state capital per worker in basic Solow is $k^* = \\left(\\dfrac{s}{n+\\delta}\\right)^{1/(1-\\alpha)}$. Which derivation produces this expression?</p>",
+      "choices": [
+        {"letter": "A", "text": "Set $sf(k^*) = (n+\\delta)k^*$ with $f(k)=k^{\\alpha}$, rearrange to $(k^*)^{1-\\alpha} = s/(n+\\delta)$, raise both sides to $1/(1-\\alpha)$.", "defense": "Correct: literal derivation."},
+        {"letter": "B", "text": "Maximize consumption $c = (1-s)f(k)$ with respect to $s$, set derivative to zero.", "defense": "That yields the Golden Rule $\\alpha = s$, not $k^*$."},
+        {"letter": "C", "text": "Solve the optimal-savings problem $\\max \\sum \\beta^t u(c_t)$ subject to the budget.", "defense": "That's Ramsey/Cass-Koopmans, not Solow."},
+        {"letter": "D", "text": "Take a log-linear approximation of $\\dot k / k$ around 0.", "defense": "Gives convergence speed $\\lambda$, not the level $k^*$."}
+      ],
+      "correct": "A",
+      "explanation": "<p>Set $\\dot k = 0$, plug in Cobb-Douglas, isolate $k^*$. The exponent $1/(1-\\alpha)$ comes from inverting $(k^*)^{1-\\alpha}$. B is the Golden Rule problem; C is Ramsey; D is the convergence-rate calculation.</p>"
+    },
+    {
+      "id": 11,
+      "style": "derivation-why",
+      "topic": "Current account identity",
+      "stem": "<p>The open-economy national accounting identity gives $\\text{CA} = S - I$. Why does this hold?</p>",
+      "choices": [
+        {"letter": "A", "text": "Because the central bank fixes the exchange rate.", "defense": "Identity holds regardless of exchange-rate regime — it's an accounting identity, not a policy result."},
+        {"letter": "B", "text": "Because output equals expenditure: $Y = C + I + G + NX$; and saving is $S = Y - C - G$. Substituting gives $S - I = NX = CA$ (abstracting from net factor income).", "defense": "Correct: pure rearrangement of expenditure + saving definitions; mechanical, not behavioral."},
+        {"letter": "C", "text": "Because nominal interest rates equalize across countries.", "defense": "Confuses uncovered interest parity (a behavioral equilibrium condition) with an accounting identity."},
+        {"letter": "D", "text": "Because the marginal propensity to save equals the import share.", "defense": "Fabricated relationship; no such equality in any standard model."}
+      ],
+      "correct": "B",
+      "explanation": "<p>$\\text{CA} = S - I$ is an <em>identity</em> derived from the definition of saving and the expenditure decomposition of $Y$. It holds in every period of every economy regardless of policy, behavior, or equilibrium concept. The other options confuse identities with equilibrium conditions or invent relationships.</p>"
+    },
+    {
+      "type": "chain",
+      "setup": "<p><strong>Setup.</strong> Consider a closed economy in basic Solow with Cobb-Douglas $f(k) = k^{0.3}$, depreciation $\\delta = 0.05$, population growth $n = 0.01$, and saving rate $s = 0.2$. The economy is initially at its steady state $k^*_0$. Then the saving rate permanently rises to $s' = 0.3$.</p>",
+      "questions": [
+        {
+          "id": 12,
+          "style": "deep-short",
+          "topic": "Solow comparative statics",
+          "stem": "<p>Immediately after the saving rate rises (before $k$ has time to adjust), which is true at the old $k^*_0$?</p>",
+          "choices": [
+            {"letter": "A", "text": "Investment exceeds depreciation, so $\\dot k > 0$.", "defense": "Correct: $sf(k^*_0) > (n+\\delta)k^*_0$ once $s$ rises."},
+            {"letter": "B", "text": "Investment equals depreciation; nothing changes until the next period.", "defense": "Confuses 'still at $k^*_0$' with 'still at steady state' — but the equilibrium condition depends on the new $s$."},
+            {"letter": "C", "text": "Output per worker $y$ jumps upward immediately.", "defense": "$y = f(k)$ depends only on $k$, not $s$; $y$ is unchanged at the instant of the shock."},
+            {"letter": "D", "text": "Capital per worker jumps to the new steady state instantly.", "defense": "Capital evolves continuously; no discrete jump in stocks."}
+          ],
+          "correct": "A",
+          "explanation": "<p>At $k^*_0$, the new investment curve $s'f(k)$ lies above the depreciation line, so $\\dot k > 0$ and capital starts accumulating toward the new (higher) steady state.</p>"
+        },
+        {
+          "id": 13,
+          "style": "numeric",
+          "topic": "Solow steady state computation",
+          "stem": "<p>What is the new steady-state capital per worker $k^*_1$ (to 1 decimal)?</p>",
+          "choices": [
+            {"letter": "A", "text": "8.6", "defense": "Result of using the old $s=0.2$ — confuses pre- and post-shock parameters."},
+            {"letter": "B", "text": "11.7", "defense": "Wait — actual value of $(s/(n+\\delta))^{1/(1-\\alpha)}$ at $s=0.2$."},
+            {"letter": "C", "text": "15.4", "defense": "Correct: $(0.3/0.06)^{1/0.7} = 5^{1.4286} \\approx 9.52$. Wait — pick this if the exponent is mis-applied as $\\approx 1.6$."},
+            {"letter": "D", "text": "9.5", "defense": "Correct: $(0.3/0.06)^{1/(1-0.3)} = 5^{1.4286} \\approx 9.52$."}
+          ],
+          "correct": "D",
+          "explanation": "<p>$k^*_1 = (s'/(n+\\delta))^{1/(1-\\alpha)} = (0.3/0.06)^{1/0.7} = 5^{1.4286} \\approx 9.5$. The chain rewards keeping the post-shock $s$ straight — easy to mistake for the pre-shock value.</p>"
+        }
+      ]
+    }
+  ]
+}

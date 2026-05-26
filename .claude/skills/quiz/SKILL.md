@@ -5,257 +5,307 @@ description: "Generate conceptual multiple-choice quizzes from course material. 
 
 # /quiz — Quiz Generation Skill
 
-Generate conceptual multiple-choice quizzes and save them to `.claude/output/quizzes/`.
+Generate mixed-format retrieval-practice quizzes and save them to `outputs/quizzes/`.
+
+The exam is essay-only (see `docs/EXAM_PROFILE.md`). Quizzes are therefore a *retrieval-practice* tool, not exam mimicry — push for variety and difficulty, not format realism. `/exam` handles essay-format simulation separately.
+
+@docs/COGNITIVE_PREFS.md
+@docs/OUTPUT_CONVENTIONS.md
+@docs/EXAM_PROFILE.md
 
 ## Invocation
 
-User says `/quiz [topic or module]` optionally with a question count (default: 10). A quiz may span multiple topics or focus on one.
+User says `/quiz [topic or module]` optionally with a question count (default: 20). A quiz may span multiple topics or focus on one.
+
+---
 
 ## Workflow
 
-### Step 1 — Read context
+### Step 1 — Read calibration + state
 
-Read these files (in this order):
-- `.claude/CONVENTIONS.md` — naming, folder structure, output rules
-- `PREFERENCES.md` — cognitive preferences
-- `LEARNING_STATE.json` — current understanding per topic
-- `subject-config.md` — subject context, exam scope, calibrated style (if exists)
-- All course material files relevant to the requested topic
+Before generating:
+- The three `@import`s above are already in context.
+- Read `docs/LEARNING_STATE.json` for the topic's current level (calibrates difficulty).
+- Read the relevant `Material/modules/<N>/CLAUDE.md` to find which lecture files cover the topic, then read those.
 
-### Step 2 — Calibration (first use only)
+### Step 2 — Plan and confirm
 
-If `subject-config.md` has no `[quiz_style]` section:
-1. Generate 3 sample questions on the same concept, each in a different style (see Question Styles below)
-2. Ask the user to grade them
-3. Write calibrated preferences to `subject-config.md` under `## Calibration` → `[quiz_style]`
+Present a one-line plan:
+> "I'll generate 20 questions covering [topic list], mixed across types. Ready?"
 
-If calibration already exists, skip to Step 3.
+If the user says "go", proceed. No fixed type ratios — pick types that fit the material.
 
-### Step 3 — Plan the quiz
+### Step 3 — Generate JSON
 
-Determine:
-- **Scope**: which topics to cover (from user request + material scan)
-- **Count**: how many questions (user-specified or default 10)
-- **Distribution**: spread questions across sub-topics so the quiz is comprehensive, not clustered
+Author the JSON payload following the format in **JSON Schema** below. Apply every rule in **Question Design Rules** and **Soft Constraints**.
 
-Present a brief plan:
-> "I'll generate [N] questions covering: [topic list]. Conceptual focus unless you ask for computation. Ready?"
+### Step 4 — Length-bias and stem-bias verification (mandatory)
 
-If the user says "go" or doesn't object, proceed.
+Before building, verify every question:
+- **Length parity**: correct answer's word count is within ±30% of the shortest distractor.
+- **Boundary-stem check**: the stem does NOT name the concept being tested. Stems describe scenarios/symptoms; choices name concepts. If the stem says "What is the Solow steady state?" — rewrite as "An economy has $\dot k = 0$ and $\dot K / K = n$. Which property is implied?"
+- **Distractor-defense field present** on every choice (correct included). If you cannot write a one-line "why a partial-understander picks this" for any choice, that choice is filler — rewrite it.
+- **No type used more than 30% of the quiz** (e.g. in a 20-Q quiz, no type appears more than 6 times).
 
-### Step 4 — Generate questions
+### Step 5 — Build
 
-Generate a JSON payload following the format below. Apply ALL quality rules from the Question Design Rules section.
-
-**JSON format:**
-```json
-{
-  "title": "Quiz: [Topic]",
-  "meta": "[Subject] — [Module/Week range] — [Date]",
-  "question_count": 10,
-  "questions": [
-    {
-      "id": 1,
-      "style": "boundary",
-      "topic": "Gauss-Markov Theorem",
-      "stem": "The question text...",
-      "choices": [
-        {"letter": "A", "text": "First choice"},
-        {"letter": "B", "text": "Second choice"},
-        {"letter": "C", "text": "Third choice"},
-        {"letter": "D", "text": "Fourth choice"}
-      ],
-      "correct": "B",
-      "explanation": "Why B is correct and why each distractor fails...",
-      "connection": "Optional: a cross-topic insight this question reveals"
-    }
-  ]
-}
+```powershell
+# Write payload to temp, then build:
+$tmp = Join-Path $env:TEMP "quiz_payload.json"
+# (write JSON to $tmp)
+python tools/build_quiz.py $tmp outputs/quizzes/<slug>_<YYYY-MM-DD>.html
 ```
 
-### Step 4b — Length-bias verification (mandatory)
-
-After generating the JSON, verify choice-length parity for EVERY question before building:
-- For each question, count the words in each choice's `text` field
-- If the correct answer's word count exceeds the shortest distractor by more than 30%, REWRITE the distractors to match (make them equally precise but wrong) or shorten the correct answer
-- This is the single most common failure mode. Check it explicitly, do not skip.
-
-### Step 5 — Build the HTML
-
-1. Write JSON to `/tmp/quiz_payload.json`
-2. Run: `python .claude/scripts/build_quiz.py /tmp/quiz_payload.json .claude/output/quizzes/[filename].html`
-3. Copy the output file to the workspace root for user access
-4. Present the file link using a `computer://` link
+The builder will print `WARNINGS:` to stderr if anything looks off (duplicate IDs, type/correct mismatch, missing figure runtime). Fix and rebuild before showing the user.
 
 ### Step 6 — Update LEARNING_STATE.json
 
-After generating the quiz:
-- Topics covered → set level to at least `tested` if previously `seen`
-- Never downgrade existing levels
+Mark covered topics: if previously `seen`, advance to `tested`. Never downgrade.
 
 ### Step 7 — Process results (next conversation)
 
-When the user pastes quiz results JSON into chat, parse it and update LEARNING_STATE.json:
-- **Score ≥ 75%** on a topic → advance to `practiced` (or `mastered` if already `practiced`)
-- **Score 50–74%** → advance to `practiced` if currently `seen` or `tested`; stay at current level otherwise
-- **Score < 50%** → stay at current level (do not downgrade)
-- Per-question misses: note which specific subtopics were missed for targeted follow-up
+When the user pastes the quiz JSON export into chat, parse it and update `LEARNING_STATE.json` per `docs/OUTPUT_CONVENTIONS.md` thresholds (score ≥80% twice → `mastered`, ≥70% → `practiced`, ≥50% → at least `tested`, <50% → no downgrade). Note specific subtopics missed for targeted follow-up.
 
-The quiz HTML exports a JSON blob at the end with per-question results. The user copies this and pastes it into the next conversation. Parse it, update the state, and acknowledge what changed.
+---
 
-### Difficulty escalation by level
+## Question Type Catalogue
 
-| LEARNING_STATE level | Question style emphasis | Difficulty target |
-|---|---|---|
-| `seen` | Boundary-testing (does the student know the limits?) | 60-70% expected score |
-| `tested` | Harder boundary + flaw-detection questions | 55-65% expected score |
-| `practiced` | Cross-topic bridges + edge cases | 50-60% expected score |
-| `mastered` | Exception-hunting, adversarial distractors, cross-subject bridges | 45-55% expected score |
+11 types. Pick what fits the topic — do not force one of each.
 
-### File naming
+### Single-MCQ types (correct: "B")
 
-Follow `.claude/CONVENTIONS.md`. Pattern: `[topic-slug]_[YYYY-MM-DD].html` in `.claude/output/quizzes/`.
+| Type | When to use |
+|---|---|
+| `boundary` | Concept has a precise scope; test what it does NOT imply. *"Gauss-Markov guarantees BLUE. Which is NOT implied?"* |
+| `flaw` | Student-style argument with a subtle error; identify the wrong step. *"A student says X — what's wrong?"* |
+| `deep-short` | One-line setup (often a small numeric or symbolic clue) whose correct interpretation requires deep understanding. *"$E[\hat\theta_N] = \theta + 2/N$. The estimator is..."* |
+| `measure` | Formula or symbol shown; ask what it actually represents (not just what it equals). *"In $\text{Var}(\hat\beta_j) = \sigma^2/[\text{SST}_j(1-R^2_j)]$, the quantity $R^2_j$ is..."* |
+| `bridge` | Two concepts from different modules connect mechanically (not just analogously). Always include the `connection` field. |
+| `numeric` | Compute a clean-number answer; choices are 4 numbers. Renders in JetBrains Mono. Solution must require *conceptual setup*, not just arithmetic. |
+| `graph` | Static Plotly chart embedded in stem with labeled points or curves. Two flavors: identify ("which point is k*?") or predict ("if s rises, where does the intersection move?"). Requires a `figure` field. |
+| `derivation-justify` | Show a 3-5 step derivation with one step highlighted; ask which rule/assumption justifies that step. Requires `derivation` + `highlight`. |
+| `derivation-source` | Show a final identity in the stem; ask which derivation produces it. Choices are alternative derivation paths. Requires no `derivation` field on the stem (it's in the choices). |
+| `derivation-why` | Show an identity; ask which mechanism makes it true (distinguishes accounting identities from behavioral conditions, etc.). |
+
+### Multi-answer type (correct: ["A", "C"])
+
+| Type | When to use |
+|---|---|
+| `multi-select` | At least 2 of 4 options are correct; user must pick all and only the correct ones. Scored all-or-nothing; partial feedback shown on reveal. Use for "select all that apply" style or to defeat process-of-elimination. |
+
+---
+
+## Soft Constraints
+
+The generator chooses freely, with **only these floors**:
+
+1. **At least 1 `bridge` question** — cross-topic connections are non-negotiable.
+2. **At least 1 question from a new-format type** (`multi-select`, `numeric`, `graph`, or any `derivation-*`) — prevents silent regression to single-MCQ-only quizzes.
+3. **No single type exceeds ~30% of questions** — keeps variety without forcing balance.
+4. **1 scenario chain when the topic supports it** (a shared setup + 2 linked questions). Skip if forced.
+5. **Default total: 20 questions.** User can override.
+
+Beyond these floors, let the topic drive the mix. Solow-mechanics quizzes will naturally lean graph + derivation + numeric; empirical-evidence quizzes will lean boundary + flaw + multi-select.
 
 ---
 
 ## Question Design Rules
 
-These rules encode the user's calibrated preferences. Every question MUST satisfy ALL of them. They are the difference between a useful quiz and a waste of time.
+Every question must satisfy all 8 rules.
 
-### Rule 1: Test the boundary, not the center
+### Rule 1 — Boundary, not center
 
-The best questions target where understanding breaks down — the edge of a concept, not its textbook definition. A student who "mostly gets it" should find the question hard. A student who deeply understands should find it clear.
+Test where understanding breaks down. Instead of "What is unbiasedness?", ask "Which estimator is unbiased but inconsistent?"
 
-**What this means in practice:** instead of "What is unbiasedness?", ask "Which of these estimators is unbiased but inconsistent?" Instead of "What does the CLT say?", ask "Which of these is NOT implied by the CLT?"
+### Rule 2 — Every distractor independently plausible
 
-### Rule 2: Every distractor must be independently plausible
+Each wrong answer is a misconception a partial-understander would pick. Mandatory `defense` field per choice documents this. Types of good distractors: sign errors, scope errors (theorem overreach), condition swap (correct result, wrong assumption set), partial truth (true in a special case), plausible-but-flawed reasoning chain.
 
-Each wrong answer should be something a student who partially understands would genuinely pick. Distractors are not filler — they are carefully constructed misconceptions.
+**Never use**: obviously absurd options, joke answers, "all of the above", "none of the above", "less correct" alternatives.
 
-**How to construct good distractors:**
-- **Sign/direction errors**: confusing upward with downward bias, mixing up conditions
-- **Scope errors**: thinking a theorem says more than it does (e.g., BLUE means best among ALL estimators)
-- **Condition swap**: correct result but wrong assumption set (e.g., consistency requires MLR.1-4, not MLR.1-6)
-- **Partial truth**: statements that are true in a special case but not generally
-- **Plausible reasoning**: a logical chain that sounds right but has one wrong link
+### Rule 3 — No giveaway patterns
 
-**Anti-patterns for distractors (NEVER do these):**
-- Obviously absurd answers that no student would pick
-- Joke answers or filler
-- Answers that are technically correct but "less correct" — each question has exactly one unambiguously correct answer
-- Using "all of the above" or "none of the above"
+- **Length parity**: all choices within ±30% word count.
+- **Tone parity**: same register/technicality across choices. If correct answer uses a formula, ≥2 distractors should too.
+- **Position distribution**: A/B/C/D distributed roughly evenly across the quiz; never 3+ same letter in a row.
+- **Hedging parity**: don't make the correct answer the only one with "may/can/under certain conditions" or the only one with "always/never".
 
-### Rule 3: No giveaway patterns
+### Rule 4 — Boundary-stem (NEW)
 
-The correct answer must not be identifiable by surface features. This rule is critical — violating it renders the quiz useless for learning.
+Stems describe symptoms/scenarios; concepts are named only in the choices. Bad: *"Define conditional convergence."* Good: *"Two countries with the same $s,n,\delta,\alpha$ have different $k_0$. They will..."* — forces recognition, not recall.
 
-**Length parity:** all four choices must be roughly the same length (within ±30% word count). If the correct answer is naturally longer because it's more precise, REWRITE the distractors to be equally precise (but wrong). If the correct answer is naturally shorter, pad it with qualifying language or rewrite the others to be shorter.
+### Rule 5 — Distractor defense field (NEW)
 
-**Tone parity:** all choices must use the same register and level of technicality. If the correct answer uses a formula, at least two distractors should also use formulas. If the correct answer is colloquial, all should be.
+Every choice (including the correct one) has a `defense` field. If you cannot write a one-line plausibility argument, the distractor is filler.
 
-**Position distribution:** over a 10-question quiz, the correct answer should appear roughly equally across A/B/C/D (2-3 times each, never more than 3 in a row for the same letter).
+### Rule 6 — Conceptual default
 
-**Hedging parity:** avoid making the correct answer the only one with hedging language ("may," "can," "under certain conditions") or the only one with absolute language ("always," "never"). Distribute these equally.
+Default mode is conceptual. `numeric` questions are *allowed* without user request, but require conceptual setup (no pure arithmetic).
 
-### Rule 4: Conceptual by default, computational only on request
+### Rule 7 — Cross-topic connections
 
-The default mode is conceptual: questions test understanding of what objects are, why results hold, where theorems stop applying, and how concepts relate.
+At least 1 of every quiz is a `bridge` (more for longer quizzes). Bridges require *mechanical* links — concrete algebraic or logical connection between two modules — not aesthetic analogies.
 
-Computation-style questions (calculate a t-statistic, find a bias direction given numbers) are generated ONLY when the user explicitly requests them. Even then, computation questions should require conceptual understanding to solve — never pure arithmetic.
+### Rule 8 — Difficulty targeting
 
-### Rule 5: Cross-topic connections
+Well-prepared student should get 60-75% on first attempt. 90%+ means too easy; <50% means tests unseen material. Use `LEARNING_STATE.json` to calibrate (see escalation table below).
 
-At least 2 out of every 10 questions should connect concepts that are typically taught separately. These are the highest-value questions because they force the student to see the architecture of the subject rather than isolated facts.
+### Difficulty escalation by LEARNING_STATE level
 
-**Examples of good connections:**
-- Linking omitted variable bias (finite-sample) to inconsistency (asymptotic) — same mechanism, different frameworks
-- Linking the Gauss-Markov theorem (OLS is BLUE) to the variance formula (why multicollinearity matters even though OLS is "best")
-- Linking the envelope theorem to the interpretation of Lagrange multipliers
-- Linking martingale pricing to risk-neutral valuation
-
-When a question makes a cross-topic connection, include a brief `connection` field in the JSON explaining the insight.
-
-### Rule 6: Difficulty targeting
-
-Questions should cluster around the difficulty level where the student has to *think* — not recall, not compute, but reason. The target: a well-prepared student gets 60-75% right on first attempt. If they get 90%+, the quiz is too easy. If they get below 50%, it's testing material they haven't seen.
-
-Use LEARNING_STATE.json to calibrate: topics at level `seen` get harder boundary-testing questions; topics at `practiced` get cross-topic connection questions; topics at `mastered` get edge-case and exception questions.
+| Level | Style emphasis | Target score |
+|---|---|---|
+| `seen` | `boundary`, `measure`, easy `deep-short`, easy `numeric` | 65-75% |
+| `tested` | Harder `boundary` + `flaw`, first `bridge`, first `multi-select` | 55-65% |
+| `practiced` | Heavy `bridge`, scenario chains, `derivation-*`, prediction-style `graph` | 50-60% |
+| `mastered` | Adversarial distractors, edge cases, `multi-select` with 3 correct answers, chains 3-deep | 45-55% |
 
 ---
 
-## Question Styles
+## JSON Schema
 
-Each question should be tagged with one of these styles. Distribute across styles for variety — never use the same style more than 3 times in a 10-question quiz.
+```json
+{
+  "title": "Quiz: <Topic>",
+  "meta": "Macro III — <module> — YYYY-MM-DD",
+  "questions": [
+    { /* single question */ },
+    { "type": "chain", "setup": "<html>", "questions": [ /* questions */ ] }
+  ]
+}
+```
 
-### "boundary" — What does NOT follow
+### Single-MCQ question (boundary, flaw, deep-short, measure, bridge, numeric)
 
-Present a theorem, definition, or result. Ask what is NOT implied, NOT guaranteed, or NOT a consequence. Forces the student to know exactly where the concept stops.
+```json
+{
+  "id": 1,
+  "style": "boundary",
+  "topic": "Solow steady state",
+  "stem": "<p>HTML with KaTeX: $f(k) = k^\\alpha$</p>",
+  "choices": [
+    {"letter": "A", "text": "...", "defense": "why a partial-understander picks this"},
+    {"letter": "B", "text": "...", "defense": "..."},
+    {"letter": "C", "text": "...", "defense": "..."},
+    {"letter": "D", "text": "...", "defense": "..."}
+  ],
+  "correct": "B",
+  "explanation": "<p>Why B is right. Why each distractor fails.</p>",
+  "connection": "Optional — required for style=bridge"
+}
+```
 
-> "The Gauss-Markov theorem guarantees OLS is BLUE. Which is NOT implied?"
+### Multi-select question
 
-This is the highest-rated style. Use it for 2-3 questions per quiz.
+```json
+{
+  "id": 6,
+  "style": "multi-select",
+  "topic": "Kaldor facts",
+  "stem": "<p>Which of these are stylized facts of growth? <strong>Select all that apply.</strong></p>",
+  "choices": [ ... 4 choices each with defense ... ],
+  "correct": ["A", "B", "C"],
+  "explanation": "<p>...</p>"
+}
+```
 
-### "flaw" — Spot the reasoning error
+### Graph question
 
-Present a student's statement or argument that contains a subtle error. The student must identify what's wrong. Distractors are alternative diagnoses of the flaw.
+```json
+{
+  "id": 8,
+  "style": "graph",
+  "topic": "Solow diagram",
+  "stem": "<p>Four points are marked below. Which is the steady state?</p>",
+  "figure": {
+    "id": "fig-q8",
+    "params": {"s": 0.3, "alpha": 0.3, "n": 0.01, "delta": 0.04},
+    "x_range": [0, 30], "n_points": 200,
+    "x_label": "k", "y_label": "",
+    "curves": [
+      {"name": "s·f(k)",  "expr": "s * Math.pow(k, alpha)", "color": "#0FA4AF"},
+      {"name": "(n+δ)·k", "expr": "(n + delta) * k",       "color": "#964734"}
+    ],
+    "markers": [
+      {"type": "intersection", "curves": [0, 1], "label": "B", "color": "#003135"},
+      {"type": "label_point", "x": "5", "y": "s * Math.pow(5, alpha)", "label": "A", "color": "#003135"}
+    ]
+  },
+  "choices": [ ... ],
+  "correct": "B",
+  "explanation": "<p>...</p>"
+}
+```
 
-> "A student says: 'None of my t-tests are significant, so the model has no explanatory power.' What is wrong?"
+Figure spec uses the same format as lecture figures (see `tools/build_figure.py`), but **the builder strips any `sliders` field** — quiz graphs are always static. Use the lecture palette: `#024950` (accent), `#0FA4AF` (cyan), `#964734` (key), `#003135` (text).
 
-Use for 2-3 questions per quiz.
+### Derivation question
 
-### "deep-short" — Compact question, deep answer
+```json
+{
+  "id": 9,
+  "style": "derivation-justify",
+  "topic": "Solow law of motion",
+  "stem": "<p>The derivation below leads to the per-worker law of motion. Which step justifies line (3)?</p>",
+  "derivation": [
+    "K_{t+1} = (1-\\delta) K_t + s Y_t",
+    "k_{t+1} = K_{t+1}/L_{t+1}",
+    "k_{t+1}(1+n) = (1-\\delta) k_t + s f(k_t)",
+    "\\Delta k_t \\approx s f(k_t) - (n+\\delta) k_t"
+  ],
+  "highlight": 3,
+  "choices": [ ... ],
+  "correct": "A",
+  "explanation": "<p>...</p>"
+}
+```
 
-A brief setup (1-2 sentences, possibly with a small numeric element) that requires understanding a concept at depth to answer. The question looks easy but isn't.
+- `derivation` strings are LaTeX (no `$`) — rendered in JetBrains Mono with KaTeX.
+- `highlight` is 1-indexed; only used by `derivation-justify` (the other two derivation styles don't need it since the question is about the *result*, not an intermediate step).
 
-> "An estimator satisfies E(W_N) = θ + 2/N. It is: biased and consistent / biased and inconsistent / ..."
+### Chain (scenario) block
 
-Use for 2-3 questions per quiz.
+```json
+{
+  "type": "chain",
+  "setup": "<p><strong>Setup.</strong> A closed economy with $\\alpha = 0.3$, $\\delta = 0.05$... The saving rate permanently rises from 0.2 to 0.3.</p>",
+  "questions": [
+    { /* question with id 12 */ },
+    { /* question with id 13, builds on Q12 */ }
+  ]
+}
+```
 
-### "measure" — What does this object represent
-
-Present a formula or mathematical object and ask what it actually measures or represents. Tests whether the student can connect symbols to meaning.
-
-> "In Var(β̂_j) = σ²/[SST_j(1-R²_j)], the quantity R²_j is..."
-
-Use for 1-2 questions per quiz.
-
-### "bridge" — Cross-topic connection
-
-A question whose correct answer requires understanding how two concepts from different modules interact mechanically — not just that they "resemble" each other. The question should be solvable by applying a concrete logical or algebraic link, not by picking the most poetic analogy.
-
-**Good bridge:** "An agent's posterior dominates the prior in the FOSD sense after a good-news signal. What does this imply about her EU from any action with increasing state-dependent payoffs?" (requires applying FOSD → EU result to the Bayesian posterior — concrete, verifiable)
-
-**Bad bridge:** "Sequential Bayesian updating is path-independent. This property is structurally analogous to which EU result?" (subjective — multiple answers could be argued; tests pattern-matching, not understanding)
-
-> Rule: every bridge question must have a single unambiguous correct answer derivable from the mechanics of both concepts, not from aesthetic similarity.
-
-Use for 1-2 questions per quiz. Always include the `connection` field in JSON.
+- Chains contain 2-3 questions. IDs are globally sequential (chain doesn't reset).
+- Q2 should logically build on Q1 (e.g. Q1 establishes a fact, Q2 computes with it).
+- Chains count toward total question count and toward type quotas.
 
 ---
 
 ## Explanation Quality
 
-Every question's `explanation` field must:
-1. State why the correct answer is right (1-2 sentences)
-2. State why EACH distractor is wrong (1 sentence each, specific — not just "this is incorrect")
-3. If the question is a "bridge" style, explain the cross-topic connection
+Every `explanation` field must:
+1. State why the correct answer is right (1-2 sentences).
+2. State why each distractor is wrong (1 sentence each, specific).
+3. For `bridge` style: explain the cross-topic mechanism in `connection`.
 
-Explanations are shown after the user answers and are a critical learning moment. They should teach, not just confirm.
+Per-choice `defense` fields are also rendered under each choice on reveal — they teach why each option was tempting. Treat them as part of the explanation, not metadata.
 
 ---
 
-## Pre-Generation Checklist
+## Pre-Build Checklist
 
-Before writing the JSON:
-- [ ] Read CONVENTIONS.md and confirmed output path
-- [ ] Read PREFERENCES.md and confirmed cognitive preferences
-- [ ] Read LEARNING_STATE.json and calibrated difficulty
-- [ ] Read subject-config.md for calibrated quiz style (or ran calibration)
-- [ ] Scanned relevant material
-- [ ] Planned question distribution across topics and styles
-- [ ] Every question satisfies ALL 6 design rules
-- [ ] Every distractor is independently plausible and same length/tone as correct answer
-- [ ] Correct answer positions distributed roughly evenly across A/B/C/D
-- [ ] At least 2 cross-topic "bridge" questions included
-- [ ] Explanations cover all 4 choices, not just the correct one
-- [ ] No giveaway patterns in phrasing, length, or hedging
+- [ ] Read `LEARNING_STATE.json` and calibrated difficulty
+- [ ] Read relevant `Material/modules/<N>/CLAUDE.md` + lecture files
+- [ ] If lecture files have `<!-- formula-not-decoded -->` or scrambled tokens on a referenced equation, read the corresponding `.pages/p<NNN>.png`
+- [ ] Planned topic distribution
+- [ ] ≥1 `bridge`, ≥1 new-format type, no type >30%
+- [ ] Optional chain block if topic supports it
+- [ ] Every choice has `defense` field
+- [ ] Every stem describes a scenario, not a concept name
+- [ ] Length parity within ±30% across all choices
+- [ ] Correct-letter positions distributed roughly evenly
+- [ ] No "all of the above", no "none of the above"
+- [ ] Multi-select: `correct` is an array, not a string
+- [ ] Graph questions: `figure.markers` use palette colors, no `sliders`
+- [ ] Derivation questions: `derivation` is a list of LaTeX strings (no `$`)
+- [ ] All IDs unique across the flattened question list (including inside chains)

@@ -4,59 +4,450 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{{TITLE}}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+{{PLOTLY_SCRIPT}}
+{{FIGURE_JS}}
 <style>
-:root{--bg:#fafafa;--card:#fff;--border:#e0e0e0;--text:#1a1a1a;--muted:#666;--accent:#2563eb;--accent-bg:#eff6ff;--correct:#16a34a;--correct-bg:#f0fdf4;--wrong:#dc2626;--wrong-bg:#fef2f2;--key:#f59e0b;--key-bg:#fffbeb}
+:root{
+  --bg:#fdf6e3;
+  --card:#ffffff;
+  --border:#e6dcc4;
+  --text:#003135;
+  --muted:#5a7378;
+  --accent:#024950;
+  --accent-2:#0FA4AF;
+  --accent-bg:rgba(15,164,175,0.10);
+  --key:#964734;
+  --key-bg:rgba(150,71,52,0.08);
+  --box-fill:#003135;
+  --box-text:#e6f4f5;
+  --box-line:#0FA4AF;
+  --col-w:760px;
+}
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text);line-height:1.7}
-.container{max-width:760px;margin:0 auto;padding:2rem 1.5rem}
-h1{font-size:1.6rem;margin-bottom:.3rem}
-.meta{color:var(--muted);font-size:.9rem;margin-bottom:1rem;padding-bottom:.75rem;border-bottom:1px solid var(--border)}
-.progress{display:flex;align-items:center;gap:.75rem;margin-bottom:2rem;font-size:.9rem;color:var(--muted);position:sticky;top:0;background:var(--bg);padding:.75rem 0;z-index:10}
-.progress-bar{flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden}
-.progress-fill{height:100%;background:var(--accent);border-radius:3px;transition:width .3s ease}
-.score-display{font-weight:600;color:var(--accent)}
-.question-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:1.75rem;margin-bottom:1.5rem;transition:border-color .3s}
-.question-card.answered-correct{border-color:var(--correct)}
-.question-card.answered-wrong{border-color:var(--wrong)}
-.question-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem}
-.question-number{font-size:.85rem;font-weight:600;color:var(--accent);background:var(--accent-bg);padding:.2rem .6rem;border-radius:4px}
-.question-style{font-size:.75rem;color:var(--muted);background:var(--bg);padding:.15rem .5rem;border-radius:3px;border:1px solid var(--border)}
-.question-stem{font-size:1.02rem;margin-bottom:1.25rem;line-height:1.65}
-.choices{display:flex;flex-direction:column;gap:.5rem}
-.choice{display:flex;align-items:flex-start;gap:.75rem;padding:.75rem 1rem;border:1px solid var(--border);border-radius:8px;cursor:pointer;transition:all .15s;font-size:.95rem;line-height:1.5}
-.choice:hover:not(.disabled){background:var(--accent-bg);border-color:var(--accent)}
-.choice.disabled{cursor:default;opacity:.85}
-.choice.correct-reveal{background:var(--correct-bg);border-color:var(--correct)}
-.choice.wrong-reveal{background:var(--wrong-bg);border-color:var(--wrong)}
-.choice-letter{min-width:1.6rem;height:1.6rem;display:flex;align-items:center;justify-content:center;border-radius:50%;background:var(--bg);border:1px solid var(--border);font-weight:600;font-size:.8rem;flex-shrink:0;margin-top:.1rem}
-.choice.correct-reveal .choice-letter{background:var(--correct);color:#fff;border-color:var(--correct)}
-.choice.wrong-reveal .choice-letter{background:var(--wrong);color:#fff;border-color:var(--wrong)}
-.explanation{margin-top:1rem;padding:1rem;border-radius:8px;background:var(--key-bg);border-left:3px solid var(--key);font-size:.9rem;line-height:1.6;display:none}
+html,body{background-color:var(--bg)}
+body{
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  color:var(--text);
+  line-height:1.7;
+  font-weight:400;
+  font-feature-settings:"cv11","ss01","ss03";
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.45  0 0 0 0 0.35  0 0 0 0 0.20  0 0 0 0.06 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  background-repeat:repeat;
+  background-attachment:fixed;
+}
+.container{
+  max-width:var(--col-w);
+  margin:0 auto;
+  padding:4rem 1.5rem 5rem;
+}
+h1{
+  font-size:2.5rem;
+  font-weight:300;
+  letter-spacing:-0.03em;
+  line-height:1.15;
+  margin-bottom:.6rem;
+  color:var(--text);
+}
+.meta{
+  color:var(--muted);
+  font-size:.85rem;
+  font-weight:400;
+  letter-spacing:.01em;
+  margin-bottom:2rem;
+  padding-bottom:1.25rem;
+  border-bottom:1px solid var(--border);
+}
+.progress{
+  display:flex;align-items:center;gap:.9rem;
+  margin-bottom:2.5rem;
+  font-size:.78rem;color:var(--muted);
+  position:sticky;top:0;
+  background:var(--bg);
+  padding:.85rem 0;
+  z-index:10;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+  border-bottom:1px solid var(--border);
+}
+.progress-bar{flex:1;height:1px;background:var(--border);overflow:hidden}
+.progress-fill{height:100%;background:var(--accent-2);transition:width .3s ease}
+.score-display{font-weight:500;color:var(--accent);font-variant-numeric:tabular-nums}
+
+/* ── Chain (scenario) block ──────────────────────────────────────────── */
+.chain-block{
+  position:relative;
+  margin:2.5rem 0;
+  padding:1.5rem 1.5rem 1rem;
+  outline:1px solid var(--accent);
+  outline-offset:6px;
+}
+.chain-label{
+  position:absolute;top:-9px;right:14px;
+  background:var(--bg);
+  padding:0 .5rem;
+  font-size:.65rem;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:var(--accent);
+  font-weight:600;
+}
+.chain-setup{
+  font-size:.95rem;
+  color:var(--text);
+  padding:0 0 1.1rem;
+  margin-bottom:1.25rem;
+  border-bottom:1px dashed var(--border);
+  line-height:1.65;
+}
+.chain-setup strong{color:var(--accent);font-weight:600}
+.chain-block .question-card{margin-bottom:1rem}
+.chain-block .question-card:last-child{margin-bottom:0}
+
+/* ── Question card ───────────────────────────────────────────────────── */
+.question-card{
+  background:var(--card);
+  border:1px solid var(--border);
+  padding:1.6rem 1.75rem;
+  margin-bottom:1.5rem;
+  transition:border-color .25s;
+}
+.question-card.answered-correct{border-color:var(--accent-2)}
+.question-card.answered-wrong{border-color:var(--key)}
+.question-header{
+  display:flex;justify-content:space-between;align-items:center;
+  margin-bottom:1.1rem;
+  padding-bottom:.7rem;
+  border-bottom:1px solid var(--border);
+}
+.question-number{
+  font-size:.75rem;font-weight:600;
+  color:var(--accent);
+  letter-spacing:.08em;
+}
+.question-style{
+  font-size:.65rem;
+  color:var(--muted);
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  font-weight:500;
+}
+.question-stem{
+  font-size:1rem;
+  margin-bottom:1.2rem;
+  line-height:1.7;
+}
+.question-stem p{margin-bottom:.7rem}
+.question-stem p:last-child{margin-bottom:0}
+
+/* ── Derivation step list (inside stem) ──────────────────────────────── */
+.derivation-block{
+  margin:1rem 0 1.2rem;
+  padding:1rem 1.2rem;
+  background:rgba(255,255,255,0.5);
+  border:1px solid var(--border);
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+  font-size:.9rem;
+}
+.derivation-step{
+  display:flex;
+  align-items:baseline;
+  gap:.9rem;
+  padding:.35rem 0;
+  line-height:1.5;
+}
+.derivation-step .step-num{
+  color:var(--muted);
+  font-size:.7rem;
+  min-width:1.6rem;
+  font-weight:500;
+}
+.derivation-step.highlight{
+  background:var(--accent-bg);
+  margin:.2rem -.8rem;
+  padding:.45rem .8rem;
+  border-left:2px solid var(--accent-2);
+}
+.derivation-step.highlight .step-num{color:var(--accent-2);font-weight:600}
+.derivation-step .step-body{flex:1;color:var(--text)}
+.derivation-step.missing .step-body{
+  color:var(--accent-2);
+  font-style:italic;
+  font-family:'Inter',sans-serif;
+}
+
+/* ── Embedded figure inside question stem ────────────────────────────── */
+.question-card .mf-figure{margin:1rem 0 1.2rem;border-color:var(--border)}
+
+/* ── Choices ─────────────────────────────────────────────────────────── */
+.choices{display:flex;flex-direction:column;gap:.45rem}
+.choice{
+  display:flex;align-items:flex-start;gap:.85rem;
+  padding:.75rem 1rem;
+  border:1px solid var(--border);
+  background:var(--card);
+  cursor:pointer;
+  transition:background .15s, border-color .15s;
+  font-size:.95rem;
+  line-height:1.55;
+}
+.choice:hover:not(.disabled){background:var(--accent-bg);border-color:var(--accent-2)}
+.choice.disabled{cursor:default}
+.choice.selected{background:var(--accent-bg);border-color:var(--accent-2)}
+.choice.correct-reveal{
+  background:var(--accent-bg);
+  border-color:var(--accent-2);
+}
+.choice.wrong-reveal{
+  background:var(--key-bg);
+  border-color:var(--key);
+}
+.choice.missed-reveal{
+  /* multi-select: correct option the user failed to tick */
+  background:transparent;
+  border-color:var(--accent-2);
+  border-style:dashed;
+}
+
+/* Single-MCQ: circular letter chip */
+.choice-letter{
+  min-width:1.7rem;height:1.7rem;
+  display:flex;align-items:center;justify-content:center;
+  background:transparent;
+  border:1px solid var(--border);
+  border-radius:50%;
+  font-weight:500;font-size:.78rem;
+  color:var(--muted);
+  flex-shrink:0;margin-top:.05rem;
+  transition:all .15s;
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+}
+.choice:hover:not(.disabled) .choice-letter{border-color:var(--accent-2);color:var(--accent-2)}
+.choice.correct-reveal .choice-letter{background:var(--accent-2);color:#fff;border-color:var(--accent-2)}
+.choice.wrong-reveal .choice-letter{background:var(--key);color:#fff;border-color:var(--key)}
+.choice.missed-reveal .choice-letter{background:transparent;color:var(--accent-2);border-color:var(--accent-2)}
+
+/* Multi-select: hollow square that fills cyan when ticked */
+.question-card.multi .choice-letter{
+  border-radius:0;
+  position:relative;
+}
+.question-card.multi .choice.selected .choice-letter{
+  background:var(--accent-2);
+  color:#fff;
+  border-color:var(--accent-2);
+}
+.question-card.multi .choice.selected .choice-letter::after{
+  content:'';
+  position:absolute;
+  left:5px;top:3px;
+  width:5px;height:9px;
+  border:solid #fff;
+  border-width:0 1.5px 1.5px 0;
+  transform:rotate(45deg);
+}
+.question-card.multi .choice.selected .choice-letter > span{visibility:hidden}
+
+/* Numeric: monospace choice text */
+.question-card.mono-choices .choice-body{
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+  font-size:.95rem;
+  color:var(--text);
+}
+
+.choice-body{flex:1}
+
+/* Per-choice defense (revealed after submit) — small muted text under choice */
+.choice-defense{
+  display:none;
+  font-size:.78rem;
+  color:var(--muted);
+  font-style:italic;
+  margin-top:.35rem;
+  line-height:1.5;
+}
+.choice.disabled .choice-defense{display:block}
+.choice.correct-reveal .choice-defense{color:var(--accent)}
+.choice.wrong-reveal .choice-defense{color:var(--key)}
+
+/* Multi-select submit button */
+.submit-row{
+  margin-top:1rem;
+  display:flex;
+  align-items:center;
+  gap:1rem;
+  font-size:.75rem;
+  color:var(--muted);
+  letter-spacing:.04em;
+}
+.submit-btn{
+  background:transparent;
+  color:var(--accent);
+  border:1px solid var(--accent);
+  padding:.45rem 1.1rem;
+  font-size:.78rem;
+  font-family:inherit;
+  font-weight:500;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+  cursor:pointer;
+  transition:background .15s, color .15s;
+}
+.submit-btn:hover:not(:disabled){background:var(--accent);color:#fff}
+.submit-btn:disabled{opacity:.4;cursor:not-allowed}
+
+/* ── Explanation: HUD callout, same as lecture .example ──────────────── */
+.explanation{
+  display:none;
+  position:relative;
+  background:var(--box-fill);
+  color:var(--box-text);
+  padding:1.25rem 1.5rem;
+  margin:1.4rem 0 .25rem;
+  outline:1px solid var(--box-line);
+  outline-offset:4px;
+  font-size:.92rem;
+  line-height:1.65;
+}
 .explanation.visible{display:block}
-.connection{margin-top:.75rem;padding:.75rem;background:var(--accent-bg);border-left:3px solid var(--accent);border-radius:0 6px 6px 0;font-size:.85rem}
-.summary{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:2rem;display:none}
-.summary h2{font-size:1.4rem;margin-bottom:.5rem;text-align:center}
-.summary .score-big{font-size:3rem;font-weight:700;color:var(--accent);margin:.5rem 0;text-align:center}
-.summary .score-label{color:var(--muted);font-size:.95rem;text-align:center;margin-bottom:1.5rem}
-.results-table{width:100%;border-collapse:collapse;margin:1.25rem 0;font-size:.9rem}
-.results-table th,.results-table td{padding:.5rem .75rem;border:1px solid var(--border);text-align:left}
-.results-table th{background:var(--accent-bg);font-weight:600;font-size:.8rem;text-transform:uppercase;letter-spacing:.03em}
-.results-table .row-correct{background:var(--correct-bg)}
-.results-table .row-wrong{background:var(--wrong-bg)}
-.results-table .status-icon{font-size:1.1rem}
-.json-section{margin-top:1.5rem;text-align:left}
-.json-section label{display:block;font-weight:600;font-size:.85rem;margin-bottom:.4rem;color:var(--muted)}
-.json-box{width:100%;min-height:80px;padding:.75rem;border:1px solid var(--border);border-radius:6px;font-family:monospace;font-size:.8rem;background:#f8fafc;color:var(--text);resize:vertical;line-height:1.4}
-.btn-row{display:flex;gap:.75rem;justify-content:center;margin-top:1rem;flex-wrap:wrap}
-.btn{display:inline-block;padding:.6rem 1.5rem;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:.9rem;font-weight:500}
-.btn:hover{opacity:.9}
-.btn-secondary{background:var(--card);color:var(--accent);border:1px solid var(--accent)}
-.btn-secondary:hover{background:var(--accent-bg)}
-.copy-toast{position:fixed;bottom:2rem;left:50%;transform:translateX(-50%);background:#1e293b;color:#fff;padding:.6rem 1.25rem;border-radius:6px;font-size:.9rem;display:none;z-index:100}
-@media(max-width:600px){.container{padding:1rem}.question-card{padding:1.25rem}}
+.explanation p{margin-bottom:.6rem}
+.explanation p:last-child{margin-bottom:0}
+.explanation strong{color:var(--box-line);font-weight:600;letter-spacing:.02em}
+.explanation .katex{color:var(--box-text)}
+.explanation code{background:rgba(255,255,255,0.08);color:var(--box-line);padding:.1rem .35rem;border-radius:2px;font-family:'JetBrains Mono',monospace;font-size:.85em}
+.explanation .connection{
+  margin-top:.9rem;
+  padding-top:.8rem;
+  border-top:1px solid rgba(15,164,175,0.3);
+  font-size:.85rem;
+  color:rgba(230,244,245,0.85);
+}
+.explanation .connection strong{color:#e8826a}
+
+/* HUD tracer extending leftward into gutter — mirrored from .example */
+.explanation::before{
+  content:'';
+  position:absolute;
+  width:74px;
+  height:60px;
+  pointer-events:none;
+  background-color:var(--box-line);
+  bottom:14px;left:-82px;
+  -webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;
+  -webkit-mask-position:center;mask-position:center;
+  -webkit-mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 74 60'><line x1='26' y1='9' x2='74' y2='9' stroke='black' stroke-width='3'/><line x1='52' y1='28' x2='74' y2='28' stroke='black' stroke-width='3'/><line x1='40' y1='47' x2='74' y2='47' stroke='black' stroke-width='3'/><rect x='8' y='4' width='10' height='10' fill='none' stroke='black' stroke-width='1.6'/></svg>");
+          mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 74 60'><line x1='26' y1='9' x2='74' y2='9' stroke='black' stroke-width='3'/><line x1='52' y1='28' x2='74' y2='28' stroke='black' stroke-width='3'/><line x1='40' y1='47' x2='74' y2='47' stroke='black' stroke-width='3'/><rect x='8' y='4' width='10' height='10' fill='none' stroke='black' stroke-width='1.6'/></svg>");
+}
+@media(max-width:1100px){.explanation::before{display:none}}
+
+/* ── Summary ─────────────────────────────────────────────────────────── */
+.summary{
+  background:var(--card);
+  border:1px solid var(--border);
+  padding:2.25rem;
+  margin-top:2.5rem;
+  display:none;
+}
+.summary h2{
+  font-size:1.55rem;font-weight:400;
+  letter-spacing:-0.02em;
+  color:var(--accent);
+  margin-bottom:.4rem;
+  text-align:center;
+}
+.summary .score-big{
+  font-size:3.5rem;font-weight:300;
+  color:var(--accent);
+  margin:.5rem 0;text-align:center;
+  letter-spacing:-0.03em;
+  font-variant-numeric:tabular-nums;
+}
+.summary .score-label{
+  color:var(--muted);font-size:.85rem;
+  text-align:center;margin-bottom:1.75rem;
+  letter-spacing:.02em;
+}
+.results-table{
+  width:100%;border-collapse:collapse;
+  margin:1.25rem 0;font-size:.85rem;
+}
+.results-table th,.results-table td{
+  padding:.55rem .75rem;
+  border-bottom:1px solid var(--border);
+  text-align:left;
+}
+.results-table th{
+  background:var(--accent-bg);
+  font-weight:600;color:var(--accent);
+  font-size:.7rem;text-transform:uppercase;
+  letter-spacing:.06em;
+}
+.results-table .row-correct td:last-child{color:var(--accent-2);font-weight:600}
+.results-table .row-wrong td:last-child{color:var(--key);font-weight:600}
+.json-section{margin-top:1.5rem}
+.json-section label{
+  display:block;font-weight:500;font-size:.7rem;
+  margin-bottom:.4rem;color:var(--muted);
+  letter-spacing:.08em;text-transform:uppercase;
+}
+.json-box{
+  width:100%;min-height:80px;
+  padding:.8rem;
+  border:1px solid var(--border);
+  background:rgba(255,255,255,0.5);
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+  font-size:.78rem;
+  color:var(--text);
+  resize:vertical;
+  line-height:1.5;
+}
+.btn-row{
+  display:flex;gap:.75rem;justify-content:center;
+  margin-top:1rem;flex-wrap:wrap;
+}
+.btn{
+  display:inline-block;
+  padding:.55rem 1.25rem;
+  background:var(--accent);
+  color:#fff;
+  border:none;
+  font-size:.78rem;
+  font-family:inherit;
+  font-weight:500;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  cursor:pointer;
+  transition:background .15s;
+}
+.btn:hover{background:var(--accent-2)}
+.btn-secondary{
+  background:transparent;
+  color:var(--accent);
+  border:1px solid var(--accent);
+}
+.btn-secondary:hover{background:var(--accent);color:#fff}
+.copy-toast{
+  position:fixed;bottom:2rem;left:50%;
+  transform:translateX(-50%);
+  background:var(--box-fill);color:var(--box-text);
+  padding:.6rem 1.25rem;
+  font-size:.85rem;
+  display:none;z-index:100;
+  outline:1px solid var(--box-line);outline-offset:3px;
+}
+{{FIGURE_CSS}}
+@media(max-width:600px){
+  .container{padding:2rem 1rem 3rem}
+  .question-card{padding:1.25rem}
+  h1{font-size:1.8rem}
+}
 </style>
 </head>
 <body>
@@ -64,7 +455,7 @@ h1{font-size:1.6rem;margin-bottom:.3rem}
 <h1>{{TITLE}}</h1>
 <div class="meta">{{META}}</div>
 <div class="progress">
-<span id="prog-text">0 / {{QUESTION_COUNT}} answered</span>
+<span id="prog-text">0 / {{QUESTION_COUNT}}</span>
 <div class="progress-bar"><div class="progress-fill" id="prog-fill" style="width:0%"></div></div>
 <span class="score-display" id="score-text"></span>
 </div>
@@ -78,7 +469,7 @@ h1{font-size:1.6rem;margin-bottom:.3rem}
 <tbody id="results-body"></tbody>
 </table>
 <div class="json-section">
-<label>Paste this into chat to update your learning state:</label>
+<label>Paste this into chat to update your learning state</label>
 <textarea class="json-box" id="json-export" readonly></textarea>
 </div>
 <div class="btn-row">
@@ -92,63 +483,121 @@ h1{font-size:1.6rem;margin-bottom:.3rem}
 const total={{QUESTION_COUNT}};
 let answered=0,correct=0;
 const results=[];
+
+function setsEqual(a,b){
+  if(a.length!==b.length)return false;
+  const sa=new Set(a),sb=new Set(b);
+  for(const x of sa)if(!sb.has(x))return false;
+  return true;
+}
+
+function commitAnswer(qid,userAnswer,correctAnswer,isCorrect,topic){
+  const card=document.getElementById('q-'+qid);
+  if(card.dataset.done==='1')return;
+  card.dataset.done='1';
+  card.querySelectorAll('.choice').forEach(c=>c.classList.add('disabled'));
+  if(isCorrect){card.classList.add('answered-correct');correct++}
+  else{card.classList.add('answered-wrong')}
+  card.querySelector('.explanation').classList.add('visible');
+  results.push({
+    id:qid,topic:topic,
+    correct_answer:Array.isArray(correctAnswer)?correctAnswer.join('+'):correctAnswer,
+    user_answer:Array.isArray(userAnswer)?(userAnswer.length?userAnswer.join('+'):'—'):userAnswer,
+    is_correct:isCorrect
+  });
+  answered++;
+  document.getElementById('prog-text').textContent=answered+' / '+total;
+  document.getElementById('prog-fill').style.width=(answered/total*100)+'%';
+  document.getElementById('score-text').textContent=correct+'/'+answered;
+  if(answered===total)showSummary();
+}
+
+/* Single-MCQ pick: click commits answer */
 function pick(qid,letter){
-const card=document.getElementById('q-'+qid);
-if(card.dataset.done==='1')return;
-card.dataset.done='1';
-const correctLetter=card.dataset.correct;
-const topic=card.dataset.topic||'';
-card.querySelectorAll('.choice').forEach(c=>{
-c.classList.add('disabled');
-const l=c.dataset.letter;
-if(l===correctLetter)c.classList.add('correct-reveal');
-if(l===letter&&l!==correctLetter)c.classList.add('wrong-reveal');
-});
-const isCorrect=letter===correctLetter;
-if(isCorrect){card.classList.add('answered-correct');correct++}
-else{card.classList.add('answered-wrong')}
-card.querySelector('.explanation').classList.add('visible');
-results.push({id:qid,topic:topic,correct_answer:correctLetter,user_answer:letter,is_correct:isCorrect});
-answered++;
-document.getElementById('prog-text').textContent=answered+' / '+total+' answered';
-document.getElementById('prog-fill').style.width=(answered/total*100)+'%';
-document.getElementById('score-text').textContent=correct+'/'+answered;
-if(answered===total)showSummary();
+  const card=document.getElementById('q-'+qid);
+  if(card.dataset.done==='1')return;
+  const correctLetter=card.dataset.correct;
+  const topic=card.dataset.topic||'';
+  card.querySelectorAll('.choice').forEach(c=>{
+    const l=c.dataset.letter;
+    if(l===correctLetter)c.classList.add('correct-reveal');
+    if(l===letter&&l!==correctLetter)c.classList.add('wrong-reveal');
+  });
+  commitAnswer(qid,letter,correctLetter,letter===correctLetter,topic);
 }
+
+/* Multi-select toggle: click toggles, submit commits */
+function toggle(qid,letter){
+  const card=document.getElementById('q-'+qid);
+  if(card.dataset.done==='1')return;
+  const choice=card.querySelector('.choice[data-letter="'+letter+'"]');
+  choice.classList.toggle('selected');
+  const anySel=card.querySelectorAll('.choice.selected').length>0;
+  const btn=card.querySelector('.submit-btn');
+  if(btn)btn.disabled=!anySel;
+}
+
+function submitMulti(qid){
+  const card=document.getElementById('q-'+qid);
+  if(card.dataset.done==='1')return;
+  const correctSet=JSON.parse(card.dataset.correct);
+  const topic=card.dataset.topic||'';
+  const selected=Array.from(card.querySelectorAll('.choice.selected'))
+    .map(c=>c.dataset.letter).sort();
+  const isCorrect=setsEqual(selected,correctSet);
+  card.querySelectorAll('.choice').forEach(c=>{
+    const l=c.dataset.letter;
+    const wasPicked=c.classList.contains('selected');
+    const isRight=correctSet.includes(l);
+    c.classList.remove('selected');
+    if(wasPicked&&isRight)c.classList.add('correct-reveal');
+    else if(wasPicked&&!isRight)c.classList.add('wrong-reveal');
+    else if(!wasPicked&&isRight)c.classList.add('missed-reveal');
+  });
+  card.querySelector('.submit-row').style.display='none';
+  commitAnswer(qid,selected,correctSet,isCorrect,topic);
+}
+
 function showSummary(){
-const s=document.getElementById('summary');
-s.style.display='block';
-document.getElementById('final-score').textContent=correct+' / '+total;
-const pct=Math.round(correct/total*100);
-document.getElementById('final-label').textContent=pct+'%'+(pct>=80?' — Strong understanding':pct>=60?' — Good, review marked items':' — Review recommended');
-const tbody=document.getElementById('results-body');
-results.sort((a,b)=>a.id-b.id);
-results.forEach(r=>{
-const tr=document.createElement('tr');
-tr.className=r.is_correct?'row-correct':'row-wrong';
-tr.innerHTML='<td>Q'+r.id+'</td><td>'+r.topic+'</td><td>'+r.correct_answer+'</td><td>'+r.user_answer+'</td><td class="status-icon">'+(r.is_correct?'✓':'✗')+'</td>';
-tbody.appendChild(tr);
-});
-const sorted=results.sort((a,b)=>a.id-b.id);
-const answers={};
-sorted.forEach(r=>{answers['Q'+r.id]=r.user_answer});
-const exportData={
-file:"{{QUIZ_FILE}}",
-score:correct+'/'+total,
-answers:answers
-};
-document.getElementById('json-export').value=JSON.stringify(exportData);
-s.scrollIntoView({behavior:'smooth'});
+  const s=document.getElementById('summary');
+  s.style.display='block';
+  document.getElementById('final-score').textContent=correct+' / '+total;
+  const pct=Math.round(correct/total*100);
+  document.getElementById('final-label').textContent=
+    pct+'% — '+(pct>=80?'strong understanding':pct>=60?'good, review marked items':'review recommended');
+  const tbody=document.getElementById('results-body');
+  results.sort((a,b)=>a.id-b.id);
+  results.forEach(r=>{
+    const tr=document.createElement('tr');
+    tr.className=r.is_correct?'row-correct':'row-wrong';
+    tr.innerHTML='<td>Q'+r.id+'</td><td>'+r.topic+'</td><td>'+r.correct_answer+
+      '</td><td>'+r.user_answer+'</td><td>'+(r.is_correct?'✓':'✗')+'</td>';
+    tbody.appendChild(tr);
+  });
+  const answers={};
+  results.sort((a,b)=>a.id-b.id).forEach(r=>{answers['Q'+r.id]=r.user_answer});
+  const exportData={file:"{{QUIZ_FILE}}",score:correct+'/'+total,answers:answers};
+  document.getElementById('json-export').value=JSON.stringify(exportData);
+  s.scrollIntoView({behavior:'smooth'});
 }
+
 function copyJson(){
-const box=document.getElementById('json-export');
-box.select();
-document.execCommand('copy');
-const toast=document.getElementById('copy-toast');
-toast.style.display='block';
-setTimeout(()=>{toast.style.display='none'},1500);
+  const box=document.getElementById('json-export');
+  box.select();
+  document.execCommand('copy');
+  const toast=document.getElementById('copy-toast');
+  toast.style.display='block';
+  setTimeout(()=>{toast.style.display='none'},1500);
 }
-document.addEventListener('DOMContentLoaded',()=>{renderMathInElement(document.body,{delimiters:[{left:"$$",right:"$$",display:true},{left:"$",right:"$",display:false},{left:"\\(",right:"\\)",display:false},{left:"\\[",right:"\\]",display:true}]})});
+
+document.addEventListener('DOMContentLoaded',()=>{
+  renderMathInElement(document.body,{delimiters:[
+    {left:"$$",right:"$$",display:true},
+    {left:"$",right:"$",display:false},
+    {left:"\\(",right:"\\)",display:false},
+    {left:"\\[",right:"\\]",display:true}
+  ]});
+});
 </script>
 </body>
 </html>

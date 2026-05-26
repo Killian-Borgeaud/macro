@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quiz: Module 1 — Stylized Facts and the Basic Solow Model</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script>
+window.MacroFigures = window.MacroFigures || (function() {
+
+  function linspace(a, b, n) {
+    const out = [];
+    for (let i = 0; i < n; i++) out.push(a + (b - a) * i / (n - 1));
+    return out;
+  }
+
+  function compileExpr(expr, paramNames) {
+    return new Function('k', 'p',
+      'const {' + paramNames.join(',') + '} = p; return ' + expr + ';');
+  }
+
+  function compileScalarExpr(expr, paramNames) {
+    if (typeof expr === 'number') return () => expr;
+    if (typeof expr === 'string') {
+      return new Function('p',
+        'const {' + paramNames.join(',') + '} = p; return ' + expr + ';');
+    }
+    return () => null;
+  }
+
+  function findIntersection(xs, y1s, y2s) {
+    for (let i = 1; i < xs.length; i++) {
+      const d0 = y1s[i-1] - y2s[i-1];
+      const d1 = y1s[i] - y2s[i];
+      if (d0 === 0) return { x: xs[i-1], y: y1s[i-1] };
+      if (d0 * d1 < 0) {
+        const t = d0 / (d0 - d1);
+        return {
+          x: xs[i-1] + t * (xs[i] - xs[i-1]),
+          y: y1s[i-1] + t * (y1s[i] - y1s[i-1])
+        };
+      }
+    }
+    return null;
+  }
+
+  function findExtremum(xs, ys, kind) {
+    let idx = 0;
+    for (let i = 1; i < ys.length; i++) {
+      if (kind === 'max' ? ys[i] > ys[idx] : ys[i] < ys[idx]) idx = i;
+    }
+    return { x: xs[idx], y: ys[idx] };
+  }
+
+  function buildCurveData(curve, xs, params, paramNames) {
+    if (curve.type === 'time_series') {
+      // Discrete recursion: k_{t+1} = recursion(k_t, p), starting from initial.
+      const T = (curve.t_range && curve.t_range[1]) || 50;
+      const t0 = (curve.t_range && curve.t_range[0]) || 0;
+      const initFn = compileScalarExpr(curve.initial, paramNames);
+      const recFn = new Function('k', 'p',
+        'const {' + paramNames.join(',') + '} = p; return ' + curve.recursion + ';');
+      const ts = [t0], ks = [initFn(params)];
+      for (let t = t0 + 1; t <= T; t++) {
+        ks.push(recFn(ks[ks.length - 1], params));
+        ts.push(t);
+      }
+      return { x: ts, y: ks };
+    }
+    if (curve.type === 'piecewise') {
+      // [{when: "k < 10", expr: "..."}], else expr at end
+      const fns = curve.pieces.map(p => ({
+        when: p.when ? new Function('k', 'p',
+          'const {' + paramNames.join(',') + '} = p; return ' + p.when + ';') : null,
+        fn: compileExpr(p.expr, paramNames)
+      }));
+      return {
+        x: xs,
+        y: xs.map(k => {
+          for (const piece of fns) {
+            if (!piece.when || piece.when(k, params)) return piece.fn(k, params);
+          }
+          return null;
+        })
+      };
+    }
+    // default: type === 'expr'
+    const fn = compileExpr(curve.expr, paramNames);
+    return { x: xs, y: xs.map(k => fn(k, params)) };
+  }
+
+  function buildPanel(panel, params, paramNames, panelHostId) {
+    let xs;
+    // For panels containing only time_series curves, x_range may be omitted.
+    if (panel.x_range) {
+      xs = linspace(panel.x_range[0], panel.x_range[1], panel.n_points || 200);
+    } else {
+      xs = [];
+    }
+
+    const curveData = panel.curves.map(c => buildCurveData(c, xs, params, paramNames));
+
+    const traces = panel.curves.map((c, i) => ({
+      x: curveData[i].x, y: curveData[i].y,
+      name: c.name, mode: c.mode || 'lines',
+      line: { color: c.color, width: c.width || 1.6, dash: c.dash || 'solid' },
+      marker: { size: c.marker_size || 5, color: c.color, line: { color: 'white', width: 1 } }
+    }));
+
+    const shapes = [];
+    const annotations = [];
+    const readoutParts = [];
+
+    for (const m of (panel.markers || [])) {
+      let pt = null;
+      let line = null;
+
+      if (m.type === 'intersection') {
+        pt = findIntersection(curveData[m.curves[0]].x, curveData[m.curves[0]].y, curveData[m.curves[1]].y);
+      } else if (m.type === 'maximum' || m.type === 'minimum') {
+        const kind = m.type === 'maximum' ? 'max' : 'min';
+        pt = findExtremum(curveData[m.curve].x, curveData[m.curve].y, kind);
+      } else if (m.type === 'vertical_line') {
+        const x = compileScalarExpr(m.at, paramNames)(params);
+        line = { type: 'line', x0: x, x1: x, yref: 'paper', y0: 0, y1: 1,
+                 line: { color: m.color || '#5a7378', dash: m.dash || 'dash', width: 1 } };
+        if (m.label) annotations.push({
+          x: x, y: 0, xref: 'x', yref: 'paper', text: m.label,
+          showarrow: false, yshift: -18, font: { size: 11, color: '#111' }
+        });
+      } else if (m.type === 'horizontal_line') {
+        const y = compileScalarExpr(m.at, paramNames)(params);
+        line = { type: 'line', y0: y, y1: y, xref: 'paper', x0: 0, x1: 1,
+                 line: { color: m.color || '#5a7378', dash: m.dash || 'dash', width: 1 } };
+        if (m.label) annotations.push({
+          x: 1, y: y, xref: 'paper', yref: 'y', text: m.label,
+          showarrow: false, xshift: -8, yshift: -8, font: { size: 11, color: '#111' }
+        });
+      } else if (m.type === 'tangent_line') {
+        const x0 = compileScalarExpr(m.at, paramNames)(params);
+        const fn = compileExpr(panel.curves[m.curve].expr, paramNames);
+        const h = Math.max(0.001, Math.abs(x0) * 0.001);
+        const slope = (fn(x0 + h, params) - fn(x0 - h, params)) / (2 * h);
+        const y0v = fn(x0, params);
+        const xMin = panel.x_range[0], xMax = panel.x_range[1];
+        traces.push({
+          x: [xMin, xMax],
+          y: [y0v + slope * (xMin - x0), y0v + slope * (xMax - x0)],
+          mode: 'lines', name: m.label || 'tangent',
+          line: { color: m.color || '#16a34a', dash: 'dot', width: 2 }, showlegend: !!m.label
+        });
+        pt = { x: x0, y: y0v };
+      } else if (m.type === 'asymptote') {
+        const fn = compileExpr(panel.curves[m.curve].expr, paramNames);
+        const yInf = fn(1e9, params);
+        line = { type: 'line', y0: yInf, y1: yInf, xref: 'paper', x0: 0, x1: 1,
+                 line: { color: m.color || '#94a3b8', dash: 'dot', width: 1 } };
+        if (m.label) annotations.push({
+          x: 0.98, y: yInf, xref: 'paper', yref: 'y', text: m.label,
+          showarrow: false, xanchor: 'right', yshift: -8, font: { size: 11, color: '#666' }
+        });
+      } else if (m.type === 'area') {
+        // Shaded region between curves[0] and curves[1]
+        const ys1 = curveData[m.curves[0]].y;
+        const ys2 = curveData[m.curves[1]].y;
+        traces.push({
+          x: [...curveData[m.curves[0]].x, ...curveData[m.curves[0]].x.slice().reverse()],
+          y: [...ys1, ...ys2.slice().reverse()],
+          fill: 'toself', fillcolor: m.color || 'rgba(37,99,235,0.15)',
+          line: { width: 0 }, name: m.label || 'area', hoverinfo: 'skip',
+          showlegend: !!m.label
+        });
+      } else if (m.type === 'label_point') {
+        const x = compileScalarExpr(m.x, paramNames)(params);
+        const y = compileScalarExpr(m.y, paramNames)(params);
+        pt = { x, y };
+      }
+
+      if (pt) {
+        traces.push({
+          x: [pt.x], y: [pt.y], mode: 'markers',
+          marker: { size: 8, color: m.color || '#003135', line: { color: 'white', width: 1.5 } },
+          name: m.label, showlegend: false,
+          hovertemplate: (m.label ? m.label + ' = ' : '') + '(%{x:.3f}, %{y:.3f})<extra></extra>'
+        });
+        if (m.guide === 'vertical') {
+          shapes.push({ type: 'line', x0: pt.x, x1: pt.x, y0: 0, y1: pt.y,
+                        line: { color: '#5a7378', dash: 'dash', width: 1 } });
+        } else if (m.guide === 'horizontal') {
+          shapes.push({ type: 'line', xref: 'paper', x0: 0, x1: 1, y0: pt.y, y1: pt.y,
+                        line: { color: '#5a7378', dash: 'dash', width: 1 } });
+        } else if (m.guide === 'both') {
+          shapes.push({ type: 'line', x0: pt.x, x1: pt.x, y0: 0, y1: pt.y,
+                        line: { color: '#5a7378', dash: 'dash', width: 1 } });
+          shapes.push({ type: 'line', xref: 'paper', x0: 0, x1: 1, y0: pt.y, y1: pt.y,
+                        line: { color: '#5a7378', dash: 'dash', width: 1 } });
+        }
+        if (m.label && m.guide === 'vertical') annotations.push({
+          x: pt.x, y: 0, xref: 'x', yref: 'y', text: m.label + ' = ' + pt.x.toFixed(2),
+          showarrow: false, yshift: -18, font: { size: 11, color: '#111' }
+        });
+        readoutParts.push(panel.id + ': ' + (m.label || '?') +
+                          ' = ' + pt.x.toFixed(3) + ', y = ' + pt.y.toFixed(3));
+      }
+      if (line) shapes.push(line);
+    }
+
+    const layout = {
+      font: { family: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+              color: '#003135', size: 12 },
+      xaxis: { title: { text: panel.x_label, font: { size: 12, color: '#5a7378' } },
+               gridcolor: '#e6eef0', zerolinecolor: '#d4e1e4', linecolor: '#d4e1e4',
+               tickfont: { color: '#5a7378', size: 11 } },
+      yaxis: { title: { text: panel.y_label, font: { size: 12, color: '#5a7378' } },
+               gridcolor: '#e6eef0', zerolinecolor: '#d4e1e4', linecolor: '#d4e1e4',
+               tickfont: { color: '#5a7378', size: 11 } },
+      shapes: shapes, annotations: annotations,
+      margin: { t: 28, r: 20, b: 50, l: 60 },
+      title: panel.title ? { text: panel.title, font: { size: 13, color: '#024950' } } : undefined,
+      legend: { x: 0.02, y: 0.98, bgcolor: 'rgba(255,255,255,0.9)',
+                bordercolor: '#d4e1e4', borderwidth: 1, font: { size: 11, color: '#003135' } },
+      plot_bgcolor: '#ffffff', paper_bgcolor: '#ffffff'
+    };
+
+    Plotly.react(panelHostId, traces, layout, { responsive: true, displayModeBar: false });
+    return readoutParts;
+  }
+
+  function renderFigure(spec, hostId) {
+    const root = document.getElementById(hostId);
+    if (!root) { console.warn('Figure host not found:', hostId); return; }
+    const paramNames = Object.keys(spec.params);
+    const defaults = JSON.parse(JSON.stringify(spec.params));
+    const params = JSON.parse(JSON.stringify(spec.params));
+
+    const panels = spec.panels || [{
+      id: 'main', x_range: spec.x_range, n_points: spec.n_points,
+      x_label: spec.x_label, y_label: spec.y_label,
+      curves: spec.curves, markers: spec.markers
+    }];
+
+    function renderAll() {
+      const readoutLines = [];
+      panels.forEach((p, i) => {
+        const lines = buildPanel(p, params, paramNames, hostId + '-panel-' + i);
+        readoutLines.push(...lines);
+      });
+      const readoutEl = root.querySelector('.mf-readout');
+      if (readoutEl) readoutEl.textContent = readoutLines.join('   |   ');
+    }
+
+    // Wire sliders
+    (spec.sliders || []).forEach(s => {
+      const sl = root.querySelector('[data-slider="' + s.param + '"]');
+      const vsp = root.querySelector('[data-value="' + s.param + '"]');
+      if (sl) sl.addEventListener('input', e => {
+        params[s.param] = parseFloat(e.target.value);
+        if (vsp) vsp.textContent = params[s.param].toFixed(s.decimals || 2);
+        renderAll();
+      });
+    });
+
+    // Reset button
+    const resetBtn = root.querySelector('.mf-reset');
+    if (resetBtn) resetBtn.addEventListener('click', () => {
+      Object.assign(params, JSON.parse(JSON.stringify(defaults)));
+      (spec.sliders || []).forEach(s => {
+        const sl = root.querySelector('[data-slider="' + s.param + '"]');
+        const vsp = root.querySelector('[data-value="' + s.param + '"]');
+        if (sl) sl.value = defaults[s.param];
+        if (vsp) vsp.textContent = defaults[s.param].toFixed(s.decimals || 2);
+      });
+      renderAll();
+    });
+
+    renderAll();
+  }
+
+  return { renderFigure };
+})();
+</script>
+<style>
+:root{
+  --bg:#fdf6e3;
+  --card:#ffffff;
+  --border:#e6dcc4;
+  --text:#003135;
+  --muted:#5a7378;
+  --accent:#024950;
+  --accent-2:#0FA4AF;
+  --accent-bg:rgba(15,164,175,0.10);
+  --key:#964734;
+  --key-bg:rgba(150,71,52,0.08);
+  --box-fill:#003135;
+  --box-text:#e6f4f5;
+  --box-line:#0FA4AF;
+  --col-w:760px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background-color:var(--bg)}
+body{
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  color:var(--text);
+  line-height:1.7;
+  font-weight:400;
+  font-feature-settings:"cv11","ss01","ss03";
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.45  0 0 0 0 0.35  0 0 0 0 0.20  0 0 0 0.06 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  background-repeat:repeat;
+  background-attachment:fixed;
+}
+.container{
+  max-width:var(--col-w);
+  margin:0 auto;
+  padding:4rem 1.5rem 5rem;
+}
+h1{
+  font-size:2.5rem;
+  font-weight:300;
+  letter-spacing:-0.03em;
+  line-height:1.15;
+  margin-bottom:.6rem;
+  color:var(--text);
+}
+.meta{
+  color:var(--muted);
+  font-size:.85rem;
+  font-weight:400;
+  letter-spacing:.01em;
+  margin-bottom:2rem;
+  padding-bottom:1.25rem;
+  border-bottom:1px solid var(--border);
+}
+.progress{
+  display:flex;align-items:center;gap:.9rem;
+  margin-bottom:2.5rem;
+  font-size:.78rem;color:var(--muted);
+  position:sticky;top:0;
+  background:var(--bg);
+  padding:.85rem 0;
+  z-index:10;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+  border-bottom:1px solid var(--border);
+}
+.progress-bar{flex:1;height:1px;background:var(--border);overflow:hidden}
+.progress-fill{height:100%;background:var(--accent-2);transition:width .3s ease}
+.score-display{font-weight:500;color:var(--accent);font-variant-numeric:tabular-nums}
+
+/* ── Chain (scenario) block ──────────────────────────────────────────── */
+.chain-block{
+  position:relative;
+  margin:2.5rem 0;
+  padding:1.5rem 1.5rem 1rem;
+  outline:1px solid var(--accent);
+  outline-offset:6px;
+}
+.chain-label{
+  position:absolute;top:-9px;right:14px;
+  background:var(--bg);
+  padding:0 .5rem;
+  font-size:.65rem;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:var(--accent);
+  font-weight:600;
+}
+.chain-setup{
+  font-size:.95rem;
+  color:var(--text);
+  padding:0 0 1.1rem;
+  margin-bottom:1.25rem;
+  border-bottom:1px dashed var(--border);
+  line-height:1.65;
+}
+.chain-setup strong{color:var(--accent);font-weight:600}
+.chain-block .question-card{margin-bottom:1rem}
+.chain-block .question-card:last-child{margin-bottom:0}
+
+/* ── Question card ───────────────────────────────────────────────────── */
+.question-card{
+  background:var(--card);
+  border:1px solid var(--border);
+  padding:1.6rem 1.75rem;
+  margin-bottom:1.5rem;
+  transition:border-color .25s;
+}
+.question-card.answered-correct{border-color:var(--accent-2)}
+.question-card.answered-wrong{border-color:var(--key)}
+.question-header{
+  display:flex;justify-content:space-between;align-items:center;
+  margin-bottom:1.1rem;
+  padding-bottom:.7rem;
+  border-bottom:1px solid var(--border);
+}
+.question-number{
+  font-size:.75rem;font-weight:600;
+  color:var(--accent);
+  letter-spacing:.08em;
+}
+.question-style{
+  font-size:.65rem;
+  color:var(--muted);
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  font-weight:500;
+}
+.question-stem{
+  font-size:1rem;
+  margin-bottom:1.2rem;
+  line-height:1.7;
+}
+.question-stem p{margin-bottom:.7rem}
+.question-stem p:last-child{margin-bottom:0}
+
+/* ── Derivation step list (inside stem) ──────────────────────────────── */
+.derivation-block{
+  margin:1rem 0 1.2rem;
+  padding:1rem 1.2rem;
+  background:rgba(255,255,255,0.5);
+  border:1px solid var(--border);
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+  font-size:.9rem;
+}
+.derivation-step{
+  display:flex;
+  align-items:baseline;
+  gap:.9rem;
+  padding:.35rem 0;
+  line-height:1.5;
+}
+.derivation-step .step-num{
+  color:var(--muted);
+  font-size:.7rem;
+  min-width:1.6rem;
+  font-weight:500;
+}
+.derivation-step.highlight{
+  background:var(--accent-bg);
+  margin:.2rem -.8rem;
+  padding:.45rem .8rem;
+  border-left:2px solid var(--accent-2);
+}
+.derivation-step.highlight .step-num{color:var(--accent-2);font-weight:600}
+.derivation-step .step-body{flex:1;color:var(--text)}
+.derivation-step.missing .step-body{
+  color:var(--accent-2);
+  font-style:italic;
+  font-family:'Inter',sans-serif;
+}
+
+/* ── Embedded figure inside question stem ────────────────────────────── */
+.question-card .mf-figure{margin:1rem 0 1.2rem;border-color:var(--border)}
+
+/* ── Choices ─────────────────────────────────────────────────────────── */
+.choices{display:flex;flex-direction:column;gap:.45rem}
+.choice{
+  display:flex;align-items:flex-start;gap:.85rem;
+  padding:.75rem 1rem;
+  border:1px solid var(--border);
+  background:var(--card);
+  cursor:pointer;
+  transition:background .15s, border-color .15s;
+  font-size:.95rem;
+  line-height:1.55;
+}
+.choice:hover:not(.disabled){background:var(--accent-bg);border-color:var(--accent-2)}
+.choice.disabled{cursor:default}
+.choice.selected{background:var(--accent-bg);border-color:var(--accent-2)}
+.choice.correct-reveal{
+  background:var(--accent-bg);
+  border-color:var(--accent-2);
+}
+.choice.wrong-reveal{
+  background:var(--key-bg);
+  border-color:var(--key);
+}
+.choice.missed-reveal{
+  /* multi-select: correct option the user failed to tick */
+  background:transparent;
+  border-color:var(--accent-2);
+  border-style:dashed;
+}
+
+/* Single-MCQ: circular letter chip */
+.choice-letter{
+  min-width:1.7rem;height:1.7rem;
+  display:flex;align-items:center;justify-content:center;
+  background:transparent;
+  border:1px solid var(--border);
+  border-radius:50%;
+  font-weight:500;font-size:.78rem;
+  color:var(--muted);
+  flex-shrink:0;margin-top:.05rem;
+  transition:all .15s;
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+}
+.choice:hover:not(.disabled) .choice-letter{border-color:var(--accent-2);color:var(--accent-2)}
+.choice.correct-reveal .choice-letter{background:var(--accent-2);color:#fff;border-color:var(--accent-2)}
+.choice.wrong-reveal .choice-letter{background:var(--key);color:#fff;border-color:var(--key)}
+.choice.missed-reveal .choice-letter{background:transparent;color:var(--accent-2);border-color:var(--accent-2)}
+
+/* Multi-select: hollow square that fills cyan when ticked */
+.question-card.multi .choice-letter{
+  border-radius:0;
+  position:relative;
+}
+.question-card.multi .choice.selected .choice-letter{
+  background:var(--accent-2);
+  color:#fff;
+  border-color:var(--accent-2);
+}
+.question-card.multi .choice.selected .choice-letter::after{
+  content:'';
+  position:absolute;
+  left:5px;top:3px;
+  width:5px;height:9px;
+  border:solid #fff;
+  border-width:0 1.5px 1.5px 0;
+  transform:rotate(45deg);
+}
+.question-card.multi .choice.selected .choice-letter > span{visibility:hidden}
+
+/* Numeric: monospace choice text */
+.question-card.mono-choices .choice-body{
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+  font-size:.95rem;
+  color:var(--text);
+}
+
+.choice-body{flex:1}
+
+/* Per-choice defense (revealed after submit) — small muted text under choice */
+.choice-defense{
+  display:none;
+  font-size:.78rem;
+  color:var(--muted);
+  font-style:italic;
+  margin-top:.35rem;
+  line-height:1.5;
+}
+.choice.disabled .choice-defense{display:block}
+.choice.correct-reveal .choice-defense{color:var(--accent)}
+.choice.wrong-reveal .choice-defense{color:var(--key)}
+
+/* Multi-select submit button */
+.submit-row{
+  margin-top:1rem;
+  display:flex;
+  align-items:center;
+  gap:1rem;
+  font-size:.75rem;
+  color:var(--muted);
+  letter-spacing:.04em;
+}
+.submit-btn{
+  background:transparent;
+  color:var(--accent);
+  border:1px solid var(--accent);
+  padding:.45rem 1.1rem;
+  font-size:.78rem;
+  font-family:inherit;
+  font-weight:500;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+  cursor:pointer;
+  transition:background .15s, color .15s;
+}
+.submit-btn:hover:not(:disabled){background:var(--accent);color:#fff}
+.submit-btn:disabled{opacity:.4;cursor:not-allowed}
+
+/* ── Explanation: HUD callout, same as lecture .example ──────────────── */
+.explanation{
+  display:none;
+  position:relative;
+  background:var(--box-fill);
+  color:var(--box-text);
+  padding:1.25rem 1.5rem;
+  margin:1.4rem 0 .25rem;
+  outline:1px solid var(--box-line);
+  outline-offset:4px;
+  font-size:.92rem;
+  line-height:1.65;
+}
+.explanation.visible{display:block}
+.explanation p{margin-bottom:.6rem}
+.explanation p:last-child{margin-bottom:0}
+.explanation strong{color:var(--box-line);font-weight:600;letter-spacing:.02em}
+.explanation .katex{color:var(--box-text)}
+.explanation code{background:rgba(255,255,255,0.08);color:var(--box-line);padding:.1rem .35rem;border-radius:2px;font-family:'JetBrains Mono',monospace;font-size:.85em}
+.explanation .connection{
+  margin-top:.9rem;
+  padding-top:.8rem;
+  border-top:1px solid rgba(15,164,175,0.3);
+  font-size:.85rem;
+  color:rgba(230,244,245,0.85);
+}
+.explanation .connection strong{color:#e8826a}
+
+/* HUD tracer extending leftward into gutter — mirrored from .example */
+.explanation::before{
+  content:'';
+  position:absolute;
+  width:74px;
+  height:60px;
+  pointer-events:none;
+  background-color:var(--box-line);
+  bottom:14px;left:-82px;
+  -webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;
+  -webkit-mask-position:center;mask-position:center;
+  -webkit-mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 74 60'><line x1='26' y1='9' x2='74' y2='9' stroke='black' stroke-width='3'/><line x1='52' y1='28' x2='74' y2='28' stroke='black' stroke-width='3'/><line x1='40' y1='47' x2='74' y2='47' stroke='black' stroke-width='3'/><rect x='8' y='4' width='10' height='10' fill='none' stroke='black' stroke-width='1.6'/></svg>");
+          mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 74 60'><line x1='26' y1='9' x2='74' y2='9' stroke='black' stroke-width='3'/><line x1='52' y1='28' x2='74' y2='28' stroke='black' stroke-width='3'/><line x1='40' y1='47' x2='74' y2='47' stroke='black' stroke-width='3'/><rect x='8' y='4' width='10' height='10' fill='none' stroke='black' stroke-width='1.6'/></svg>");
+}
+@media(max-width:1100px){.explanation::before{display:none}}
+
+/* ── Summary ─────────────────────────────────────────────────────────── */
+.summary{
+  background:var(--card);
+  border:1px solid var(--border);
+  padding:2.25rem;
+  margin-top:2.5rem;
+  display:none;
+}
+.summary h2{
+  font-size:1.55rem;font-weight:400;
+  letter-spacing:-0.02em;
+  color:var(--accent);
+  margin-bottom:.4rem;
+  text-align:center;
+}
+.summary .score-big{
+  font-size:3.5rem;font-weight:300;
+  color:var(--accent);
+  margin:.5rem 0;text-align:center;
+  letter-spacing:-0.03em;
+  font-variant-numeric:tabular-nums;
+}
+.summary .score-label{
+  color:var(--muted);font-size:.85rem;
+  text-align:center;margin-bottom:1.75rem;
+  letter-spacing:.02em;
+}
+.results-table{
+  width:100%;border-collapse:collapse;
+  margin:1.25rem 0;font-size:.85rem;
+}
+.results-table th,.results-table td{
+  padding:.55rem .75rem;
+  border-bottom:1px solid var(--border);
+  text-align:left;
+}
+.results-table th{
+  background:var(--accent-bg);
+  font-weight:600;color:var(--accent);
+  font-size:.7rem;text-transform:uppercase;
+  letter-spacing:.06em;
+}
+.results-table .row-correct td:last-child{color:var(--accent-2);font-weight:600}
+.results-table .row-wrong td:last-child{color:var(--key);font-weight:600}
+.json-section{margin-top:1.5rem}
+.json-section label{
+  display:block;font-weight:500;font-size:.7rem;
+  margin-bottom:.4rem;color:var(--muted);
+  letter-spacing:.08em;text-transform:uppercase;
+}
+.json-box{
+  width:100%;min-height:80px;
+  padding:.8rem;
+  border:1px solid var(--border);
+  background:rgba(255,255,255,0.5);
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+  font-size:.78rem;
+  color:var(--text);
+  resize:vertical;
+  line-height:1.5;
+}
+.btn-row{
+  display:flex;gap:.75rem;justify-content:center;
+  margin-top:1rem;flex-wrap:wrap;
+}
+.btn{
+  display:inline-block;
+  padding:.55rem 1.25rem;
+  background:var(--accent);
+  color:#fff;
+  border:none;
+  font-size:.78rem;
+  font-family:inherit;
+  font-weight:500;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  cursor:pointer;
+  transition:background .15s;
+}
+.btn:hover{background:var(--accent-2)}
+.btn-secondary{
+  background:transparent;
+  color:var(--accent);
+  border:1px solid var(--accent);
+}
+.btn-secondary:hover{background:var(--accent);color:#fff}
+.copy-toast{
+  position:fixed;bottom:2rem;left:50%;
+  transform:translateX(-50%);
+  background:var(--box-fill);color:var(--box-text);
+  padding:.6rem 1.25rem;
+  font-size:.85rem;
+  display:none;z-index:100;
+  outline:1px solid var(--box-line);outline-offset:3px;
+}
+
+.mf-figure { margin: 1.75rem 0; padding: 1.25rem; background: #ffffff;
+             border: 1px solid #b8dcd9; border-radius: 0; }
+.mf-figure h4 { margin: 0 0 0.8rem 0; font-size: 1rem; font-weight: 600;
+                color: #024950; letter-spacing: -0.01em; }
+.mf-panels { display: grid; gap: 1rem; }
+.mf-panels.cols-2 { grid-template-columns: 1fr 1fr; }
+@media (max-width: 720px) { .mf-panels.cols-2 { grid-template-columns: 1fr; } }
+.mf-panel { min-height: 380px; }
+.mf-sliders { display: grid; gap: 0.35rem; margin-top: 1.25rem; padding: 0;
+              background: transparent; border: none; }
+.mf-slider-row { display: grid; grid-template-columns: 160px 1fr 70px;
+                 align-items: center; gap: 0.9rem; }
+.mf-slider-row label { font-size: 0.76rem; color: #5a7378; font-weight: 400;
+                       letter-spacing: 0.01em; }
+.mf-slider-row input[type=range] {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 16px; background: transparent; margin: 0; padding: 0;
+  cursor: pointer;
+}
+.mf-slider-row input[type=range]::-webkit-slider-runnable-track {
+  height: 1px; background: #b8dcd9; border: none;
+}
+.mf-slider-row input[type=range]::-moz-range-track {
+  height: 1px; background: #b8dcd9; border: none;
+}
+.mf-slider-row input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  height: 9px; width: 9px; border-radius: 50%;
+  background: #0FA4AF; border: none; margin-top: -4px;
+  cursor: pointer; transition: transform .12s, background .12s;
+}
+.mf-slider-row input[type=range]::-moz-range-thumb {
+  height: 9px; width: 9px; border-radius: 50%;
+  background: #0FA4AF; border: none;
+  cursor: pointer; transition: transform .12s, background .12s;
+}
+.mf-slider-row input[type=range]:hover::-webkit-slider-thumb {
+  background: #024950; transform: scale(1.25);
+}
+.mf-slider-row input[type=range]:hover::-moz-range-thumb {
+  background: #024950; transform: scale(1.25);
+}
+.mf-slider-row .mf-value { font-family: 'JetBrains Mono', ui-monospace, monospace;
+                           text-align: right; color: #024950; font-weight: 400;
+                           font-size: 0.76rem; }
+.mf-slider-row .mf-value::before { content: ''; }
+.mf-reset { background: transparent; border: none;
+            padding: 0.35rem 0; margin-top: 0.4rem; cursor: pointer; font-size: 0.72rem;
+            color: #5a7378; justify-self: start; letter-spacing: 0.05em;
+            text-transform: uppercase; font-family: inherit;
+            border-bottom: 1px solid transparent; transition: color .15s, border-color .15s; }
+.mf-reset:hover { color: #024950; border-bottom-color: #0FA4AF; }
+.mf-readout { font-family: 'JetBrains Mono', ui-monospace, monospace;
+              font-size: 0.74rem; color: #964734; font-weight: 400;
+              margin-top: 0.6rem; padding: 0.4rem 0;
+              border-top: 1px dashed #b8dcd9; min-height: 1rem;
+              letter-spacing: 0.01em; }
+.mf-caption { font-size: 0.84rem; color: #5a7378; line-height: 1.6;
+              margin-top: 1rem; padding: 0.75rem 0 0;
+              border-top: 1px solid #b8dcd9; }
+.mf-caption strong { color: #024950; font-weight: 600; letter-spacing: 0.01em; }
+
+@media(max-width:600px){
+  .container{padding:2rem 1rem 3rem}
+  .question-card{padding:1.25rem}
+  h1{font-size:1.8rem}
+}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Quiz: Module 1 — Stylized Facts and the Basic Solow Model</h1>
+<div class="meta">Macro III — Module 1 — 2026-05-26 — 20 questions, mixed types</div>
+<div class="progress">
+<span id="prog-text">0 / 20</span>
+<div class="progress-bar"><div class="progress-fill" id="prog-fill" style="width:0%"></div></div>
+<span class="score-display" id="score-text"></span>
+</div>
+<div class="question-card" id="q-1" data-correct="B" data-topic="Convergence (absolute vs conditional)" data-done="0"><div class="question-header"><span class="question-number">Q1</span><span class="question-style">Boundary</span></div><div class="question-stem"><p>For a representative sample of 65 countries, the regression $\frac{\ln y_T - \ln y_0}{T} = \beta_0 - \beta_1 \ln y_0$ yields an estimate $\hat\beta_1$ that is statistically insignificant. The most defensible interpretation is:</p></div><div class="choices"><div class="choice" onclick="pick(1,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">Absolute convergence holds, but conditional convergence is rejected for this sample.<div class="choice-defense">Inverts the two notions — the slide rejects absolute convergence; conditional convergence is the patch that follows.</div></div></div><div class="choice" onclick="pick(1,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">Absolute convergence is rejected, though conditional convergence may still hold with structural controls.<div class="choice-defense">Matches stylized fact 4: zero unconditional slope, but a negative slope appears once $s$ and $n$ are controlled for.</div></div></div><div class="choice" onclick="pick(1,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">The Solow model's growth predictions are falsified by this estimate.<div class="choice-defense">Treats one specification as a verdict on a multi-prediction model. Solow has many empirical implications; this is one.</div></div></div><div class="choice" onclick="pick(1,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">The estimate implies that initial income has no causal role in future growth.<div class="choice-defense">Confuses 'no unconditional correlation' with 'no conditional effect'; ignores omitted-variable structure.</div></div></div></div><div class="explanation"><p>The 65-country regression rejects <strong>absolute</strong> convergence (no unconditional negative slope). The lecture then introduces <strong>conditional</strong> convergence by adding $[\ln s - \ln(n+0.075)]$ as a structural control, and a negative coefficient on $\ln y_0$ does appear. (A) and (D) misread the result; (C) over-reads a single regression.</p></div></div>
+<div class="question-card" id="q-2" data-correct="C" data-topic="Cobb-Douglas income shares" data-done="0"><div class="question-header"><span class="question-number">Q2</span><span class="question-style">What it measures</span></div><div class="question-stem"><p>Under Cobb-Douglas production with profit-maximizing firms in competitive factor markets, the labour income share $\dfrac{w_t L_t}{Y_t}$ is mathematically equal to which object?</p></div><div class="choices"><div class="choice" onclick="pick(2,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">The marginal product of labour, $\partial Y/\partial L$.<div class="choice-defense">Confuses the (dimensionless) share with the marginal product itself, which has units of output per worker.</div></div></div><div class="choice" onclick="pick(2,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">The labour-augmenting productivity term in the production function.<div class="choice-defense">Confuses the elasticity (a Cobb-Douglas exponent) with the level term $B_t$ (TFP).</div></div></div><div class="choice" onclick="pick(2,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">The output elasticity of labour, $(\partial Y/\partial L)(L/Y)$.<div class="choice-defense">Recognises the income-share = elasticity result: under CRS + competition, factor share equals output elasticity (Euler decomposition).</div></div></div><div class="choice" onclick="pick(2,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">The ratio of the real wage to the marginal product of capital.<div class="choice-defense">Builds a plausible-looking ratio that does not correspond to any equilibrium object in the model.</div></div></div></div><div class="explanation"><p>Combine $w_t = F'_L$ (FOC) with the share definition: $w_t L_t / Y_t = F'_L \cdot L / F = $ output elasticity of $L$. For Cobb-Douglas $Y = BK^\alpha L^{1-\alpha}$, this equals the constant $1-\alpha$. The 'big lesson' of Lecture 1b's income-distribution slide is this elasticity-share identity, not just the numerical value $\approx 2/3$.</p></div></div>
+<div class="question-card" id="q-3" data-correct="D" data-topic="Convergence (sample selection)" data-done="0"><div class="question-header"><span class="question-number">Q3</span><span class="question-style">Deep-short</span></div><div class="question-stem"><p>Across 24 rich OECD countries the regression yields $\hat\beta_1 > 0$ that is significantly positive. Re-running the same specification on a broader 65-country sample gives $\hat\beta_1 \approx 0$. The lecture's preferred reading of this discrepancy is:</p></div><div class="choices"><div class="choice" onclick="pick(3,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">Initial income predicts growth in rich countries but reverses sign in poor ones.<div class="choice-defense">Treats the OECD result as a real reversal rather than a selected subsample of a single distribution.</div></div></div><div class="choice" onclick="pick(3,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">Conditional convergence is rejected by the broader sample.<div class="choice-defense">Confuses absolute convergence (tested here) with conditional convergence (which adds structural controls).</div></div></div><div class="choice" onclick="pick(3,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">The 65-country regression has a higher $R^2$, so it is more reliable.<div class="choice-defense">Invents a fact about $R^2$ that is not given; even if true, it would not adjudicate the conceptual difference between the two specifications.</div></div></div><div class="choice" onclick="pick(3,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">The OECD result reflects sample selection — restricting attention to already-converged countries.<div class="choice-defense">Catches the sample-selection point made explicitly on the OECD slide: the OECD members were all relatively rich in 2003.</div></div></div></div><div class="explanation"><p>The OECD finding is an artefact of conditioning on the outcome (membership in a club of already-prosperous economies). When the sample is broadened to include poor countries, the negative slope vanishes — absolute convergence does not hold globally. Stylized fact 4 then re-introduces convergence in <em>conditional</em> form, by adding the structural term $[\ln s - \ln(n + 0.075)]$.</p></div></div>
+<div class="question-card" id="q-4" data-correct="A" data-topic="Closed → small-open Solow" data-done="0"><div class="question-header"><span class="question-number">Q4</span><span class="question-style">Cross-topic</span></div><div class="question-stem"><p>The basic (closed-economy) Solow model implies $r^* = \alpha(n+\delta)/s$ — countries with higher savings have <em>lower</em> steady-state interest rates. In the small-open-economy extension of Module 2, this $s \to r$ link is severed. Which mechanism is responsible?</p></div><div class="choices"><div class="choice" onclick="pick(4,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">The world interest rate $r^w$ exogenously pins down $k$, severing the $s \to r$ link.<div class="choice-defense">Identifies the binding constraint of the small-open extension: $F_K(k) = r^w + \delta$ instantly fixes $k$, so $s$ no longer drives it.</div></div></div><div class="choice" onclick="pick(4,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">The depreciation rate $\delta$ becomes endogenous when the economy opens to trade.<div class="choice-defense">Picks 'something becomes endogenous' without identifying which — depreciation is exogenous in both models.</div></div></div><div class="choice" onclick="pick(4,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">Cobb-Douglas no longer applies because aggregating traded goods changes the form.<div class="choice-defense">Misattributes the change to functional form — Cobb-Douglas survives the open-economy extension intact.</div></div></div><div class="choice" onclick="pick(4,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">Households become forward-looking, making $s$ endogenous to the world interest rate.<div class="choice-defense">Imports a Ramsey/optimization framing — a different model. In small-open Solow, $s$ stays exogenous.</div></div></div></div><div class="explanation"><p>Open small-Solow lets capital flow at the world rate $r^w$. The FOC $F_K(k) = r^w + \delta$ pins $k$ in one period, regardless of domestic savings. What $s$ now controls is the path of the <em>net foreign asset position</em> $v - k$, not domestic $k$. This is the 'two-speed dynamics' result: $k$ jumps, $v$ crawls.</p><div class="connection"><strong>Connection:</strong> Closed Solow: $s$ pins $k^* = (Bs/(n+\delta))^{1/(1-\alpha)}$, which determines $r^*$. Open Solow: $r=r^w$ is given, so $k$ is pinned by the FOC instead; saving instead determines whether foreign assets accumulate. The two models share the same factor-price FOCs but differ in which variable adjusts to clear the capital market.</div></div></div>
+<div class="question-card" id="q-5" data-correct="C" data-topic="Balanced growth" data-done="0"><div class="question-header"><span class="question-number">Q5</span><span class="question-style">Boundary</span></div><div class="question-stem"><p>The textbook defines balanced growth as a process in which (i) $y, c, w, k$ grow at a common rate $g$, (ii) $L$ grows at $n$, (iii) $Y, C, K$ grow at $g+n$, and (iv) $K/Y$ and $r$ are constant. Which of the following is <strong>NOT</strong> implied by balanced growth as stated?</p></div><div class="choices"><div class="choice" onclick="pick(5,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">The labour income share $wL/Y$ is constant along the growth path.<div class="choice-defense">Implied: $w$ grows at $g$ and $y$ grows at $g$, so $w/y$ — hence $wL/Y$ — is constant.</div></div></div><div class="choice" onclick="pick(5,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">The rate of return on capital $r$ shows no long-run trend.<div class="choice-defense">Stated directly in (iv).</div></div></div><div class="choice" onclick="pick(5,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">The personal-income Gini coefficient remains constant along the path.<div class="choice-defense">Confuses an aggregate growth concept (balanced growth) with a personal-distribution measure. Balanced growth says nothing about within-country inequality.</div></div></div><div class="choice" onclick="pick(5,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">The growth rate of GDP per worker stays constant at $g$.<div class="choice-defense">Implied — (i) says $y$ grows at the constant rate $g$.</div></div></div></div><div class="explanation"><p>Balanced growth describes <em>aggregate</em> regularities (factor shares, capital intensity, rate of return). The Gini coefficient summarises the personal income distribution; nothing in (i)–(iv) constrains it. Empirically Gini varies across countries and over time even when balanced growth holds. (A), (B), (D) all follow mechanically from the definition.</p></div></div>
+<div class="question-card" id="q-6" data-correct="A" data-topic="Steady-state interest rate" data-done="0"><div class="question-header"><span class="question-number">Q6</span><span class="question-style">What it measures</span></div><div class="question-stem"><p>In the basic Solow steady state, $r^* = \alpha(n+\delta)/s$. The parameter $\alpha$ that appears in this expression represents which object?</p></div><div class="choices"><div class="choice" onclick="pick(6,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">The output elasticity of capital, also equal to capital's income share.<div class="choice-defense">Recognises the dual role of $\alpha$ in Cobb-Douglas: the exponent on $K$ is both the elasticity and (with profit maximization) the income share.</div></div></div><div class="choice" onclick="pick(6,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">An aggregate of the depreciation rate and population growth.<div class="choice-defense">Reads $\alpha$ as the $(n+\delta)$ factor that also appears in the formula — wrong slot.</div></div></div><div class="choice" onclick="pick(6,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">The empirical value of the steady-state interest rate itself.<div class="choice-defense">Confuses a parameter ($\alpha$) with the quantity being computed ($r^*$).</div></div></div><div class="choice" onclick="pick(6,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">The discount rate households apply to future consumption.<div class="choice-defense">Imports a Ramsey/preference parameter that does not exist in the basic Solow specification.</div></div></div></div><div class="explanation"><p>In Cobb-Douglas $Y = BK^\alpha L^{1-\alpha}$, the exponent $\alpha$ is the output elasticity of capital. Under CRS and competition (Euler + FOC), it is also capital's income share. Both roles enter the $r^*$ formula: $r_t = F'_K = \alpha B (K/L)^{\alpha-1}$, so at steady state $r^* = \alpha (n+\delta)/s$ after substituting $k^*$.</p></div></div>
+<div class="question-card" id="q-7" data-correct="B" data-topic="Per-worker capital accumulation" data-done="0"><div class="question-header"><span class="question-number">Q7</span><span class="question-style">Derivation · justify step</span></div><div class="question-stem"><p>The derivation below reduces the aggregate capital-accumulation equation to its per-worker form. Which assumption or identity justifies the move shown in line (3)?</p><div class="derivation-block"><div class="derivation-step"><span class="step-num">(1)</span><span class="step-body">K_{t+1} - K_t = sY_t - \delta K_t</span></div><div class="derivation-step"><span class="step-num">(2)</span><span class="step-body">K_{t+1} = sY_t + (1-\delta)K_t</span></div><div class="derivation-step highlight"><span class="step-num">(3)</span><span class="step-body">k_{t+1}(1+n)L_t = sY_t + (1-\delta)K_t</span></div><div class="derivation-step"><span class="step-num">(4)</span><span class="step-body">k_{t+1} = \frac{1}{1+n}\bigl(s\, y_t + (1-\delta) k_t\bigr)</span></div></div></div><div class="choices"><div class="choice" onclick="pick(7,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">The Cobb-Douglas form of the aggregate production function $Y_t$.<div class="choice-defense">Cobb-Douglas enters only at line 4 (when $Y_t/L_t$ becomes $Bk_t^\alpha$); line 3 is structural.</div></div></div><div class="choice" onclick="pick(7,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">The labour-force law $L_{t+1}=(1+n)L_t$, applied to the left-hand side.<div class="choice-defense">Line 3 substitutes $K_{t+1} = k_{t+1} L_{t+1} = k_{t+1}(1+n)L_t$. That's exactly the labour-force law combined with the definition $k \equiv K/L$.</div></div></div><div class="choice" onclick="pick(7,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">The profit-maximization first-order condition $F'_K(K_t,L_t) = r_t$.<div class="choice-defense">FOCs determine factor prices, not the law of motion.</div></div></div><div class="choice" onclick="pick(7,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">The household savings rule $S_t = s Y_t$ applied at time $t$.<div class="choice-defense">The savings rule already entered at line 1 via the $sY_t$ term; line 3 introduces a different substitution.</div></div></div></div><div class="explanation"><p>Going from line 2 to line 3, the left side $K_{t+1}$ is rewritten as $k_{t+1} L_{t+1}$ (definition of $k$) and then $L_{t+1}$ is replaced by $(1+n)L_t$ (the labour-force law). Dividing through by $L_t$ at line 4 finally yields the per-worker equation. The Cobb-Douglas form is needed only in line 4 to write $y_t = Bk_t^\alpha$ explicitly.</p></div></div>
+<div class="question-card" id="q-8" data-correct="D" data-topic="Solow diagram (steady state)" data-done="0"><div class="question-header"><span class="question-number">Q8</span><span class="question-style">Graph</span></div><div class="question-stem"><p>The Solow diagram below plots gross savings per worker $sBk^\alpha$ (cyan) against replacement investment $(n+\delta)k$ (rust). Four points are labelled. Which point is the steady state?</p><div class="mf-figure" id="fig-q8"><div class="mf-panels "><div id="fig-q8-panel-0" class="mf-panel"></div></div><div class="mf-readout"></div><script>(function(){var spec={"id": "fig-q8", "params": {"s": 0.3, "alpha": 0.3, "n": 0.02, "delta": 0.05, "B": 1}, "x_range": [0, 25], "n_points": 240, "x_label": "k (capital per worker)", "y_label": "", "curves": [{"name": "s\u00b7B\u00b7k^\u03b1", "expr": "s * B * Math.pow(k, alpha)", "color": "#0FA4AF"}, {"name": "(n+\u03b4)\u00b7k", "expr": "(n + delta) * k", "color": "#964734"}], "markers": [{"type": "label_point", "x": "3", "y": "s * B * Math.pow(3, alpha)", "label": "A", "color": "#003135"}, {"type": "label_point", "x": "15", "y": "(n + delta) * 15", "label": "B", "color": "#003135"}, {"type": "label_point", "x": "15", "y": "s * B * Math.pow(15, alpha)", "label": "C", "color": "#003135"}, {"type": "intersection", "curves": [0, 1], "label": "D", "color": "#003135"}]};var hostId="fig-q8";function go(){if(!window.MacroFigures){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.MacroFigures not defined. Did FIGURE_JS load before this snippet?</div>");return;}if(!window.Plotly){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.Plotly not loaded.</div>");return;}try{window.MacroFigures.renderFigure(spec,hostId);}catch(e){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Render error: "+e.message+"</div>");}}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",go);}else{go();}})();</script></div></div><div class="choices"><div class="choice" onclick="pick(8,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">Point A, where the gross-savings curve lies above the replacement line.<div class="choice-defense">Confuses 'above the line' with 'at rest'. At A, $sBk^\alpha > (n+\delta)k$, so $\Delta k > 0$ — capital is still growing.</div></div></div><div class="choice" onclick="pick(8,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">Point B, where the replacement line lies above the savings curve at $k=15$.<div class="choice-defense">On the replacement line beyond $k^*$: capital is shrinking back, not at rest.</div></div></div><div class="choice" onclick="pick(8,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">Point C, where the savings curve lies below the replacement line at $k=15$.<div class="choice-defense">Past the steady state: $sBk^\alpha < (n+\delta)k$, so the system is converging back to $k^*$, not at rest.</div></div></div><div class="choice" onclick="pick(8,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">Point D, where the gross-savings curve crosses the replacement line.<div class="choice-defense">By definition $k^*$ satisfies $sB(k^*)^\alpha = (n+\delta)k^*$ — the two curves intersect.</div></div></div></div><div class="explanation"><p>The steady state is defined by $\Delta k_t = 0$, i.e., $sBk^{*\alpha} = (n+\delta)k^*$. Graphically this is precisely the (non-zero) intersection of the two curves — point D. Points A and C lie on the savings curve but away from the intersection; B sits on the replacement line beyond $k^*$. At any non-intersection point, $\Delta k \ne 0$ and the system is in motion.</p></div></div>
+<div class="question-card" id="q-9" data-correct="C" data-topic="Golden rule" data-done="0"><div class="question-header"><span class="question-number">Q9</span><span class="question-style">Boundary</span></div><div class="question-stem"><p>The golden-rule savings rate $s^{**}$ is defined as the value of $s$ that maximises steady-state consumption per worker $c^*$. In the basic Solow model this equals $s^{**} = \alpha$. Which of the following is <strong>NOT</strong> a property of $s^{**}$?</p></div><div class="choices"><div class="choice" onclick="pick(9,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">At $s = s^{**}$, the marginal product of capital equals $n + \delta$.<div class="choice-defense">Standard FOC of the golden rule: $\partial c^*/\partial s = 0$ gives $f'(k^*) = n+\delta$, equivalently $r^* = n+\delta$.</div></div></div><div class="choice" onclick="pick(9,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">For $s < s^{**}$, raising $s$ permanently raises steady-state consumption $c^*$.<div class="choice-defense">True — $c^*(s)$ is concave around $s^{**}$, so $s < s^{**}$ implies $\partial c^*/\partial s > 0$.</div></div></div><div class="choice" onclick="pick(9,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">The economy is dynamically efficient if and only if $s = s^{**}$.<div class="choice-defense">Wrong direction: $s = s^{**}$ maximises $c^*$, but dynamic efficiency holds for any $s \le s^{**}$. At $s < s^{**}$ the economy is still efficient — just consuming less than possible.</div></div></div><div class="choice" onclick="pick(9,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">At $s = s^{**}$, capital's income share coincides with the savings rate.<div class="choice-defense">True by construction: $s^{**} = \alpha$ = capital's share under Cobb-Douglas.</div></div></div></div><div class="explanation"><p>Dynamic efficiency means the economy is not over-accumulating (consumption couldn't be raised in every period by reducing $s$). This holds whenever $s \le s^{**}$, with strict inefficiency only for $s > s^{**}$. So 'iff' in (C) is too strong: $s = s^{**}$ is the consumption-maximising point, not the boundary between efficient and inefficient. (A), (B), (D) all follow directly from $s^{**} = \alpha$.</p></div></div>
+<div class="question-card" id="q-10" data-correct="A" data-topic="Crowding out" data-done="0"><div class="question-header"><span class="question-number">Q10</span><span class="question-style">Spot the flaw</span></div><div class="question-stem"><p>A student writes: <em>'Solow predicts that if government consumption permanently rises so that $s$ falls, then on impact GDP per worker $y_t$ drops immediately. In the long run, $y_t$ falls further to a new lower steady state. So a fiscal expansion is contractionary in both the short and the long run.'</em> What is wrong with this argument?</p></div><div class="choices"><div class="choice" onclick="pick(10,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">The long-run conclusion is correct; the short-run conclusion is wrong because $K_t, L_t$ are predetermined.<div class="choice-defense">Catches the timing: capital and labour are state variables, so $y_t = BK_t^\alpha/L_t^{1-\alpha}$ is fixed on impact. The decline happens gradually during transition.</div></div></div><div class="choice" onclick="pick(10,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">The short-run conclusion is correct; the long-run conclusion is wrong because households re-optimise $s$.<div class="choice-defense">Mistakes Solow for Ramsey. In basic Solow $s$ is a parameter — there is no re-optimisation.</div></div></div><div class="choice" onclick="pick(10,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">Both directions are right, but the student inverts the sign — a lower $s$ raises $y^*$.<div class="choice-defense">Sign error: $y^* \propto s^{\alpha/(1-\alpha)}$ rises with $s$, so a lower $s$ unambiguously lowers $y^*$.</div></div></div><div class="choice" onclick="pick(10,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">The argument is correctly stated and follows from the basic Solow model.<div class="choice-defense">Misses the predetermined-state-variables point that is the key teaching of the comparative-analysis slide in Lecture 1c.</div></div></div></div><div class="explanation"><p>$Y_t = BK_t^\alpha L_t^{1-\alpha}$ depends only on state variables in period $t$. A change in $s$ does <em>not</em> shift $K_t$ or $L_t$ at the moment of impact — only savings (and hence $K_{t+1}$) drops. So $y_t$ is unchanged on impact; the lecture calls this 'full crowding out on impact'. During the transition $y_t$ falls toward the lower steady state. Lecture 1c labels the full-transition effect 'more than full crowding out'.</p></div></div>
+<div class="chain-block"><span class="chain-label">Scenario</span><div class="chain-setup"><p><strong>Scenario.</strong> An economy is initially in steady state with parameters $B = 1$, $\alpha = 1/3$, $n = 0.03$, $\delta = 0.05$, and savings rate $s = 0.08$. In period $1$, the savings rate permanently rises to $s' = 0.20$. All other parameters are unchanged. Questions 11–13 concern the new long-run equilibrium.</p></div><div class="question-card mono-choices" id="q-11" data-correct="C" data-topic="Steady-state $k^*$ comparative statics" data-done="0"><div class="question-header"><span class="question-number">Q11</span><span class="question-style">Numeric</span></div><div class="question-stem"><p>What is the new steady-state capital per worker $k^{*\prime}$ after the savings-rate increase? (Use the closed-form $k^* = (sB/(n+\delta))^{1/(1-\alpha)}$. Round to two decimals.)</p></div><div class="choices"><div class="choice" onclick="pick(11,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">1.58<div class="choice-defense">Uses the elasticity for $y^*$ — exponent $\alpha/(1-\alpha) = 1/2$ — instead of the exponent for $k^*$.</div></div></div><div class="choice" onclick="pick(11,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">2.50<div class="choice-defense">Identifies the ratio $s'/(n+\delta) = 0.20/0.08 = 2.5$ but forgets to raise it to the $1/(1-\alpha)$ power.</div></div></div><div class="choice" onclick="pick(11,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">3.95<div class="choice-defense">Correct: $(0.20/0.08)^{1/(1-1/3)} = 2.5^{3/2} \approx 3.95$.</div></div></div><div class="choice" onclick="pick(11,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">6.25<div class="choice-defense">Squares the ratio: $2.5^2 = 6.25$. Right idea (exponent > 1) but wrong exponent.</div></div></div></div><div class="explanation"><p>$k^{*\prime} = \left(\dfrac{s' B}{n+\delta}\right)^{1/(1-\alpha)} = \left(\dfrac{0.20 \cdot 1}{0.08}\right)^{3/2} = 2.5^{1.5} = 2.5 \cdot \sqrt{2.5} \approx 3.95$. The exponent $1/(1-\alpha)$ amplifies the savings-rate change: with $\alpha = 1/3$ it's $3/2 > 1$, so $k^*$ moves <em>more</em> than proportionally to $s$. Old $k^* = 1$, so capital per worker nearly quadruples.</p></div></div><div class="question-card" id="q-12" data-correct="B" data-topic="Comparative statics of $w^*$" data-done="0"><div class="question-header"><span class="question-number">Q12</span><span class="question-style">Deep-short</span></div><div class="question-stem"><p>Compared to the old steady state, the long-run real wage $w^*$ in the new steady state will be:</p></div><div class="choices"><div class="choice" onclick="pick(12,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">Higher, in direct proportion to the ratio of new to old $k^*$.<div class="choice-defense">Treats $w^*$ as linear in $k^*$. But $w^* = (1-\alpha)Bk^{*\alpha}$ — concave, not linear.</div></div></div><div class="choice" onclick="pick(12,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">Higher, by the factor $(s'/s)^{\alpha/(1-\alpha)}$ — about 58% above the old level.<div class="choice-defense">Correct elasticity: $\frac{d\ln w^*}{d\ln s} = \frac{\alpha}{1-\alpha} = 1/2$, so $w^{*\prime}/w^* = (s'/s)^{1/2} = 2.5^{0.5} \approx 1.58$.</div></div></div><div class="choice" onclick="pick(12,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">Unchanged, because $w^*$ depends only on technology and the labour force.<div class="choice-defense">True that $w^*$ depends on $B$ — but via $k^*$, which itself depends on $s$. So $s$ does shift $w^*$.</div></div></div><div class="choice" onclick="pick(12,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">Lower, because higher $s$ reduces the real interest rate $r^*$.<div class="choice-defense">Confuses the joint movement: lower $r^*$ and higher $w^*$ both follow from higher $s$. They do not cancel — they are two sides of the same factor reallocation.</div></div></div></div><div class="explanation"><p>From $w^* = (1-\alpha) y^*$ and $y^* \propto s^{\alpha/(1-\alpha)}$, we get $\ln w^{*\prime} - \ln w^* = \frac{\alpha}{1-\alpha}(\ln s' - \ln s) = \frac{1}{2}\ln(2.5) \approx 0.46$, i.e., $w^{*\prime}/w^* \approx e^{0.46} \approx 1.58$. The wage and the interest rate move in opposite directions, but both reflect the same diminishing-returns reallocation as $k$ rises.</p></div></div><div class="question-card" id="q-13" data-correct="A" data-topic="What changes vs. what doesn't" data-done="0"><div class="question-header"><span class="question-number">Q13</span><span class="question-style">Boundary</span></div><div class="question-stem"><p>Comparing the new steady state to the old, which quantity remains <strong>UNCHANGED</strong>?</p></div><div class="choices"><div class="choice" onclick="pick(13,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">The steady-state growth rate of $y_t$, namely $g^{y*}$.<div class="choice-defense">Correct: in any basic-Solow steady state $g^{y*} = 0$. Saving raises levels, never the long-run growth rate.</div></div></div><div class="choice" onclick="pick(13,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">The steady-state real wage $w^*$.<div class="choice-defense">Wage rises with $k^*$ — see Q12.</div></div></div><div class="choice" onclick="pick(13,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">The steady-state output per worker $y^*$.<div class="choice-defense">$y^*$ rises by factor $(s'/s)^{\alpha/(1-\alpha)} \approx 1.58$.</div></div></div><div class="choice" onclick="pick(13,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">The steady-state real interest rate $r^*$.<div class="choice-defense">$r^* = \alpha(n+\delta)/s$ falls when $s$ rises — strictly decreasing in $s$.</div></div></div></div><div class="explanation"><p>The 'level vs growth' lesson of basic Solow: $s$ shifts the level of the balanced-growth path but has zero long-run growth effect. In steady state $\Delta k = 0$, so $g^k = g^y = 0$ before and after. Levels $k^*, y^*, w^*$ all rise; $r^*$ falls; only the long-run growth rate of $y$ stays put.</p></div></div></div>
+<div class="question-card multi" id="q-14" data-correct="[&quot;A&quot;, &quot;B&quot;, &quot;D&quot;]" data-topic="Stylized facts of growth" data-done="0"><div class="question-header"><span class="question-number">Q14</span><span class="question-style">Multi-select</span></div><div class="question-stem"><p>Of the following claims about long-run regularities in typical Western economies, which are supported by the Sørensen–Whitta-Jacobsen stylized facts (Ch. 2)? <strong>Select all that apply.</strong></p></div><div class="choices"><div class="choice" onclick="toggle(14,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">Labour's share of GDP, $w_t L_t/Y_t$, is approximately constant near $2/3$.<div class="choice-defense">Stylized fact 6 — labour share is empirically near-constant in Western economies over long periods.</div></div></div><div class="choice" onclick="toggle(14,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">Capital per worker $K/L$ grows at roughly the same rate as output per worker $y$.<div class="choice-defense">Stylized fact 7 — equivalent to constant $K/Y$ in the long run.</div></div></div><div class="choice" onclick="toggle(14,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">Within-country personal-income Gini coefficients are constant over time.<div class="choice-defense">Not a stylized fact. Personal income inequality varies over time; balanced growth (an aggregate concept) does not constrain it.</div></div></div><div class="choice" onclick="toggle(14,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">The real interest rate exhibits no clear long-run trend.<div class="choice-defense">Stylized fact 7 — real interest rates show no trend, consistent with constant $r^*$ along balanced growth.</div></div></div></div><div class="submit-row"><button type="button" class="submit-btn" disabled onclick="submitMulti(14)">Submit</button><span>Pick all that apply, then submit.</span></div><div class="explanation"><p>(A), (B), (D) are stylized facts 5–7 (labour share constant; $K/L$ grows at $g^y$; $r$ has no long-run trend). (C) is a different beast: balanced growth pins down aggregate factor shares, not the dispersion of personal incomes within those shares. Empirically Gini moves around — the share of labour can be constant while the distribution of wages within labour widens or narrows.</p></div></div>
+<div class="question-card" id="q-15" data-correct="A" data-topic="Real interest rate vs net rate of return" data-done="0"><div class="question-header"><span class="question-number">Q15</span><span class="question-style">What it measures</span></div><div class="question-stem"><p>In the basic Solow steady state, the rental rate of capital is $r^* = \alpha(n+\delta)/s$. The 'natural' real interest rate $\rho^*$ — the rate that compensates households for postponing consumption — relates to $r^*$ by which identity?</p></div><div class="choices"><div class="choice" onclick="pick(15,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">$\rho^* = r^* - \delta$, because $\rho^*$ is the net-of-depreciation real rate.<div class="choice-defense">Lecture 1c slide: $\rho^* = \alpha(s/(n+\delta))^{-1} - \delta = r^* - \delta$. The interest rate nets out the wear and tear on capital.</div></div></div><div class="choice" onclick="pick(15,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">$\rho^* = r^* + \delta$, because $r^*$ measures only the net rental of capital.<div class="choice-defense">Sign inversion. Adds depreciation instead of subtracting; would imply $\rho^* > r^*$, which is the wrong ordering.</div></div></div><div class="choice" onclick="pick(15,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">$\rho^* = r^*$, with depreciation absorbed entirely by the firm side.<div class="choice-defense">Confuses interpretations: even when firms own capital, the relation between gross rental and net rate is still $\rho = r - \delta$.</div></div></div><div class="choice" onclick="pick(15,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">$\rho^* = r^*/(1+n)$, accounting for population growth.<div class="choice-defense">Imports a $(1+n)$ discount from per-capita arithmetic that does not appear in the definition of $\rho^*$.</div></div></div></div><div class="explanation"><p>The rental rate $r^*$ is the gross price per unit of capital service per period. To get the net real return earned by the asset-holder, subtract depreciation: $\rho^* = r^* - \delta$. With the textbook calibration ($\alpha = 1/3$, $s = 0.22$, $n = 0.005$, $\delta = 0.05$), $r^* \approx 8.3\%$ and $\rho^* \approx 3.3\%$ — the latter close to empirical real interest rates.</p></div></div>
+<div class="question-card" id="q-16" data-correct="D" data-topic="Deriving $r^*$" data-done="0"><div class="question-header"><span class="question-number">Q16</span><span class="question-style">Derivation · source</span></div><div class="question-stem"><p>The basic Solow model implies the steady-state identity $r^* = \alpha(n+\delta)/s$. Which derivation path correctly produces this identity?</p></div><div class="choices"><div class="choice" onclick="pick(16,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">Apply the household Euler condition $u'(c) = \beta(1+r)u'(c)$ at steady state.<div class="choice-defense">Imports Ramsey machinery (intertemporal optimisation, Euler equation) absent from basic Solow.</div></div></div><div class="choice" onclick="pick(16,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">Set $r^* = n+\delta$ via the golden-rule condition $s^{**} = \alpha$.<div class="choice-defense">Confuses the golden rule (which fixes $s$ at a specific value) with the steady-state expression for $r^*$ (which holds at any $s$).</div></div></div><div class="choice" onclick="pick(16,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">Combine the resource constraint $Y = C + I$ with $I = sY$ at steady state.<div class="choice-defense">Uses identities that hold but do not pin down the level of $r^*$ or $k^*$.</div></div></div><div class="choice" onclick="pick(16,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">Substitute the steady-state $k^*$ into the FOC $r_t = \alpha B k_t^{\alpha-1}$ and simplify.<div class="choice-defense">Correct path: $r^* = \alpha B (k^*)^{\alpha-1}$ with $k^* = (Bs/(n+\delta))^{1/(1-\alpha)}$ simplifies (the $B$ cancels) to $\alpha(n+\delta)/s$.</div></div></div></div><div class="explanation"><p>The factor-price FOC gives $r_t = \alpha B (K/L)^{\alpha-1} = \alpha B k_t^{\alpha-1}$. Plug in $k^* = (Bs/(n+\delta))^{1/(1-\alpha)}$ and the $B$ factors cancel: $r^* = \alpha B \cdot (Bs/(n+\delta))^{-1} = \alpha (n+\delta)/s$. Note no preference parameters appear — this is a pure technology + savings result. (A) is the Ramsey derivation; (B) and (C) confuse special cases or identities with the general result.</p></div></div>
+<div class="question-card" id="q-17" data-correct="B" data-topic="Closed Solow → MRW with human capital" data-done="0"><div class="question-header"><span class="question-number">Q17</span><span class="question-style">Cross-topic</span></div><div class="question-stem"><p>The basic Solow model predicts an elasticity of $y^*$ with respect to $s$ of $\alpha/(1-\alpha) \approx 1/2$ (with $\alpha=1/3$). Cross-country regressions find a much larger empirical elasticity. MRW (1992) resolve this by extending production to $Y = K^\alpha H^\varphi (AL)^{1-\alpha-\varphi}$. Which feature of this extension drives the larger predicted elasticity?</p></div><div class="choices"><div class="choice" onclick="pick(17,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">The production function loses constant returns to scale when $H$ is added.<div class="choice-defense">MRW keeps CRS — exponents still sum to 1. The fix is not about CRS.</div></div></div><div class="choice" onclick="pick(17,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">Effective capital share becomes $\alpha+\varphi$, raising the saving-rate elasticity of $y^*$.<div class="choice-defense">Correct mechanical link: $\frac{\partial \ln y^*}{\partial \ln s_K} = \frac{\alpha}{1-\alpha-\varphi}$, which exceeds basic-Solow $\alpha/(1-\alpha)$.</div></div></div><div class="choice" onclick="pick(17,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">Human capital depreciates at a different rate than physical capital does.<div class="choice-defense">Differential depreciation is a feature of some MRW variants but is not what drives the elasticity result.</div></div></div><div class="choice" onclick="pick(17,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">Adding $H$ removes the diminishing returns to physical capital $K$.<div class="choice-defense">Diminishing returns to $K$ still hold in MRW; the model just adds a second reproducible factor.</div></div></div></div><div class="explanation"><p>Both basic Solow and MRW have the same algebraic backbone: $y^*$ is a power function of saving rates, with the exponent equal to (capital share)/(1 - capital share). In basic Solow that share is $\alpha$; in MRW it's $\alpha + \varphi$ (broad capital). With $\alpha = \varphi = 1/3$, the elasticity rises from $\alpha/(1-\alpha) = 0.5$ to $\alpha/(1-\alpha-\varphi) = 1.0$ — large enough to fit the cross-country data without requiring an implausibly high physical-capital share.</p><div class="connection"><strong>Connection:</strong> Basic Solow: $\ln y^* = \text{const} + \frac{\alpha}{1-\alpha}[\ln s - \ln(n+\delta)]$. MRW: same structure but with $\alpha + \varphi$ replacing $\alpha$ in the denominator. The fix is not new physics — it's redefining 'capital' to include $H$, which mechanically raises the elasticity.</div></div></div>
+<div class="question-card" id="q-18" data-correct="C" data-topic="Euler / income distribution" data-done="0"><div class="question-header"><span class="question-number">Q18</span><span class="question-style">Deep-short</span></div><div class="question-stem"><p>In the basic Solow model, the firm's profit-maximisation conditions plus competitive markets imply $w_t L_t + r_t K_t = Y_t$ — total factor income exhausts output (no pure profits). This identity follows from which property of the production function?</p></div><div class="choices"><div class="choice" onclick="pick(18,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">Cobb-Douglas form with elasticities $\alpha$ and $1-\alpha$.<div class="choice-defense">Cobb-Douglas is one CRS example, but the identity holds for any CRS function — not specifically Cobb-Douglas.</div></div></div><div class="choice" onclick="pick(18,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">Diminishing marginal products of both factors.<div class="choice-defense">Diminishing returns are independent; they don't imply an additive decomposition of $Y$.</div></div></div><div class="choice" onclick="pick(18,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">Constant returns to scale (via Euler's theorem on homogeneous functions).<div class="choice-defense">Correct: Euler's theorem for degree-1 homogeneous $F$ gives $F'_K K + F'_L L = F$. Combined with the FOCs $F'_K = r$, $F'_L = w$, this is exactly the no-pure-profits identity.</div></div></div><div class="choice" onclick="pick(18,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">Strict concavity in $(K,L)$ jointly.<div class="choice-defense">Concavity follows from diminishing returns but does not by itself imply Euler's identity (e.g., $F = K^{1/2} L^{1/3}$ is concave but not CRS).</div></div></div></div><div class="explanation"><p>Euler's theorem: if $F$ is homogeneous of degree 1 (CRS), then $K F'_K + L F'_L = F$. Under competition, $F'_K = r$ and $F'_L = w$, so $rK + wL = Y$. The result requires only CRS, not Cobb-Douglas specifically. This is the 'no pure profits' result on the income-distribution slide of Lecture 1b.</p></div></div>
+<div class="question-card" id="q-19" data-correct="B" data-topic="Comparative analysis — savings rate increase" data-done="0"><div class="question-header"><span class="question-number">Q19</span><span class="question-style">Graph</span></div><div class="question-stem"><p>The economy is initially at the old steady state. At time $t=0$ the savings rate jumps from $s$ to $s' > s$. Both gross-savings curves are shown (cyan = old, accent-dark = new) together with the replacement line (rust). Four points are labelled. Which is the <strong>new</strong> steady state?</p><div class="mf-figure" id="fig-q19"><div class="mf-panels "><div id="fig-q19-panel-0" class="mf-panel"></div></div><div class="mf-readout"></div><script>(function(){var spec={"id": "fig-q19", "params": {"s": 0.15, "s_prime": 0.3, "alpha": 0.3, "n": 0.02, "delta": 0.05, "B": 1}, "x_range": [0, 25], "n_points": 240, "x_label": "k (capital per worker)", "y_label": "", "curves": [{"name": "s\u00b7B\u00b7k^\u03b1 (old)", "expr": "s * B * Math.pow(k, alpha)", "color": "#0FA4AF"}, {"name": "s'\u00b7B\u00b7k^\u03b1 (new)", "expr": "s_prime * B * Math.pow(k, alpha)", "color": "#024950"}, {"name": "(n+\u03b4)\u00b7k", "expr": "(n + delta) * k", "color": "#964734"}], "markers": [{"type": "intersection", "curves": [0, 2], "label": "A", "color": "#003135"}, {"type": "intersection", "curves": [1, 2], "label": "B", "color": "#003135"}, {"type": "label_point", "x": "2.74", "y": "s_prime * B * Math.pow(2.74, alpha)", "label": "C", "color": "#003135"}, {"type": "label_point", "x": "18", "y": "s_prime * B * Math.pow(18, alpha)", "label": "D", "color": "#003135"}]};var hostId="fig-q19";function go(){if(!window.MacroFigures){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.MacroFigures not defined. Did FIGURE_JS load before this snippet?</div>");return;}if(!window.Plotly){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.Plotly not loaded.</div>");return;}try{window.MacroFigures.renderFigure(spec,hostId);}catch(e){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Render error: "+e.message+"</div>");}}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",go);}else{go();}})();</script></div></div><div class="choices"><div class="choice" onclick="pick(19,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">Point A — intersection of the old savings curve and the replacement line.<div class="choice-defense">This is the OLD steady state. Once $s$ rises, the system is no longer at rest at A — $\Delta k > 0$ there now.</div></div></div><div class="choice" onclick="pick(19,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">Point B — intersection of the new savings curve and the replacement line.<div class="choice-defense">Correct: with savings rate $s'$ in force, steady state requires $s' B k^\alpha = (n+\delta)k$, i.e., the new intersection.</div></div></div><div class="choice" onclick="pick(19,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">Point C — on the new savings curve at the old steady-state $k$, immediately after the shock.<div class="choice-defense">C is the START of dynamics: $k_0 = k_{\text{old}}^*$ but on the new savings curve. The system is not at rest — $\Delta k > 0$ here.</div></div></div><div class="choice" onclick="pick(19,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">Point D — on the new savings curve at $k = 18$, well beyond either equilibrium.<div class="choice-defense">Beyond the new $k^*$: replacement exceeds savings, so $\Delta k < 0$ and the system shrinks back.</div></div></div></div><div class="explanation"><p>After the shock the savings curve shifts up from $sBk^\alpha$ to $s'Bk^\alpha$. The replacement line $(n+\delta)k$ is unchanged. The new steady state is the intersection of the <em>new</em> savings curve with the replacement line — point B. Point A is now a transition starting point (above replacement: $\Delta k > 0$). Point C is on the new curve at the OLD $k^*$ — the very first point of the dynamic adjustment. Point D is past the new steady state.</p></div></div>
+<div class="question-card" id="q-20" data-correct="D" data-topic="Why $r^*$ decreases in $s$" data-done="0"><div class="question-header"><span class="question-number">Q20</span><span class="question-style">Derivation · why</span></div><div class="question-stem"><p>The basic Solow identity $r^* = \alpha(n+\delta)/s$ shows that the steady-state interest rate is <em>decreasing</em> in $s$. A naive intuition ('more savings means more demand for capital, so $r$ should rise') points the wrong way. Which mechanism actually explains the negative relationship?</p></div><div class="choices"><div class="choice" onclick="pick(20,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">Saving $S = sY$ reduces aggregate demand for capital, lowering $r$.<div class="choice-defense">Reads $S = sY$ as a demand-side claim — but Solow's $S$ is the <em>supply</em> of saving (and hence of capital), not demand.</div></div></div><div class="choice" onclick="pick(20,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">Depreciation $\delta$ is endogenously reduced by higher saving.<div class="choice-defense">Depreciation is a fixed parameter in basic Solow; nothing makes it endogenous.</div></div></div><div class="choice" onclick="pick(20,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">Higher $s$ raises $w^*$, which mechanically lowers $r^*$ via the Euler identity $wL + rK = Y$.<div class="choice-defense">Euler's identity decomposes total income additively. The wage and rental rate both adjust to factor abundance, but $w^*$ does not 'mechanically lower' $r^*$ through this accounting identity.</div></div></div><div class="choice" onclick="pick(20,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">Higher $s$ raises $k^*$, and the marginal product of capital $\alpha B k^{\alpha-1}$ falls as $k$ rises (diminishing returns).<div class="choice-defense">Correct mechanism: more saving raises $k^*$; under diminishing returns the marginal product of capital — which by competition equals $r$ — falls. The 'price of capital' drops as capital becomes more abundant.</div></div></div></div><div class="explanation"><p>The chain is: higher $s$ → higher $k^*$ (more capital per worker) → lower $F'_K = r$ (diminishing returns). The supply of capital relative to labour rises, and its price drops — exactly the standard scarcity-price logic, applied to a stock that the savings rate determines. The Euler identity (C) is an accounting decomposition; (A) reverses what 'demand' and 'supply' mean in this model; (B) invents endogenous depreciation that doesn't exist in basic Solow.</p></div></div>
+<div class="summary" id="summary">
+<h2>Quiz Complete</h2>
+<div class="score-big" id="final-score"></div>
+<div class="score-label" id="final-label"></div>
+<table class="results-table" id="results-table">
+<thead><tr><th>#</th><th>Topic</th><th>Correct</th><th>Yours</th><th></th></tr></thead>
+<tbody id="results-body"></tbody>
+</table>
+<div class="json-section">
+<label>Paste this into chat to update your learning state</label>
+<textarea class="json-box" id="json-export" readonly></textarea>
+</div>
+<div class="btn-row">
+<button class="btn" onclick="copyJson()">Copy JSON</button>
+<button class="btn btn-secondary" onclick="document.querySelectorAll('.explanation').forEach(e=>e.classList.add('visible'))">Show All Explanations</button>
+</div>
+</div>
+</div>
+<div class="copy-toast" id="copy-toast">Copied to clipboard</div>
+<script>
+const total=20;
+let answered=0,correct=0;
+const results=[];
+
+function setsEqual(a,b){
+  if(a.length!==b.length)return false;
+  const sa=new Set(a),sb=new Set(b);
+  for(const x of sa)if(!sb.has(x))return false;
+  return true;
+}
+
+function commitAnswer(qid,userAnswer,correctAnswer,isCorrect,topic){
+  const card=document.getElementById('q-'+qid);
+  if(card.dataset.done==='1')return;
+  card.dataset.done='1';
+  card.querySelectorAll('.choice').forEach(c=>c.classList.add('disabled'));
+  if(isCorrect){card.classList.add('answered-correct');correct++}
+  else{card.classList.add('answered-wrong')}
+  card.querySelector('.explanation').classList.add('visible');
+  results.push({
+    id:qid,topic:topic,
+    correct_answer:Array.isArray(correctAnswer)?correctAnswer.join('+'):correctAnswer,
+    user_answer:Array.isArray(userAnswer)?(userAnswer.length?userAnswer.join('+'):'—'):userAnswer,
+    is_correct:isCorrect
+  });
+  answered++;
+  document.getElementById('prog-text').textContent=answered+' / '+total;
+  document.getElementById('prog-fill').style.width=(answered/total*100)+'%';
+  document.getElementById('score-text').textContent=correct+'/'+answered;
+  if(answered===total)showSummary();
+}
+
+/* Single-MCQ pick: click commits answer */
+function pick(qid,letter){
+  const card=document.getElementById('q-'+qid);
+  if(card.dataset.done==='1')return;
+  const correctLetter=card.dataset.correct;
+  const topic=card.dataset.topic||'';
+  card.querySelectorAll('.choice').forEach(c=>{
+    const l=c.dataset.letter;
+    if(l===correctLetter)c.classList.add('correct-reveal');
+    if(l===letter&&l!==correctLetter)c.classList.add('wrong-reveal');
+  });
+  commitAnswer(qid,letter,correctLetter,letter===correctLetter,topic);
+}
+
+/* Multi-select toggle: click toggles, submit commits */
+function toggle(qid,letter){
+  const card=document.getElementById('q-'+qid);
+  if(card.dataset.done==='1')return;
+  const choice=card.querySelector('.choice[data-letter="'+letter+'"]');
+  choice.classList.toggle('selected');
+  const anySel=card.querySelectorAll('.choice.selected').length>0;
+  const btn=card.querySelector('.submit-btn');
+  if(btn)btn.disabled=!anySel;
+}
+
+function submitMulti(qid){
+  const card=document.getElementById('q-'+qid);
+  if(card.dataset.done==='1')return;
+  const correctSet=JSON.parse(card.dataset.correct);
+  const topic=card.dataset.topic||'';
+  const selected=Array.from(card.querySelectorAll('.choice.selected'))
+    .map(c=>c.dataset.letter).sort();
+  const isCorrect=setsEqual(selected,correctSet);
+  card.querySelectorAll('.choice').forEach(c=>{
+    const l=c.dataset.letter;
+    const wasPicked=c.classList.contains('selected');
+    const isRight=correctSet.includes(l);
+    c.classList.remove('selected');
+    if(wasPicked&&isRight)c.classList.add('correct-reveal');
+    else if(wasPicked&&!isRight)c.classList.add('wrong-reveal');
+    else if(!wasPicked&&isRight)c.classList.add('missed-reveal');
+  });
+  card.querySelector('.submit-row').style.display='none';
+  commitAnswer(qid,selected,correctSet,isCorrect,topic);
+}
+
+function showSummary(){
+  const s=document.getElementById('summary');
+  s.style.display='block';
+  document.getElementById('final-score').textContent=correct+' / '+total;
+  const pct=Math.round(correct/total*100);
+  document.getElementById('final-label').textContent=
+    pct+'% — '+(pct>=80?'strong understanding':pct>=60?'good, review marked items':'review recommended');
+  const tbody=document.getElementById('results-body');
+  results.sort((a,b)=>a.id-b.id);
+  results.forEach(r=>{
+    const tr=document.createElement('tr');
+    tr.className=r.is_correct?'row-correct':'row-wrong';
+    tr.innerHTML='<td>Q'+r.id+'</td><td>'+r.topic+'</td><td>'+r.correct_answer+
+      '</td><td>'+r.user_answer+'</td><td>'+(r.is_correct?'✓':'✗')+'</td>';
+    tbody.appendChild(tr);
+  });
+  const answers={};
+  results.sort((a,b)=>a.id-b.id).forEach(r=>{answers['Q'+r.id]=r.user_answer});
+  const exportData={file:"module-1_2026-05-26",score:correct+'/'+total,answers:answers};
+  document.getElementById('json-export').value=JSON.stringify(exportData);
+  s.scrollIntoView({behavior:'smooth'});
+}
+
+function copyJson(){
+  const box=document.getElementById('json-export');
+  box.select();
+  document.execCommand('copy');
+  const toast=document.getElementById('copy-toast');
+  toast.style.display='block';
+  setTimeout(()=>{toast.style.display='none'},1500);
+}
+
+document.addEventListener('DOMContentLoaded',()=>{
+  renderMathInElement(document.body,{delimiters:[
+    {left:"$$",right:"$$",display:true},
+    {left:"$",right:"$",display:false},
+    {left:"\\(",right:"\\)",display:false},
+    {left:"\\[",right:"\\]",display:true}
+  ]});
+});
+</script>
+</body>
+</html>
