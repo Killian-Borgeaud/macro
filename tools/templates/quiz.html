@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{TITLE}}</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+<style>
+:root{--bg:#fafafa;--card:#fff;--border:#e0e0e0;--text:#1a1a1a;--muted:#666;--accent:#2563eb;--accent-bg:#eff6ff;--correct:#16a34a;--correct-bg:#f0fdf4;--wrong:#dc2626;--wrong-bg:#fef2f2;--key:#f59e0b;--key-bg:#fffbeb}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text);line-height:1.7}
+.container{max-width:760px;margin:0 auto;padding:2rem 1.5rem}
+h1{font-size:1.6rem;margin-bottom:.3rem}
+.meta{color:var(--muted);font-size:.9rem;margin-bottom:1rem;padding-bottom:.75rem;border-bottom:1px solid var(--border)}
+.progress{display:flex;align-items:center;gap:.75rem;margin-bottom:2rem;font-size:.9rem;color:var(--muted);position:sticky;top:0;background:var(--bg);padding:.75rem 0;z-index:10}
+.progress-bar{flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden}
+.progress-fill{height:100%;background:var(--accent);border-radius:3px;transition:width .3s ease}
+.score-display{font-weight:600;color:var(--accent)}
+.question-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:1.75rem;margin-bottom:1.5rem;transition:border-color .3s}
+.question-card.answered-correct{border-color:var(--correct)}
+.question-card.answered-wrong{border-color:var(--wrong)}
+.question-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem}
+.question-number{font-size:.85rem;font-weight:600;color:var(--accent);background:var(--accent-bg);padding:.2rem .6rem;border-radius:4px}
+.question-style{font-size:.75rem;color:var(--muted);background:var(--bg);padding:.15rem .5rem;border-radius:3px;border:1px solid var(--border)}
+.question-stem{font-size:1.02rem;margin-bottom:1.25rem;line-height:1.65}
+.choices{display:flex;flex-direction:column;gap:.5rem}
+.choice{display:flex;align-items:flex-start;gap:.75rem;padding:.75rem 1rem;border:1px solid var(--border);border-radius:8px;cursor:pointer;transition:all .15s;font-size:.95rem;line-height:1.5}
+.choice:hover:not(.disabled){background:var(--accent-bg);border-color:var(--accent)}
+.choice.disabled{cursor:default;opacity:.85}
+.choice.correct-reveal{background:var(--correct-bg);border-color:var(--correct)}
+.choice.wrong-reveal{background:var(--wrong-bg);border-color:var(--wrong)}
+.choice-letter{min-width:1.6rem;height:1.6rem;display:flex;align-items:center;justify-content:center;border-radius:50%;background:var(--bg);border:1px solid var(--border);font-weight:600;font-size:.8rem;flex-shrink:0;margin-top:.1rem}
+.choice.correct-reveal .choice-letter{background:var(--correct);color:#fff;border-color:var(--correct)}
+.choice.wrong-reveal .choice-letter{background:var(--wrong);color:#fff;border-color:var(--wrong)}
+.explanation{margin-top:1rem;padding:1rem;border-radius:8px;background:var(--key-bg);border-left:3px solid var(--key);font-size:.9rem;line-height:1.6;display:none}
+.explanation.visible{display:block}
+.connection{margin-top:.75rem;padding:.75rem;background:var(--accent-bg);border-left:3px solid var(--accent);border-radius:0 6px 6px 0;font-size:.85rem}
+.summary{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:2rem;display:none}
+.summary h2{font-size:1.4rem;margin-bottom:.5rem;text-align:center}
+.summary .score-big{font-size:3rem;font-weight:700;color:var(--accent);margin:.5rem 0;text-align:center}
+.summary .score-label{color:var(--muted);font-size:.95rem;text-align:center;margin-bottom:1.5rem}
+.results-table{width:100%;border-collapse:collapse;margin:1.25rem 0;font-size:.9rem}
+.results-table th,.results-table td{padding:.5rem .75rem;border:1px solid var(--border);text-align:left}
+.results-table th{background:var(--accent-bg);font-weight:600;font-size:.8rem;text-transform:uppercase;letter-spacing:.03em}
+.results-table .row-correct{background:var(--correct-bg)}
+.results-table .row-wrong{background:var(--wrong-bg)}
+.results-table .status-icon{font-size:1.1rem}
+.json-section{margin-top:1.5rem;text-align:left}
+.json-section label{display:block;font-weight:600;font-size:.85rem;margin-bottom:.4rem;color:var(--muted)}
+.json-box{width:100%;min-height:80px;padding:.75rem;border:1px solid var(--border);border-radius:6px;font-family:monospace;font-size:.8rem;background:#f8fafc;color:var(--text);resize:vertical;line-height:1.4}
+.btn-row{display:flex;gap:.75rem;justify-content:center;margin-top:1rem;flex-wrap:wrap}
+.btn{display:inline-block;padding:.6rem 1.5rem;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:.9rem;font-weight:500}
+.btn:hover{opacity:.9}
+.btn-secondary{background:var(--card);color:var(--accent);border:1px solid var(--accent)}
+.btn-secondary:hover{background:var(--accent-bg)}
+.copy-toast{position:fixed;bottom:2rem;left:50%;transform:translateX(-50%);background:#1e293b;color:#fff;padding:.6rem 1.25rem;border-radius:6px;font-size:.9rem;display:none;z-index:100}
+@media(max-width:600px){.container{padding:1rem}.question-card{padding:1.25rem}}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>{{TITLE}}</h1>
+<div class="meta">{{META}}</div>
+<div class="progress">
+<span id="prog-text">0 / {{QUESTION_COUNT}} answered</span>
+<div class="progress-bar"><div class="progress-fill" id="prog-fill" style="width:0%"></div></div>
+<span class="score-display" id="score-text"></span>
+</div>
+{{QUESTIONS}}
+<div class="summary" id="summary">
+<h2>Quiz Complete</h2>
+<div class="score-big" id="final-score"></div>
+<div class="score-label" id="final-label"></div>
+<table class="results-table" id="results-table">
+<thead><tr><th>#</th><th>Topic</th><th>Correct</th><th>Yours</th><th></th></tr></thead>
+<tbody id="results-body"></tbody>
+</table>
+<div class="json-section">
+<label>Paste this into chat to update your learning state:</label>
+<textarea class="json-box" id="json-export" readonly></textarea>
+</div>
+<div class="btn-row">
+<button class="btn" onclick="copyJson()">Copy JSON</button>
+<button class="btn btn-secondary" onclick="document.querySelectorAll('.explanation').forEach(e=>e.classList.add('visible'))">Show All Explanations</button>
+</div>
+</div>
+</div>
+<div class="copy-toast" id="copy-toast">Copied to clipboard</div>
+<script>
+const total={{QUESTION_COUNT}};
+let answered=0,correct=0;
+const results=[];
+function pick(qid,letter){
+const card=document.getElementById('q-'+qid);
+if(card.dataset.done==='1')return;
+card.dataset.done='1';
+const correctLetter=card.dataset.correct;
+const topic=card.dataset.topic||'';
+card.querySelectorAll('.choice').forEach(c=>{
+c.classList.add('disabled');
+const l=c.dataset.letter;
+if(l===correctLetter)c.classList.add('correct-reveal');
+if(l===letter&&l!==correctLetter)c.classList.add('wrong-reveal');
+});
+const isCorrect=letter===correctLetter;
+if(isCorrect){card.classList.add('answered-correct');correct++}
+else{card.classList.add('answered-wrong')}
+card.querySelector('.explanation').classList.add('visible');
+results.push({id:qid,topic:topic,correct_answer:correctLetter,user_answer:letter,is_correct:isCorrect});
+answered++;
+document.getElementById('prog-text').textContent=answered+' / '+total+' answered';
+document.getElementById('prog-fill').style.width=(answered/total*100)+'%';
+document.getElementById('score-text').textContent=correct+'/'+answered;
+if(answered===total)showSummary();
+}
+function showSummary(){
+const s=document.getElementById('summary');
+s.style.display='block';
+document.getElementById('final-score').textContent=correct+' / '+total;
+const pct=Math.round(correct/total*100);
+document.getElementById('final-label').textContent=pct+'%'+(pct>=80?' — Strong understanding':pct>=60?' — Good, review marked items':' — Review recommended');
+const tbody=document.getElementById('results-body');
+results.sort((a,b)=>a.id-b.id);
+results.forEach(r=>{
+const tr=document.createElement('tr');
+tr.className=r.is_correct?'row-correct':'row-wrong';
+tr.innerHTML='<td>Q'+r.id+'</td><td>'+r.topic+'</td><td>'+r.correct_answer+'</td><td>'+r.user_answer+'</td><td class="status-icon">'+(r.is_correct?'✓':'✗')+'</td>';
+tbody.appendChild(tr);
+});
+const sorted=results.sort((a,b)=>a.id-b.id);
+const answers={};
+sorted.forEach(r=>{answers['Q'+r.id]=r.user_answer});
+const exportData={
+file:"{{QUIZ_FILE}}",
+score:correct+'/'+total,
+answers:answers
+};
+document.getElementById('json-export').value=JSON.stringify(exportData);
+s.scrollIntoView({behavior:'smooth'});
+}
+function copyJson(){
+const box=document.getElementById('json-export');
+box.select();
+document.execCommand('copy');
+const toast=document.getElementById('copy-toast');
+toast.style.display='block';
+setTimeout(()=>{toast.style.display='none'},1500);
+}
+document.addEventListener('DOMContentLoaded',()=>{renderMathInElement(document.body,{delimiters:[{left:"$$",right:"$$",display:true},{left:"$",right:"$",display:false},{left:"\\(",right:"\\)",display:false},{left:"\\[",right:"\\]",display:true}]})});
+</script>
+</body>
+</html>

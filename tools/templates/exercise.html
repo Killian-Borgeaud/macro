@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{TITLE}}</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+<style>
+:root{--bg:#fafaf9;--fg:#1c1917;--card:#ffffff;--border:#d6d3d1;--muted:#78716c;--accent:#2563eb;--accent-bg:#eff6ff;--hint-border:#f59e0b;--hint-bg:#fffbeb;--sol-border:#22c55e;--sol-bg:#f0fdf4;--sol-text:#15803d;--answer-bg:#dcfce7;--derive-border:#8b5cf6;--derive-bg:#f5f3ff}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Georgia,serif;background:var(--bg);color:var(--fg);line-height:1.7;max-width:800px;margin:0 auto;padding:2rem 1.5rem}
+h1{font-size:1.6rem;margin-bottom:.3rem}
+.meta{color:var(--muted);font-size:.9rem;margin-bottom:1.5rem;padding-bottom:.75rem;border-bottom:1px solid var(--border)}
+.exercise{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:1.8rem;margin-bottom:1.8rem}
+.exercise.derive{border-left:3px solid var(--derive-border)}
+.exercise-header{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:1rem}
+.exercise-header h2{font-size:1.1rem;color:var(--accent)}
+.style-tag{font-size:.78rem;padding:2px 10px;border-radius:12px}
+.tag-compute{background:#e0e7ff;color:#3730a3}
+.tag-derive{background:var(--derive-bg);color:#6d28d9}
+.problem{margin-bottom:1rem}
+.problem p{margin-bottom:.5rem}
+.data-table{width:100%;border-collapse:collapse;margin:.8rem 0;font-size:.92rem}
+.data-table th,.data-table td{border:1px solid var(--border);padding:6px 12px;text-align:center}
+.data-table th{background:#f5f5f4;font-weight:600}
+.controls{display:flex;flex-wrap:wrap;gap:6px;margin-top:.5rem}
+.hint-btn,.sol-btn{cursor:pointer;border:1px solid var(--border);background:var(--card);padding:6px 14px;border-radius:6px;font-size:.85rem;transition:background .15s}
+.hint-btn:hover,.sol-btn:hover{background:#f5f5f4}
+.hint-box{background:var(--hint-bg);border-left:3px solid var(--hint-border);padding:.8rem 1rem;margin-top:.6rem;border-radius:0 6px 6px 0;font-size:.9rem;display:none}
+.solution{background:var(--sol-bg);border-left:3px solid var(--sol-border);padding:1rem 1.2rem;margin-top:1rem;border-radius:0 6px 6px 0;display:none}
+.solution h3{font-size:.95rem;color:var(--sol-text);margin-bottom:.6rem}
+.step{margin-bottom:.8rem}
+.step-label{font-weight:600;color:var(--sol-text);font-size:.88rem}
+.final-answer{background:var(--answer-bg);padding:8px 14px;border-radius:6px;margin-top:.6rem;font-weight:600;display:inline-block}
+.show-all{display:block;margin:1.5rem auto;cursor:pointer;border:1px solid var(--border);background:var(--card);padding:10px 24px;border-radius:8px;font-size:.92rem;transition:background .15s}
+.show-all:hover{background:#f5f5f4}
+</style>
+</head>
+<body>
+
+<h1>{{TITLE}}</h1>
+<p class="meta">{{META}}</p>
+
+{{EXERCISES}}
+
+<button class="show-all" onclick="document.querySelectorAll('.solution').forEach(e=>e.style.display='block')">Show all solutions</button>
+
+<script>
+function toggleEl(id){var e=document.getElementById(id);e.style.display=e.style.display==='block'?'none':'block'}
+document.addEventListener('DOMContentLoaded',function(){
+  renderMathInElement(document.body,{
+    delimiters:[
+      {left:'\\(',right:'\\)',display:false},
+      {left:'\\[',right:'\\]',display:true},
+      {left:'$',right:'$',display:false},
+      {left:'$$',right:'$$',display:true}
+    ],
+    throwOnError:false
+  });
+});
+</script>
+</body>
+</html>

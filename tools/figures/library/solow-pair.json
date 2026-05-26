@@ -1,0 +1,50 @@
+{
+  "id": "fig-solow-pair",
+  "title": "Figure. Solow Diagram + Transition (linked)",
+  "caption": "Two views of the same fixed point. LEFT: investment vs break-even. RIGHT: next-period capital vs current. Both panels show k* — geometrically (left, where curves cross) and dynamically (right, where the transition curve meets the 45° line). Drag s or n: k* moves in both panels simultaneously.",
+  "params": {
+    "alpha": 0.33,
+    "B": 1.0,
+    "s": 0.20,
+    "n": 0.02,
+    "delta": 0.05
+  },
+  "panels": [
+    {
+      "id": "solow",
+      "title": "Solow diagram",
+      "x_range": [0.1, 80],
+      "n_points": 200,
+      "x_label": "capital per worker, k",
+      "y_label": "per worker",
+      "curves": [
+        {"type": "expr", "name": "s·f(k)", "expr": "s * B * Math.pow(k, alpha)", "color": "#2563eb", "width": 3},
+        {"type": "expr", "name": "(n+δ)·k", "expr": "(n + delta) * k", "color": "#dc2626", "width": 3}
+      ],
+      "markers": [
+        {"type": "intersection", "label": "k*", "curves": [0, 1], "color": "#111", "guide": "vertical"}
+      ]
+    },
+    {
+      "id": "transition",
+      "title": "Transition diagram",
+      "x_range": [0.1, 80],
+      "n_points": 200,
+      "x_label": "k_t",
+      "y_label": "k_{t+1}",
+      "curves": [
+        {"type": "expr", "name": "G(k)", "expr": "(s * B * Math.pow(k, alpha) + (1 - delta) * k) / (1 + n)", "color": "#2563eb", "width": 3},
+        {"type": "expr", "name": "45°", "expr": "k", "color": "#16a34a", "width": 2, "dash": "dash"}
+      ],
+      "markers": [
+        {"type": "intersection", "label": "k*", "curves": [0, 1], "color": "#111", "guide": "vertical"}
+      ]
+    }
+  ],
+  "sliders": [
+    {"param": "s", "min": 0.05, "max": 0.50, "step": 0.01, "label": "saving rate s", "decimals": 2},
+    {"param": "n", "min": 0.0, "max": 0.05, "step": 0.001, "label": "population growth n", "decimals": 3},
+    {"param": "delta", "min": 0.0, "max": 0.15, "step": 0.005, "label": "depreciation δ", "decimals": 3},
+    {"param": "alpha", "min": 0.10, "max": 0.80, "step": 0.01, "label": "capital share α", "decimals": 2}
+  ]
+}

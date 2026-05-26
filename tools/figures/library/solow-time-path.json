@@ -1,0 +1,47 @@
+{
+  "id": "fig-solow-time-path",
+  "title": "Figure. Convergence to the Steady State",
+  "caption": "Starting from k_0, the economy crawls toward k* period by period. The horizontal dashed line marks the steady-state target. Notice how the climb is fastest early (steep slope of the time series) and slows asymptotically — diminishing returns at work. Try k_0 < k* to see growth in transition; k_0 > k* to see decline.",
+  "params": {
+    "alpha": 0.33,
+    "B": 1.0,
+    "s": 0.20,
+    "n": 0.02,
+    "delta": 0.05,
+    "k0": 5
+  },
+  "panels": [
+    {
+      "id": "path",
+      "x_range": [0, 100],
+      "x_label": "time t (periods)",
+      "y_label": "capital per worker, k_t",
+      "curves": [
+        {
+          "type": "time_series",
+          "name": "k_t",
+          "initial": "k0",
+          "recursion": "(s * B * Math.pow(k, alpha) + (1 - delta) * k) / (1 + n)",
+          "t_range": [0, 100],
+          "color": "#2563eb",
+          "width": 3
+        }
+      ],
+      "markers": [
+        {
+          "type": "horizontal_line",
+          "label": "k*",
+          "at": "Math.pow(s * B / (n + delta), 1 / (1 - alpha))",
+          "color": "#dc2626",
+          "dash": "dash"
+        }
+      ]
+    }
+  ],
+  "sliders": [
+    {"param": "k0", "min": 1, "max": 80, "step": 1, "label": "initial capital k_0", "decimals": 0},
+    {"param": "s", "min": 0.05, "max": 0.50, "step": 0.01, "label": "saving rate s", "decimals": 2},
+    {"param": "n", "min": 0.0, "max": 0.05, "step": 0.001, "label": "population growth n", "decimals": 3},
+    {"param": "alpha", "min": 0.10, "max": 0.80, "step": 0.01, "label": "capital share α", "decimals": 2}
+  ]
+}

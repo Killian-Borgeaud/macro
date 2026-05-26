@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Style Test Lecture — Visual Fixture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script>
+window.MacroFigures = window.MacroFigures || (function() {
+
+  function linspace(a, b, n) {
+    const out = [];
+    for (let i = 0; i < n; i++) out.push(a + (b - a) * i / (n - 1));
+    return out;
+  }
+
+  function compileExpr(expr, paramNames) {
+    return new Function('k', 'p',
+      'const {' + paramNames.join(',') + '} = p; return ' + expr + ';');
+  }
+
+  function compileScalarExpr(expr, paramNames) {
+    if (typeof expr === 'number') return () => expr;
+    if (typeof expr === 'string') {
+      return new Function('p',
+        'const {' + paramNames.join(',') + '} = p; return ' + expr + ';');
+    }
+    return () => null;
+  }
+
+  function findIntersection(xs, y1s, y2s) {
+    for (let i = 1; i < xs.length; i++) {
+      const d0 = y1s[i-1] - y2s[i-1];
+      const d1 = y1s[i] - y2s[i];
+      if (d0 === 0) return { x: xs[i-1], y: y1s[i-1] };
+      if (d0 * d1 < 0) {
+        const t = d0 / (d0 - d1);
+        return {
+          x: xs[i-1] + t * (xs[i] - xs[i-1]),
+          y: y1s[i-1] + t * (y1s[i] - y1s[i-1])
+        };
+      }
+    }
+    return null;
+  }
+
+  function findExtremum(xs, ys, kind) {
+    let idx = 0;
+    for (let i = 1; i < ys.length; i++) {
+      if (kind === 'max' ? ys[i] > ys[idx] : ys[i] < ys[idx]) idx = i;
+    }
+    return { x: xs[idx], y: ys[idx] };
+  }
+
+  function buildCurveData(curve, xs, params, paramNames) {
+    if (curve.type === 'time_series') {
+      // Discrete recursion: k_{t+1} = recursion(k_t, p), starting from initial.
+      const T = (curve.t_range && curve.t_range[1]) || 50;
+      const t0 = (curve.t_range && curve.t_range[0]) || 0;
+      const initFn = compileScalarExpr(curve.initial, paramNames);
+      const recFn = new Function('k', 'p',
+        'const {' + paramNames.join(',') + '} = p; return ' + curve.recursion + ';');
+      const ts = [t0], ks = [initFn(params)];
+      for (let t = t0 + 1; t <= T; t++) {
+        ks.push(recFn(ks[ks.length - 1], params));
+        ts.push(t);
+      }
+      return { x: ts, y: ks };
+    }
+    if (curve.type === 'piecewise') {
+      // [{when: "k < 10", expr: "..."}], else expr at end
+      const fns = curve.pieces.map(p => ({
+        when: p.when ? new Function('k', 'p',
+          'const {' + paramNames.join(',') + '} = p; return ' + p.when + ';') : null,
+        fn: compileExpr(p.expr, paramNames)
+      }));
+      return {
+        x: xs,
+        y: xs.map(k => {
+          for (const piece of fns) {
+            if (!piece.when || piece.when(k, params)) return piece.fn(k, params);
+          }
+          return null;
+        })
+      };
+    }
+    // default: type === 'expr'
+    const fn = compileExpr(curve.expr, paramNames);
+    return { x: xs, y: xs.map(k => fn(k, params)) };
+  }
+
+  function buildPanel(panel, params, paramNames, panelHostId) {
+    let xs;
+    // For panels containing only time_series curves, x_range may be omitted.
+    if (panel.x_range) {
+      xs = linspace(panel.x_range[0], panel.x_range[1], panel.n_points || 200);
+    } else {
+      xs = [];
+    }
+
+    const curveData = panel.curves.map(c => buildCurveData(c, xs, params, paramNames));
+
+    const traces = panel.curves.map((c, i) => ({
+      x: curveData[i].x, y: curveData[i].y,
+      name: c.name, mode: c.mode || 'lines',
+      line: { color: c.color, width: c.width || 1.6, dash: c.dash || 'solid' },
+      marker: { size: c.marker_size || 5, color: c.color, line: { color: 'white', width: 1 } }
+    }));
+
+    const shapes = [];
+    const annotations = [];
+    const readoutParts = [];
+
+    for (const m of (panel.markers || [])) {
+      let pt = null;
+      let line = null;
+
+      if (m.type === 'intersection') {
+        pt = findIntersection(curveData[m.curves[0]].x, curveData[m.curves[0]].y, curveData[m.curves[1]].y);
+      } else if (m.type === 'maximum' || m.type === 'minimum') {
+        const kind = m.type === 'maximum' ? 'max' : 'min';
+        pt = findExtremum(curveData[m.curve].x, curveData[m.curve].y, kind);
+      } else if (m.type === 'vertical_line') {
+        const x = compileScalarExpr(m.at, paramNames)(params);
+        line = { type: 'line', x0: x, x1: x, yref: 'paper', y0: 0, y1: 1,
+                 line: { color: m.color || '#5a7378', dash: m.dash || 'dash', width: 1 } };
+        if (m.label) annotations.push({
+          x: x, y: 0, xref: 'x', yref: 'paper', text: m.label,
+          showarrow: false, yshift: -18, font: { size: 11, color: '#111' }
+        });
+      } else if (m.type === 'horizontal_line') {
+        const y = compileScalarExpr(m.at, paramNames)(params);
+        line = { type: 'line', y0: y, y1: y, xref: 'paper', x0: 0, x1: 1,
+                 line: { color: m.color || '#5a7378', dash: m.dash || 'dash', width: 1 } };
+        if (m.label) annotations.push({
+          x: 1, y: y, xref: 'paper', yref: 'y', text: m.label,
+          showarrow: false, xshift: -8, yshift: -8, font: { size: 11, color: '#111' }
+        });
+      } else if (m.type === 'tangent_line') {
+        const x0 = compileScalarExpr(m.at, paramNames)(params);
+        const fn = compileExpr(panel.curves[m.curve].expr, paramNames);
+        const h = Math.max(0.001, Math.abs(x0) * 0.001);
+        const slope = (fn(x0 + h, params) - fn(x0 - h, params)) / (2 * h);
+        const y0v = fn(x0, params);
+        const xMin = panel.x_range[0], xMax = panel.x_range[1];
+        traces.push({
+          x: [xMin, xMax],
+          y: [y0v + slope * (xMin - x0), y0v + slope * (xMax - x0)],
+          mode: 'lines', name: m.label || 'tangent',
+          line: { color: m.color || '#16a34a', dash: 'dot', width: 2 }, showlegend: !!m.label
+        });
+        pt = { x: x0, y: y0v };
+      } else if (m.type === 'asymptote') {
+        const fn = compileExpr(panel.curves[m.curve].expr, paramNames);
+        const yInf = fn(1e9, params);
+        line = { type: 'line', y0: yInf, y1: yInf, xref: 'paper', x0: 0, x1: 1,
+                 line: { color: m.color || '#94a3b8', dash: 'dot', width: 1 } };
+        if (m.label) annotations.push({
+          x: 0.98, y: yInf, xref: 'paper', yref: 'y', text: m.label,
+          showarrow: false, xanchor: 'right', yshift: -8, font: { size: 11, color: '#666' }
+        });
+      } else if (m.type === 'area') {
+        // Shaded region between curves[0] and curves[1]
+        const ys1 = curveData[m.curves[0]].y;
+        const ys2 = curveData[m.curves[1]].y;
+        traces.push({
+          x: [...curveData[m.curves[0]].x, ...curveData[m.curves[0]].x.slice().reverse()],
+          y: [...ys1, ...ys2.slice().reverse()],
+          fill: 'toself', fillcolor: m.color || 'rgba(37,99,235,0.15)',
+          line: { width: 0 }, name: m.label || 'area', hoverinfo: 'skip',
+          showlegend: !!m.label
+        });
+      } else if (m.type === 'label_point') {
+        const x = compileScalarExpr(m.x, paramNames)(params);
+        const y = compileScalarExpr(m.y, paramNames)(params);
+        pt = { x, y };
+      }
+
+      if (pt) {
+        traces.push({
+          x: [pt.x], y: [pt.y], mode: 'markers',
+          marker: { size: 8, color: m.color || '#003135', line: { color: 'white', width: 1.5 } },
+          name: m.label, showlegend: false,
+          hovertemplate: (m.label ? m.label + ' = ' : '') + '(%{x:.3f}, %{y:.3f})<extra></extra>'
+        });
+        if (m.guide === 'vertical') {
+          shapes.push({ type: 'line', x0: pt.x, x1: pt.x, y0: 0, y1: pt.y,
+                        line: { color: '#5a7378', dash: 'dash', width: 1 } });
+        } else if (m.guide === 'horizontal') {
+          shapes.push({ type: 'line', xref: 'paper', x0: 0, x1: 1, y0: pt.y, y1: pt.y,
+                        line: { color: '#5a7378', dash: 'dash', width: 1 } });
+        } else if (m.guide === 'both') {
+          shapes.push({ type: 'line', x0: pt.x, x1: pt.x, y0: 0, y1: pt.y,
+                        line: { color: '#5a7378', dash: 'dash', width: 1 } });
+          shapes.push({ type: 'line', xref: 'paper', x0: 0, x1: 1, y0: pt.y, y1: pt.y,
+                        line: { color: '#5a7378', dash: 'dash', width: 1 } });
+        }
+        if (m.label && m.guide === 'vertical') annotations.push({
+          x: pt.x, y: 0, xref: 'x', yref: 'y', text: m.label + ' = ' + pt.x.toFixed(2),
+          showarrow: false, yshift: -18, font: { size: 11, color: '#111' }
+        });
+        readoutParts.push(panel.id + ': ' + (m.label || '?') +
+                          ' = ' + pt.x.toFixed(3) + ', y = ' + pt.y.toFixed(3));
+      }
+      if (line) shapes.push(line);
+    }
+
+    const layout = {
+      font: { family: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+              color: '#003135', size: 12 },
+      xaxis: { title: { text: panel.x_label, font: { size: 12, color: '#5a7378' } },
+               gridcolor: '#e6eef0', zerolinecolor: '#d4e1e4', linecolor: '#d4e1e4',
+               tickfont: { color: '#5a7378', size: 11 } },
+      yaxis: { title: { text: panel.y_label, font: { size: 12, color: '#5a7378' } },
+               gridcolor: '#e6eef0', zerolinecolor: '#d4e1e4', linecolor: '#d4e1e4',
+               tickfont: { color: '#5a7378', size: 11 } },
+      shapes: shapes, annotations: annotations,
+      margin: { t: 28, r: 20, b: 50, l: 60 },
+      title: panel.title ? { text: panel.title, font: { size: 13, color: '#024950' } } : undefined,
+      legend: { x: 0.02, y: 0.98, bgcolor: 'rgba(255,255,255,0.9)',
+                bordercolor: '#d4e1e4', borderwidth: 1, font: { size: 11, color: '#003135' } },
+      plot_bgcolor: '#ffffff', paper_bgcolor: '#ffffff'
+    };
+
+    Plotly.react(panelHostId, traces, layout, { responsive: true, displayModeBar: false });
+    return readoutParts;
+  }
+
+  function renderFigure(spec, hostId) {
+    const root = document.getElementById(hostId);
+    if (!root) { console.warn('Figure host not found:', hostId); return; }
+    const paramNames = Object.keys(spec.params);
+    const defaults = JSON.parse(JSON.stringify(spec.params));
+    const params = JSON.parse(JSON.stringify(spec.params));
+
+    const panels = spec.panels || [{
+      id: 'main', x_range: spec.x_range, n_points: spec.n_points,
+      x_label: spec.x_label, y_label: spec.y_label,
+      curves: spec.curves, markers: spec.markers
+    }];
+
+    function renderAll() {
+      const readoutLines = [];
+      panels.forEach((p, i) => {
+        const lines = buildPanel(p, params, paramNames, hostId + '-panel-' + i);
+        readoutLines.push(...lines);
+      });
+      const readoutEl = root.querySelector('.mf-readout');
+      if (readoutEl) readoutEl.textContent = readoutLines.join('   |   ');
+    }
+
+    // Wire sliders
+    (spec.sliders || []).forEach(s => {
+      const sl = root.querySelector('[data-slider="' + s.param + '"]');
+      const vsp = root.querySelector('[data-value="' + s.param + '"]');
+      if (sl) sl.addEventListener('input', e => {
+        params[s.param] = parseFloat(e.target.value);
+        if (vsp) vsp.textContent = params[s.param].toFixed(s.decimals || 2);
+        renderAll();
+      });
+    });
+
+    // Reset button
+    const resetBtn = root.querySelector('.mf-reset');
+    if (resetBtn) resetBtn.addEventListener('click', () => {
+      Object.assign(params, JSON.parse(JSON.stringify(defaults)));
+      (spec.sliders || []).forEach(s => {
+        const sl = root.querySelector('[data-slider="' + s.param + '"]');
+        const vsp = root.querySelector('[data-value="' + s.param + '"]');
+        if (sl) sl.value = defaults[s.param];
+        if (vsp) vsp.textContent = defaults[s.param].toFixed(s.decimals || 2);
+      });
+      renderAll();
+    });
+
+    renderAll();
+  }
+
+  return { renderFigure };
+})();
+</script>
+<style>
+:root{
+  --bg:#fdf6e3;
+  --card:#ffffff;
+  --border:#e6dcc4;
+  --text:#003135;
+  --muted:#5a7378;
+  --accent:#024950;
+  --accent-2:#0FA4AF;
+  --accent-bg:rgba(15,164,175,0.10);
+  --key:#964734;
+  --key-bg:rgba(150,71,52,0.07);
+  --box-fill:#003135;
+  --box-text:#e6f4f5;
+  --box-line:#0FA4AF;
+  --nav-w:220px;
+  --col-w:760px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background-color:var(--bg)}
+body{
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  color:var(--text);
+  line-height:1.7;
+  font-weight:400;
+  font-feature-settings:"cv11","ss01","ss03";
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+  /* Subtle paper grain: fractal noise tinted warm brown at low alpha */
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.45  0 0 0 0 0.35  0 0 0 0 0.20  0 0 0 0.06 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  background-repeat:repeat;
+  background-attachment:fixed;
+}
+.layout{display:block;min-height:100vh}
+nav{
+  width:var(--nav-w);
+  position:fixed;top:0;left:0;height:100vh;overflow-y:auto;
+  background:transparent;
+  border-right:1px solid var(--border);
+  padding:2.5rem 1.25rem;
+}
+nav h2{
+  font-size:.72rem;
+  text-transform:uppercase;
+  color:var(--muted);
+  margin-bottom:1.25rem;
+  letter-spacing:.12em;
+  font-weight:600;
+}
+nav a{
+  display:block;
+  padding:.45rem .6rem;
+  font-size:.84rem;
+  color:var(--muted);
+  text-decoration:none;
+  border-radius:5px;
+  margin-bottom:1px;
+  font-weight:400;
+  transition:color .15s, background .15s;
+}
+nav a:hover{color:var(--text);background:rgba(2,73,80,0.04)}
+nav a.active{color:var(--accent);background:var(--accent-bg);font-weight:500}
+main{
+  margin-left:var(--nav-w);
+  padding:4rem max(2rem, calc((100vw - var(--nav-w) - var(--col-w)) / 2)) 5rem;
+}
+h1{
+  font-size:2.5rem;
+  font-weight:300;
+  letter-spacing:-0.03em;
+  line-height:1.15;
+  margin-bottom:.6rem;
+  color:var(--text);
+}
+.meta{
+  color:var(--muted);
+  font-size:.85rem;
+  font-weight:400;
+  letter-spacing:.01em;
+  margin-bottom:3rem;
+  padding-bottom:1.25rem;
+  border-bottom:1px solid var(--border);
+}
+.section{margin-bottom:3.5rem}
+.section h2{
+  font-size:1.55rem;
+  font-weight:400;
+  letter-spacing:-0.02em;
+  color:var(--accent);
+  margin-bottom:1.25rem;
+  padding-bottom:.7rem;
+  border-bottom:1px solid var(--border);
+}
+.section h3{
+  font-size:1.05rem;
+  font-weight:500;
+  letter-spacing:-0.01em;
+  margin:1.75rem 0 .8rem;
+  color:var(--text);
+}
+.section p{margin-bottom:1.1rem;font-weight:400}
+.section ol,.section ul{margin:0 0 1.1rem 1.5rem}
+.section li{margin-bottom:.4rem}
+a{color:var(--accent-2);text-decoration:none;border-bottom:1px solid transparent;transition:border-color .15s}
+a:hover{border-bottom-color:var(--accent-2)}
+strong{font-weight:600;color:var(--text)}
+em{font-style:italic}
+/* HUD-style callouts: dark fill, light text, cyan tracer outline,
+   extension line out of one corner ending in a small square endpoint */
+.key-concept,.example{
+  position:relative;
+  background:var(--box-fill);
+  color:var(--box-text);
+  padding:1.4rem 1.65rem;
+  margin:2.25rem 0;
+  border-radius:0;
+  outline:1px solid var(--box-line);
+  outline-offset:4px;
+  font-weight:400;
+}
+.key-concept p,.example p{margin-bottom:.8rem}
+.key-concept p:last-child,.example p:last-child{margin-bottom:0}
+.key-concept strong{color:#e8826a;font-weight:600;letter-spacing:.02em}
+.example strong{color:var(--box-line);font-weight:600;letter-spacing:.02em}
+.key-concept code,.example code{
+  background:rgba(255,255,255,0.08);
+  color:var(--box-line);
+}
+.key-concept .katex,.example .katex{color:var(--box-text)}
+/* HUD tracer: 3 staggered bold strokes + an open square endpoint.
+   Uses mask-image so the stroke color = var(--box-line) and the rect
+   interior is genuinely transparent (page bg + texture show through). */
+.key-concept::before,.example::before{
+  content:'';
+  position:absolute;
+  width:74px;
+  height:60px;
+  pointer-events:none;
+  background-color:var(--box-line);
+  -webkit-mask-repeat:no-repeat;
+          mask-repeat:no-repeat;
+  -webkit-mask-position:center;
+          mask-position:center;
+}
+/* key-concept: tracer in the RIGHT gutter, lines extend rightward */
+.key-concept::before{
+  top:14px;
+  right:-82px;
+  -webkit-mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 74 60'><line x1='0' y1='9' x2='48' y2='9' stroke='black' stroke-width='3'/><line x1='0' y1='28' x2='22' y2='28' stroke='black' stroke-width='3'/><line x1='0' y1='47' x2='34' y2='47' stroke='black' stroke-width='3'/><rect x='56' y='4' width='10' height='10' fill='none' stroke='black' stroke-width='1.6'/></svg>");
+          mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 74 60'><line x1='0' y1='9' x2='48' y2='9' stroke='black' stroke-width='3'/><line x1='0' y1='28' x2='22' y2='28' stroke='black' stroke-width='3'/><line x1='0' y1='47' x2='34' y2='47' stroke='black' stroke-width='3'/><rect x='56' y='4' width='10' height='10' fill='none' stroke='black' stroke-width='1.6'/></svg>");
+}
+/* example: tracer in the LEFT gutter, lines extend leftward (mirrored) */
+.example::before{
+  bottom:14px;
+  left:-82px;
+  -webkit-mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 74 60'><line x1='26' y1='9' x2='74' y2='9' stroke='black' stroke-width='3'/><line x1='52' y1='28' x2='74' y2='28' stroke='black' stroke-width='3'/><line x1='40' y1='47' x2='74' y2='47' stroke='black' stroke-width='3'/><rect x='8' y='4' width='10' height='10' fill='none' stroke='black' stroke-width='1.6'/></svg>");
+          mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 74 60'><line x1='26' y1='9' x2='74' y2='9' stroke='black' stroke-width='3'/><line x1='52' y1='28' x2='74' y2='28' stroke='black' stroke-width='3'/><line x1='40' y1='47' x2='74' y2='47' stroke='black' stroke-width='3'/><rect x='8' y='4' width='10' height='10' fill='none' stroke='black' stroke-width='1.6'/></svg>");
+}
+.key-concept::after,.example::after{display:none}
+@media(max-width:1100px){
+  .key-concept::before,.example::before{display:none}
+}
+.graph-container{
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:8px;
+  padding:1.5rem;
+  margin:1.5rem 0;
+  text-align:center;
+}
+.graph-container svg{max-width:100%}
+table{
+  width:100%;
+  border-collapse:collapse;
+  margin:1.5rem 0;
+  background:var(--card);
+  border-radius:6px;
+  overflow:hidden;
+  border:1px solid var(--border);
+  font-size:.9rem;
+}
+th,td{padding:.7rem .9rem;border-bottom:1px solid var(--border);text-align:left}
+tr:last-child td{border-bottom:none}
+th{
+  background:var(--accent-bg);
+  font-weight:600;
+  color:var(--accent);
+  letter-spacing:.01em;
+}
+code{
+  background:#e6eef0;
+  color:var(--accent);
+  padding:.12rem .42rem;
+  border-radius:3px;
+  font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:.85em;
+  font-weight:500;
+}
+pre{
+  background:#003135;
+  color:#dceef0;
+  padding:1.25rem;
+  border-radius:8px;
+  overflow-x:auto;
+  margin:1.5rem 0;
+  font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:.82rem;
+  line-height:1.6;
+  font-weight:400;
+}
+pre code{background:none;color:inherit;padding:0;font-weight:400}
+.figure{
+  margin:1.75rem 0;
+  padding:1.25rem;
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:8px;
+  text-align:center;
+}
+.figure svg{max-width:100%}
+.figure figcaption{
+  margin-top:.75rem;
+  font-size:.85rem;
+  color:var(--muted);
+  line-height:1.6;
+  text-align:left;
+}
+.figure figcaption strong{color:var(--accent)}
+.katex{font-size:1.02em}
+.katex-display{margin:1.25rem 0;overflow-x:auto;overflow-y:hidden}
+
+.mf-figure { margin: 1.75rem 0; padding: 1.25rem; background: #ffffff;
+             border: 1px solid #b8dcd9; border-radius: 0; }
+.mf-figure h4 { margin: 0 0 0.8rem 0; font-size: 1rem; font-weight: 600;
+                color: #024950; letter-spacing: -0.01em; }
+.mf-panels { display: grid; gap: 1rem; }
+.mf-panels.cols-2 { grid-template-columns: 1fr 1fr; }
+@media (max-width: 720px) { .mf-panels.cols-2 { grid-template-columns: 1fr; } }
+.mf-panel { min-height: 380px; }
+.mf-sliders { display: grid; gap: 0.35rem; margin-top: 1.25rem; padding: 0;
+              background: transparent; border: none; }
+.mf-slider-row { display: grid; grid-template-columns: 160px 1fr 70px;
+                 align-items: center; gap: 0.9rem; }
+.mf-slider-row label { font-size: 0.76rem; color: #5a7378; font-weight: 400;
+                       letter-spacing: 0.01em; }
+.mf-slider-row input[type=range] {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 16px; background: transparent; margin: 0; padding: 0;
+  cursor: pointer;
+}
+.mf-slider-row input[type=range]::-webkit-slider-runnable-track {
+  height: 1px; background: #b8dcd9; border: none;
+}
+.mf-slider-row input[type=range]::-moz-range-track {
+  height: 1px; background: #b8dcd9; border: none;
+}
+.mf-slider-row input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  height: 9px; width: 9px; border-radius: 50%;
+  background: #0FA4AF; border: none; margin-top: -4px;
+  cursor: pointer; transition: transform .12s, background .12s;
+}
+.mf-slider-row input[type=range]::-moz-range-thumb {
+  height: 9px; width: 9px; border-radius: 50%;
+  background: #0FA4AF; border: none;
+  cursor: pointer; transition: transform .12s, background .12s;
+}
+.mf-slider-row input[type=range]:hover::-webkit-slider-thumb {
+  background: #024950; transform: scale(1.25);
+}
+.mf-slider-row input[type=range]:hover::-moz-range-thumb {
+  background: #024950; transform: scale(1.25);
+}
+.mf-slider-row .mf-value { font-family: 'JetBrains Mono', ui-monospace, monospace;
+                           text-align: right; color: #024950; font-weight: 400;
+                           font-size: 0.76rem; }
+.mf-slider-row .mf-value::before { content: ''; }
+.mf-reset { background: transparent; border: none;
+            padding: 0.35rem 0; margin-top: 0.4rem; cursor: pointer; font-size: 0.72rem;
+            color: #5a7378; justify-self: start; letter-spacing: 0.05em;
+            text-transform: uppercase; font-family: inherit;
+            border-bottom: 1px solid transparent; transition: color .15s, border-color .15s; }
+.mf-reset:hover { color: #024950; border-bottom-color: #0FA4AF; }
+.mf-readout { font-family: 'JetBrains Mono', ui-monospace, monospace;
+              font-size: 0.74rem; color: #964734; font-weight: 400;
+              margin-top: 0.6rem; padding: 0.4rem 0;
+              border-top: 1px dashed #b8dcd9; min-height: 1rem;
+              letter-spacing: 0.01em; }
+.mf-caption { font-size: 0.84rem; color: #5a7378; line-height: 1.6;
+              margin-top: 1rem; padding: 0.75rem 0 0;
+              border-top: 1px solid #b8dcd9; }
+.mf-caption strong { color: #024950; font-weight: 600; letter-spacing: 0.01em; }
+
+@media(max-width:900px){
+  nav{display:none}
+  main{margin-left:0;padding:2rem 1.25rem 3rem}
+  h1{font-size:1.7rem}
+}
+</style>
+</head>
+<body>
+<div class="layout">
+<nav>
+<h2>Contents</h2>
+<a href="#sec-typography">Typography & Inline Elements</a><a href="#sec-callouts">Callouts</a><a href="#sec-derivation">Derivation with Display Math</a><a href="#sec-figure">Interactive Figure</a><a href="#sec-tables-code">Tables & Code</a><a href="#sec-svg">Schematic Figure (SVG)</a>
+</nav>
+<main>
+<h1>Style Test Lecture — Visual Fixture</h1>
+<div class="meta">Sample content exercising every renderable element · 2026-05-25</div>
+<div class="section" id="sec-typography"><h2>Typography & Inline Elements</h2><p>This section exercises basic prose rendering: paragraph spacing, line height, and inline math. Suppose we have a production function $Y = F(K, L)$ that exhibits constant returns to scale. We can write per-worker output as $y = f(k)$ where $k = K/L$.</p><p>A second paragraph follows. It should sit at a comfortable distance from the first, with line height tuned for sustained reading. Inline emphasis can be <em>italic</em> or <strong>bold</strong>; inline code looks like <code>renderFigure(spec, id)</code>.</p><h3>A subsection</h3><p>The third-level heading above should be distinct from the section title but clearly subordinate. Ordered lists below:</p><ol><li>First item — capital accumulates via savings.</li><li>Second item — depreciation removes a fraction $\delta$ each period.</li><li>Third item — steady state is where the two forces balance.</li></ol><p>Unordered lists:</p><ul><li>Bullet one</li><li>Bullet two with a longer line that may wrap onto a second visual row depending on the column width</li><li>Bullet three</li></ul></div><div class="section" id="sec-callouts"><h2>Callouts</h2><p>Two callout styles are used throughout: the <em>key concept</em> box highlights a definition or result the reader must internalize, and the <em>example</em> box gives a concrete illustration or worked numeric case.</p><div class="key-concept"><strong>Key concept.</strong> The steady state $k^*$ is the level of capital per worker at which gross investment $s f(k)$ exactly offsets effective depreciation $(n + \delta) k$. Algebraically, $k^*$ solves $s f(k^*) = (n + \delta) k^*$.</div><p>A short paragraph between callouts. The vertical rhythm should keep callouts visually grouped with the prose that introduces them, not floating.</p><div class="example"><strong>Example.</strong> With $f(k) = k^{0.3}$, $s = 0.2$, $n = 0.01$, $\delta = 0.04$, the steady state is $k^* = (s/(n+\delta))^{1/(1-\alpha)} = (0.2/0.05)^{1/0.7} \approx 6.96$. Steady-state output per worker is $y^* = (k^*)^{0.3} \approx 1.74$.</div></div><div class="section" id="sec-derivation"><h2>Derivation with Display Math</h2><p>We derive the steady-state capital per worker step by step. Start from the law of motion:</p><p>$$\Delta k_t = s f(k_t) - (n + \delta) k_t.$$</p><p>At a steady state $k^*$, the change is zero by definition:</p><p>$$0 = s f(k^*) - (n + \delta) k^*.$$</p><p>Rearranging,</p><p>$$\frac{f(k^*)}{k^*} = \frac{n + \delta}{s}.$$</p><p>With Cobb-Douglas $f(k) = k^{\alpha}$, this becomes</p><p>$$(k^*)^{\alpha - 1} = \frac{n + \delta}{s} \quad\Longrightarrow\quad k^* = \left(\frac{s}{n + \delta}\right)^{\frac{1}{1 - \alpha}}.$$</p></div><div class="section" id="sec-figure"><h2>Interactive Figure</h2><p>The figure below shows the Solow diagram. Drag the saving-rate slider to see the steady state shift along the depreciation line.</p><div class="mf-figure" id="fig-solow"><div class="mf-panels "><div id="fig-solow-panel-0" class="mf-panel"></div></div><div class="mf-readout"></div><div class="mf-sliders"><div class="mf-slider-row"><label>saving rate s</label><input type="range" data-slider="s" min="0.05" max="0.5" step="0.01" value="0.2"><span class="mf-value">= <span data-value="s">0.20</span></span></div><div class="mf-slider-row"><label>capital share α</label><input type="range" data-slider="alpha" min="0.1" max="0.7" step="0.01" value="0.3"><span class="mf-value">= <span data-value="alpha">0.30</span></span></div><div class="mf-slider-row"><label>depreciation δ</label><input type="range" data-slider="delta" min="0.01" max="0.15" step="0.01" value="0.04"><span class="mf-value">= <span data-value="delta">0.04</span></span></div><button type="button" class="mf-reset">Reset to defaults</button></div><p class="mf-caption"><strong>Solow diagram.</strong> Investment <strong>s·f(k)</strong> versus break-even line <strong>(n+δ)·k</strong>. The intersection is the steady state k*. Drag the slider to shift s.</p><script>(function(){var spec={"id": "fig-solow", "title": "Solow diagram", "caption": "Investment <strong>s\u00b7f(k)</strong> versus break-even line <strong>(n+\u03b4)\u00b7k</strong>. The intersection is the steady state k*. Drag the slider to shift s.", "params": {"s": 0.2, "alpha": 0.3, "n": 0.01, "delta": 0.04}, "x_range": [0, 20], "n_points": 200, "x_label": "capital per worker, k", "y_label": "output / investment", "curves": [{"name": "f(k)", "expr": "Math.pow(k, alpha)", "color": "#024950"}, {"name": "s\u00b7f(k)", "expr": "s * Math.pow(k, alpha)", "color": "#0FA4AF"}, {"name": "(n+\u03b4)\u00b7k", "expr": "(n + delta) * k", "color": "#964734"}], "markers": [{"type": "intersection", "curves": [1, 2], "label": "k*", "color": "#003135", "guide": "vertical"}], "sliders": [{"param": "s", "label": "saving rate s", "min": 0.05, "max": 0.5, "step": 0.01, "decimals": 2}, {"param": "alpha", "label": "capital share \u03b1", "min": 0.1, "max": 0.7, "step": 0.01, "decimals": 2}, {"param": "delta", "label": "depreciation \u03b4", "min": 0.01, "max": 0.15, "step": 0.01, "decimals": 2}]};var hostId="fig-solow";function go(){if(!window.MacroFigures){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.MacroFigures not defined. Did FIGURE_JS load before this snippet?</div>");return;}if(!window.Plotly){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.Plotly not loaded.</div>");return;}try{window.MacroFigures.renderFigure(spec,hostId);}catch(e){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Render error: "+e.message+"</div>");}}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",go);}else{go();}})();</script></div><p>The marker traces the intersection automatically. The readout below the chart prints the numeric values.</p></div><div class="section" id="sec-tables-code"><h2>Tables & Code</h2><p>A small table for comparing variants:</p><table><thead><tr><th>Model</th><th>Source of growth</th><th>Long-run growth rate</th></tr></thead><tbody><tr><td>Solow (exogenous)</td><td>Technological progress $g$ (assumed)</td><td>$g$</td></tr><tr><td>Romer</td><td>R&amp;D scale, $\dot{A}/A = \lambda L_A$</td><td>Scales with $L$</td></tr><tr><td>Semi-endogenous</td><td>R&amp;D + diminishing returns to ideas</td><td>$\frac{\lambda n}{1 - \phi}$</td></tr></tbody></table><p>And a code block:</p><pre>def steady_state(s, n, delta, alpha):
+    return (s / (n + delta)) ** (1 / (1 - alpha))
+
+k_star = steady_state(s=0.2, n=0.01, delta=0.04, alpha=0.3)
+print(f"k* = {k_star:.4f}")  # k* = 6.9588</pre></div><div class="section" id="sec-svg"><h2>Schematic Figure (SVG)</h2><p>A schematic figure renders inline as SVG — used when no quantitative axis is needed:</p><figure class="figure"><svg viewBox="0 0 480 200" xmlns="http://www.w3.org/2000/svg"><defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#024950"/></marker></defs><rect x="30" y="70" width="110" height="60" rx="8" fill="#dceef0" stroke="#024950" stroke-width="1.5"/><text x="85" y="105" text-anchor="middle" font-family="Inter, sans-serif" font-size="14" fill="#003135">Households</text><rect x="185" y="70" width="110" height="60" rx="8" fill="#dceef0" stroke="#024950" stroke-width="1.5"/><text x="240" y="105" text-anchor="middle" font-family="Inter, sans-serif" font-size="14" fill="#003135">Firms</text><rect x="340" y="70" width="110" height="60" rx="8" fill="#f5e3dd" stroke="#964734" stroke-width="1.5"/><text x="395" y="105" text-anchor="middle" font-family="Inter, sans-serif" font-size="14" fill="#003135">Output</text><line x1="140" y1="100" x2="180" y2="100" stroke="#024950" stroke-width="1.5" marker-end="url(#arr)"/><line x1="295" y1="100" x2="335" y2="100" stroke="#024950" stroke-width="1.5" marker-end="url(#arr)"/><text x="160" y="90" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" fill="#5a7378">labor</text><text x="315" y="90" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" fill="#5a7378">produce</text></svg><figcaption><strong>Figure.</strong> Schematic flow — used for diagrams where no numeric axis is needed. SVG colors must match the lecture palette.</figcaption></figure></div>
+</main>
+</div>
+<script>
+renderMathInElement(document.body,{delimiters:[{left:"$$",right:"$$",display:true},{left:"$",right:"$",display:false},{left:"\\(",right:"\\)",display:false},{left:"\\[",right:"\\]",display:true}]});
+const obs=new IntersectionObserver(entries=>{entries.forEach(e=>{if(e.isIntersecting){document.querySelectorAll("nav a").forEach(a=>a.classList.remove("active"));const a=document.querySelector(`nav a[href="#${e.target.id}"]`);if(a)a.classList.add("active")}})},{threshold:0.3});
+document.querySelectorAll(".section").forEach(s=>obs.observe(s));
+</script>
+</body>
+</html>

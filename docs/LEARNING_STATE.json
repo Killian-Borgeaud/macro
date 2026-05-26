@@ -1,0 +1,209 @@
+{
+  "subject": "Macroeconomics III",
+  "term": "Spring 2026",
+  "topics": [
+    {
+      "id": "m1-stylized-facts",
+      "module": 1,
+      "name": "Seven stylized facts of growth (Lorenz, Gini, convergence)",
+      "level": "seen",
+      "last_touched": "2026-05-25"
+    },
+    {
+      "id": "m1-balanced-growth",
+      "module": 1,
+      "name": "Balanced growth path definition",
+      "level": "seen",
+      "last_touched": "2026-05-25"
+    },
+    {
+      "id": "m1-solow-setup",
+      "module": 1,
+      "name": "Basic Solow model — agents, markets, production assumptions",
+      "level": "seen",
+      "last_touched": "2026-05-25"
+    },
+    {
+      "id": "m1-cobb-douglas-factor-prices",
+      "module": 1,
+      "name": "Cobb-Douglas, factor prices, income shares = output elasticities",
+      "level": "seen",
+      "last_touched": "2026-05-25"
+    },
+    {
+      "id": "m1-capital-accumulation",
+      "module": 1,
+      "name": "Capital accumulation equation and per-worker reduction",
+      "level": "seen",
+      "last_touched": "2026-05-25"
+    },
+    {
+      "id": "m1-solow-equation",
+      "module": 1,
+      "name": "Solow equation and transition diagram",
+      "level": "seen",
+      "last_touched": "2026-05-25"
+    },
+    {
+      "id": "m1-steady-state",
+      "module": 1,
+      "name": "Steady state k*, y*, r*, w* and Solow elasticities",
+      "level": "seen",
+      "last_touched": "2026-05-25"
+    },
+    {
+      "id": "m1-golden-rule",
+      "module": 1,
+      "name": "Golden Rule savings rate s** = α",
+      "level": "seen",
+      "last_touched": "2026-05-25"
+    },
+    {
+      "id": "m1-government-crowding-out",
+      "module": 1,
+      "name": "Government sector and crowding out",
+      "level": "seen",
+      "last_touched": "2026-05-25"
+    },
+    {
+      "id": "m1-empirical-evidence",
+      "module": 1,
+      "name": "Empirical evidence for/against basic Solow (Mock Q1)",
+      "level": "seen",
+      "last_touched": "2026-05-25"
+    },
+    {
+      "id": "m2-open-economy-setup",
+      "module": 2,
+      "name": "Open economy accounting: V = K + F, GDP vs GNP, CA = S − I",
+      "level": "seen",
+      "last_touched": "2026-05-26"
+    },
+    {
+      "id": "m2-open-economy-dynamics",
+      "module": 2,
+      "name": "Open economy two-speed dynamics: k jumps to k*, v crawls",
+      "level": "seen",
+      "last_touched": "2026-05-26"
+    },
+    {
+      "id": "m2-open-economy-theorem",
+      "module": 2,
+      "name": "Opening theorem: y^n* always rises; wage caveat for strong savers",
+      "level": "seen",
+      "last_touched": "2026-05-26"
+    },
+    {
+      "id": "m2-stability-conditions",
+      "module": 2,
+      "name": "Stability conditions: sr̄ < n (open) and n+g+δ+ng > 0 (general)",
+      "level": "seen",
+      "last_touched": "2026-05-26"
+    },
+    {
+      "id": "m2-feldstein-horioka",
+      "module": 2,
+      "name": "Feldstein-Horioka regression as measure of capital mobility",
+      "level": "seen",
+      "last_touched": "2026-05-26"
+    },
+    {
+      "id": "m2-general-solow-setup",
+      "module": 2,
+      "name": "General Solow setup: Y = K^α(AL)^(1-α), effective labour, per-effective-worker variables",
+      "level": "seen",
+      "last_touched": "2026-05-26"
+    },
+    {
+      "id": "m2-general-solow-steady-state",
+      "module": 2,
+      "name": "General Solow steady state: k̃*, balanced growth (k, y, c, w grow at g)",
+      "level": "seen",
+      "last_touched": "2026-05-26"
+    },
+    {
+      "id": "m2-empirical-fit-general-solow",
+      "module": 2,
+      "name": "Empirical fit: OLS slope 1.52 vs theory 0.5; λ 0.7% vs theory 5%",
+      "level": "seen",
+      "last_touched": "2026-05-26"
+    },
+    {
+      "id": "m3-mrw-production-function",
+      "module": 3,
+      "name": "MRW production function Y = K^α H^φ (AL)^(1-α-φ); per-effective-worker form",
+      "level": "seen",
+      "last_touched": "2026-05-25"
+    },
+    {
+      "id": "m3-mrw-transition-and-phase",
+      "module": 3,
+      "name": "MRW transition equations, Solow equations, phase diagram in (k̃, h̃)",
+      "level": "seen",
+      "last_touched": "2026-05-25"
+    },
+    {
+      "id": "m3-mrw-steady-state-elasticities",
+      "module": 3,
+      "name": "MRW steady state k̃*, h̃*, ỹ* and elasticities (~1 wrt s, ~-2 wrt n+g+δ)",
+      "level": "seen",
+      "last_touched": "2026-05-25"
+    },
+    {
+      "id": "m3-mrw-golden-rule",
+      "module": 3,
+      "name": "MRW golden rule s_K = α, s_H = φ",
+      "level": "seen",
+      "last_touched": "2026-05-25"
+    },
+    {
+      "id": "m3-mrw-empirical-fit",
+      "module": 3,
+      "name": "MRW cross-country regression: R² 0.63 → 0.79, slope estimates 0.59 and 0.93",
+      "level": "seen",
+      "last_touched": "2026-05-25"
+    },
+    {
+      "id": "m3-education-subsidies",
+      "module": 3,
+      "name": "Policy implications: education subsidies justified by credit/insurance/externalities/distribution imperfections",
+      "level": "seen",
+      "last_touched": "2026-05-25"
+    },
+    {
+      "id": "m3-solow-with-land",
+      "module": 3,
+      "name": "Solow with land: production Y = K^α (AL)^β X^κ, z = K/Y transition curve and 4 properties",
+      "level": "seen",
+      "last_touched": "2026-05-25"
+    },
+    {
+      "id": "m3-land-growth-rate",
+      "module": 3,
+      "name": "Steady-state growth rate g^y = (βg − κn)/(β+κ); classical vs modern case",
+      "level": "seen",
+      "last_touched": "2026-05-25"
+    },
+    {
+      "id": "m3-solow-with-oil",
+      "module": 3,
+      "name": "Solow with land + oil: depletion drag, E_t = s_E R_t, R_t = (1−s_E)^t R_0",
+      "level": "seen",
+      "last_touched": "2026-05-25"
+    },
+    {
+      "id": "m3-oil-growth-rate",
+      "module": 3,
+      "name": "Land+oil g^y formula with three drags (tech share, population, depletion)",
+      "level": "seen",
+      "last_touched": "2026-05-25"
+    },
+    {
+      "id": "m3-numerical-simulation-q2",
+      "module": 3,
+      "name": "How to numerically simulate the transition equations (Mock Q2 part 2)",
+      "level": "seen",
+      "last_touched": "2026-05-25"
+    }
+  ]
+}

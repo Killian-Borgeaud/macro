@@ -1,0 +1,66 @@
+{
+  "id": "fig-solow-interactive",
+  "title": "Figure: The Solow Diagram",
+  "caption": "Drag the saving-rate slider to watch sf(k) shift up and k* migrate right. Drag the population-growth slider to watch the break-even line rotate. Notice that ↑s and ↓n both raise k* — but for different reasons (more savings vs less dilution).",
+  "x_var": "k",
+  "x_range": [0.1, 80],
+  "x_label": "capital per worker, k",
+  "y_label": "output / investment per worker",
+  "n_points": 200,
+  "params": {
+    "alpha": 0.33,
+    "B": 1.0,
+    "s": 0.20,
+    "n": 0.02,
+    "delta": 0.05
+  },
+  "curves": [
+    {
+      "name": "saving per worker, s·f(k)",
+      "expr": "s * B * Math.pow(k, alpha)",
+      "color": "#2563eb",
+      "width": 3
+    },
+    {
+      "name": "break-even, (n+δ)·k",
+      "expr": "(n + delta) * k",
+      "color": "#dc2626",
+      "width": 3
+    }
+  ],
+  "markers": [
+    {
+      "label": "k*",
+      "find": "intersection",
+      "curves": [0, 1],
+      "color": "#111",
+      "guide": "vertical"
+    }
+  ],
+  "sliders": [
+    {
+      "param": "s",
+      "min": 0.05,
+      "max": 0.50,
+      "step": 0.01,
+      "label": "saving rate s",
+      "decimals": 2
+    },
+    {
+      "param": "n",
+      "min": 0.0,
+      "max": 0.05,
+      "step": 0.001,
+      "label": "population growth n",
+      "decimals": 3
+    },
+    {
+      "param": "alpha",
+      "min": 0.10,
+      "max": 0.80,
+      "step": 0.01,
+      "label": "capital share α",
+      "decimals": 2
+    }
+  ]
+}

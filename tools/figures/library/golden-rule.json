@@ -1,0 +1,43 @@
+{
+  "id": "fig-golden-rule",
+  "title": "Figure. The Golden Rule",
+  "caption": "Steady-state consumption per worker c*(s) as a function of the saving rate s. Hill-shaped: too little saving and you produce too little; too much saving and you never consume. The maximum sits at s** = α (marked). At low s, ↑s helps consumption; past the peak, the trade-off reverses.",
+  "params": {
+    "alpha": 0.33,
+    "B": 1.0,
+    "n": 0.02,
+    "delta": 0.05
+  },
+  "panels": [
+    {
+      "id": "hill",
+      "x_range": [0.01, 0.99],
+      "n_points": 200,
+      "x_label": "saving rate s",
+      "y_label": "steady-state consumption per worker c*",
+      "curves": [
+        {
+          "type": "expr",
+          "name": "c*(s)",
+          "expr": "(1 - k) * Math.pow(B, 1 / (1 - alpha)) * Math.pow(k / (n + delta), alpha / (1 - alpha))",
+          "color": "#2563eb",
+          "width": 3
+        }
+      ],
+      "markers": [
+        {
+          "type": "maximum",
+          "label": "s** = α",
+          "curve": 0,
+          "color": "#dc2626",
+          "guide": "vertical"
+        }
+      ]
+    }
+  ],
+  "sliders": [
+    {"param": "alpha", "min": 0.10, "max": 0.80, "step": 0.01, "label": "capital share α", "decimals": 2},
+    {"param": "n", "min": 0.0, "max": 0.05, "step": 0.001, "label": "population growth n", "decimals": 3},
+    {"param": "delta", "min": 0.0, "max": 0.15, "step": 0.005, "label": "depreciation δ", "decimals": 3}
+  ]
+}
