@@ -1,0 +1,76 @@
+{
+  "title": "Mock Exam Simulation — Visual Fixture",
+  "meta": "Macroeconomics III · 4-question essay simulation · 2026-05-26",
+  "exam_info": {
+    "total_minutes": 90,
+    "num_questions": 4,
+    "weight_per_question": "25%",
+    "format_note": "4 essay questions, equal weight. No MCQ, no T/F, no sub-parts. Each question pairs a technical move with an interpretive one."
+  },
+  "questions": [
+    {
+      "id": 1,
+      "module": 1,
+      "verb_pair": "describe + critique",
+      "weight": "25%",
+      "target_minutes": 20,
+      "prompt": "Describe the main empirical evidence supporting and contradicting the basic Solow model.",
+      "skeleton": [
+        "Define what basic Solow predicts: country-specific steady state in <em>levels</em> (not growth rates); conditional, not absolute, convergence",
+        "Supporting: Kaldor facts (constant labor share, constant $K/Y$, constant real $r$); cross-country positive correlation of $y^*$ with $s$, negative with $n+\\delta$",
+        "Contradicting: observed convergence rate $\\approx 2\\%$/yr vs Solow prediction $\\approx 5\\text{-}6\\%$; cross-country dispersion of $y^*$ wider than Solow predicts; absolute convergence fails outside OECD",
+        "Resolution via MRW: augmenting with human capital ($\\alpha + \\phi \\approx 0.66$) flattens predicted convergence and amplifies elasticity of $y^*$ wrt $s$",
+        "Verdict: direction right, magnitudes wrong — points to missing factors (broad capital, TFP differences)"
+      ],
+      "model_answer": "<p>Basic Solow predicts that an economy converges to a country-specific steady state determined by $s$, $n$, $\\delta$, and the Cobb-Douglas exponent $\\alpha$. The prediction is about <em>levels</em> — $y^*$ depends on parameters — not about long-run growth rates, which are zero in the basic model. Crucially the convergence is <em>conditional</em>: countries with different parameters converge to different $y^*$, not to a common world income.</p><h3>Supporting evidence</h3><p>The Kaldor stylized facts hold approximately over the long run: the labor share is roughly constant (consistent with Cobb-Douglas), the capital-output ratio $K/Y$ is roughly constant (a steady-state implication), and the real interest rate shows no trend (also a steady-state implication, since $r^* = \\alpha(n+\\delta)/s$ doesn't depend on $B$). Cross-country, the model's comparative statics line up with the data in sign: countries with higher saving rates have higher $y^*$; countries with higher population growth have lower $y^*$.</p><h3>Contradicting evidence</h3><p>The model's <em>magnitudes</em> miss in two famous ways. First, the speed of convergence: log-linearization around $k^*$ gives $\\lambda = (1-\\alpha)(n+\\delta+g)$, which with $\\alpha = 1/3$ implies convergence at roughly 5-6% per year. Observed convergence speed across countries is closer to 2% per year — much slower. Second, the cross-country dispersion of $y^*$ is far wider than basic Solow can rationalize: the elasticity of $y^*$ with respect to $s$ in the model is $\\alpha/(1-\\alpha) \\approx 0.5$, but in the data it's closer to 1.5. Outside the OECD, absolute convergence largely fails — poor countries are not catching up to rich ones in the aggregate.</p><h3>Resolution</h3><p>MRW (1992) augment Solow with human capital, $Y = K^\\alpha H^\\phi (AL)^{1-\\alpha-\\phi}$, and estimate $\\alpha + \\phi \\approx 0.66$. The same parameter $1 - \\alpha - \\phi \\approx 0.34$ now controls both convergence speed (which falls to a Solow-predicted $\\sim 2\\%$, matching the data) and the elasticity of $y^*$ with respect to $s$ (which rises closer to the observed 1.5). Both puzzles resolve at once with the same exponent — a powerful confirmation that the missing piece was a broader notion of accumulable capital.</p><div class=\"key-result\"><strong>Verdict:</strong> basic Solow gets the directions right but the magnitudes wrong. Augmented Solow (MRW) substantially closes both empirical puzzles with a single parameter change, suggesting the basic model is incomplete rather than wrong in structure.</div>"
+    },
+    {
+      "id": 2,
+      "module": 3,
+      "verb_pair": "explain + sketch",
+      "weight": "25%",
+      "target_minutes": 22,
+      "prompt": "Explain the Solow model with land and natural resources. Sketch how you would numerically simulate the transition equations with a software of your choice (Excel, or other).",
+      "skeleton": [
+        "Production with land $X$ (fixed) and oil $E_t$ (depleting): $Y_t = K_t^\\alpha (A_t L_t)^\\beta X^\\kappa E_t^\\varepsilon$",
+        "Per-capita output growth: $g^y = (\\beta g - (\\kappa + \\varepsilon)(n+s_E))/(\\beta + \\kappa + \\varepsilon)$ — three drags: tech share, population, depletion",
+        "Classical (Malthusian) case: $g^y < 0$ if drags dominate; modern case: $g^y > 0$ if tech progress dominates",
+        "Simulation algorithm: initialize $k_0, h_0, A_0, R_0$; iterate $k_{t+1}$ via the Solow equation, $A_{t+1} = (1+g)A_t$, $R_{t+1} = (1-s_E)R_t$, $E_t = s_E R_t$",
+        "Plot $y_t$, $c_t$, growth rate $(y_t - y_{t-1})/y_{t-1}$ over $t = 0, \\ldots, 100$ — observe transition to balanced growth path"
+      ],
+      "model_answer": "<p>The Solow model with land and natural resources extends basic Solow by adding non-reproducible factors. Aggregate production becomes $Y_t = K_t^\\alpha (A_t L_t)^\\beta X^\\kappa E_t^\\varepsilon$ with $\\alpha + \\beta + \\kappa + \\varepsilon = 1$. Here $X$ is the fixed stock of land, $E_t = s_E R_t$ is per-period oil extraction from a finite reserve $R_t$ that depletes according to $R_{t+1} = (1 - s_E) R_t$. Labor-augmenting technology grows at rate $g$.</p><h3>The drag on per-capita growth</h3><p>Substituting per-effective-worker variables and taking logs, the balanced-growth rate of $y_t$ becomes</p><div class=\"key-result\"><strong>Growth rate with three drags:</strong> $g^y = \\dfrac{\\beta g - (\\kappa + \\varepsilon)(n + s_E)}{\\beta + \\kappa + \\varepsilon}$</div><p>The numerator captures the tug-of-war: technology pushes growth up (the $\\beta g$ term), while population growth dilutes land (the $\\kappa n$ term) and oil depletion drains the resource (the $\\varepsilon s_E$ term, and an additional $\\varepsilon n$ from population dilution of oil). In the <em>classical</em> case (low $g$, high $n$, high $s_E$) the drags win and $g^y < 0$ — long-run per-capita decline. In the <em>modern</em> case (high $g$) technology dominates and $g^y > 0$.</p><h3>Numerical simulation sketch</h3><p>To simulate the transition in Excel or similar: set up columns for $t, k_t, h_t, A_t, R_t, E_t, y_t, c_t$ and a row of parameters $\\alpha, \\beta, \\kappa, \\varepsilon, n, g, \\delta, s, s_E, k_0, A_0, R_0$. Each row computes:</p><ol><li>$E_t = s_E R_t$</li><li>$Y_t = K_t^\\alpha (A_t L_t)^\\beta X^\\kappa E_t^\\varepsilon$, then $y_t = Y_t / L_t$ and $c_t = (1-s) y_t$</li><li>$K_{t+1} = (1-\\delta) K_t + s Y_t$</li><li>$A_{t+1} = (1+g) A_t$, $R_{t+1} = (1-s_E) R_t$, $L_{t+1} = (1+n) L_t$</li></ol><p>Iterate for $t = 0, \\ldots, 100$ and plot $y_t$, $c_t$, and $(y_t - y_{t-1})/y_{t-1}$. The economy approaches the balanced growth rate $g^y$ over several decades. A parameter sweep over $\\varepsilon$ (oil's importance) shows how depletion bends the path away from the no-resource benchmark.</p>"
+    },
+    {
+      "id": 3,
+      "module": 5,
+      "verb_pair": "derive + discuss",
+      "weight": "25%",
+      "target_minutes": 23,
+      "prompt": "Derive and discuss the policy implications of Cozzi (2017) hybrid model.",
+      "skeleton": [
+        "Setup: R&D-based growth model combining semi-endogenous (Jones) and truly-endogenous (Howitt/Peretto/Young) engines",
+        "Two complementary R&D mechanisms: horizontal (variety expansion) + vertical (quality improvement), with shared researcher pool $L_A$",
+        "Threshold $\\bar n$ separating regimes: below $\\bar n$, scale-effect-free truly-endogenous growth; above $\\bar n$, semi-endogenous growth with scale",
+        "Steady-state growth rate $g^A$ depends on $\\bar n$ vs realized $n$ — policy can shift the regime",
+        "Policy implication: subsidizing R&D not only raises growth but can shift the economy into the more permissive regime — 'policy makes policy more effective'"
+      ],
+      "model_answer": "<p>Cozzi (2017) builds a hybrid R&D-based growth model that combines two engines previously thought rival: the semi-endogenous mechanism (Jones 1995, Kortum, Segerstrom) where growth scales with population and the truly-endogenous mechanism without scale effects (Howitt, Peretto, Young) where horizontal variety expansion neutralizes the scale effect. Cozzi shows the two engines can coexist within one R&D sector, generating a threshold-driven regime structure.</p><h3>Setup and the threshold</h3><p>Aggregate technology depends on two activities: <em>vertical</em> R&D improves the quality of existing varieties, and <em>horizontal</em> R&D introduces new varieties. The researcher pool $L_A$ is allocated endogenously between the two. With population growing at rate $n$, the model produces a critical threshold $\\bar n$ such that:</p><div class=\"key-result\"><strong>Hybrid regime threshold:</strong> for $n < \\bar n$ the truly-endogenous engine dominates, growth is scale-free and depends on policy parameters (subsidies, IP protection). For $n > \\bar n$, the semi-endogenous engine dominates and growth scales with $n$.</div><h3>Policy implications</h3><p>Three implications follow. First, in the truly-endogenous regime ($n < \\bar n$), R&D subsidies raise the steady-state growth rate $g^A$ — policy works on growth, not just on levels. Second, in the semi-endogenous regime ($n > \\bar n$), subsidies raise the <em>level</em> of $A$ but not the growth rate, which is pinned by $n$. The same instrument has different long-run effects across regimes.</p><p>Third — and this is Cozzi's signature observation — policy can <em>shift the threshold itself</em>: by reallocating $L_A$ between horizontal and vertical R&D (via differential subsidies), policy effectively changes $\\bar n$, potentially moving the economy from the semi-endogenous regime into the truly-endogenous one. <em>Policy makes policy more effective for growth</em>: an R&D subsidy that doesn't raise growth in the current regime can move the economy into a regime where it does.</p><p>The implication for industrial policy is striking. In a world where conventional wisdom says \"R&D subsidies only raise levels, not growth\" (the Jones critique of pure endogenous models), Cozzi's hybrid says: subsidies can raise growth, provided they tilt the R&D portfolio toward variety expansion enough to cross the threshold. This makes the <em>composition</em> of R&D policy, not just its size, the key choice for governments aiming to lift long-run growth.</p>"
+    },
+    {
+      "id": 4,
+      "module": 6,
+      "verb_pair": "derive + intuition",
+      "weight": "25%",
+      "target_minutes": 20,
+      "prompt": "Derive the \"Solow conditions\" of the efficiency wages model and give an intuitive explanation of them.",
+      "skeleton": [
+        "Setup: firms choose wage $w$ AND employment $L$; worker effort $e(w)$ is increasing in $w$",
+        "Firm problem: minimize wage cost per effective unit of labor $w/e(w)$ → take derivative wrt $w$",
+        "First Solow condition: $e'(w^*) \\cdot w^*/e(w^*) = 1$, i.e. elasticity of effort wrt wage equals 1 at the optimum",
+        "Second Solow condition: $F_L(K, e(w^*)L^*) = w^*$, i.e. marginal product of effective labor equals real wage at the optimum",
+        "Intuition: at $w^* $ below the optimum, raising wages raises effort more than proportionally → cheaper effective labor → firm raises wage. The 1-to-1 elasticity is the sweet spot. Implies wage rigidity AND involuntary unemployment in equilibrium."
+      ],
+      "model_answer": "<p>In the efficiency wages model, worker effort $e$ is an increasing function of the wage $w$ paid: $e = e(w)$ with $e'(w) > 0$ and $e''(w) < 0$. A firm using capital $K$ and labor $L$ with effort-augmented production $Y = F(K, e(w) L)$ chooses both the wage $w$ and the employment level $L$ to minimize cost.</p><h3>Derivation</h3><p>Total wage bill: $wL$. The firm pays $w$ per worker and gets $e(w)L$ effective units of labor. Effective wage per unit of labor input is $w/e(w)$. The firm minimizes this:</p><p>$$\\min_w \\frac{w}{e(w)} \\quad\\Longrightarrow\\quad \\frac{e(w) - w e'(w)}{e(w)^2} = 0 \\quad\\Longrightarrow\\quad e'(w) w = e(w)$$</p><p>Rearranging gives the elasticity condition:</p><div class=\"key-result\"><strong>First Solow condition:</strong> $\\dfrac{e'(w^*) w^*}{e(w^*)} = 1$. The elasticity of effort with respect to the wage equals 1 at the optimum.</div><p>Separately, optimal employment requires that the marginal product of effective labor equals the cost per effective unit, $F_L = w^*/e(w^*) \\cdot e(w^*) = w^*$ — combined with the first condition this gives the second:</p><div class=\"key-result\"><strong>Second Solow condition:</strong> $F_L(K, e(w^*) L^*) = w^*$. The marginal product of effective labor equals the real wage at the optimum.</div><h3>Intuition</h3><p>Why elasticity equal to 1? Below the optimum, a small wage increase raises effort more than proportionally (elasticity $>$ 1) — the firm gets cheaper effective labor by paying more, so it raises $w$. Above the optimum, effort rises less than proportionally (elasticity $<$ 1) — paying more buys less than its cost, so the firm cuts wages. The fixed point is where the two pressures balance: a 1% wage hike buys exactly 1% more effort.</p><p>The radical consequence is wage rigidity: $w^*$ is determined entirely by the shape of $e(\\cdot)$ — by worker preferences and the labor market environment that shapes shirking incentives — and NOT by the supply and demand for labor. The labor market does not clear at $w^*$: firms post wages where they minimize effective labor cost, then choose employment $L^*$ via $F_L = w^*$, and any workers willing to work at $w^*$ but not hired are involuntarily unemployed. Unemployment is structural, not a friction, and it persists in long-run equilibrium.</p>"
+    }
+  ]
+}

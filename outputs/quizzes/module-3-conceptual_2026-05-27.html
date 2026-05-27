@@ -1,0 +1,1104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quiz: Module 3 — Human Capital and Scarce Resources</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script>
+window.MacroFigures = window.MacroFigures || (function() {
+
+  function linspace(a, b, n) {
+    const out = [];
+    for (let i = 0; i < n; i++) out.push(a + (b - a) * i / (n - 1));
+    return out;
+  }
+
+  function compileExpr(expr, paramNames) {
+    return new Function('k', 'p',
+      'const {' + paramNames.join(',') + '} = p; return ' + expr + ';');
+  }
+
+  function compileScalarExpr(expr, paramNames) {
+    if (typeof expr === 'number') return () => expr;
+    if (typeof expr === 'string') {
+      return new Function('p',
+        'const {' + paramNames.join(',') + '} = p; return ' + expr + ';');
+    }
+    return () => null;
+  }
+
+  function findIntersection(xs, y1s, y2s) {
+    for (let i = 1; i < xs.length; i++) {
+      const d0 = y1s[i-1] - y2s[i-1];
+      const d1 = y1s[i] - y2s[i];
+      if (d0 === 0) return { x: xs[i-1], y: y1s[i-1] };
+      if (d0 * d1 < 0) {
+        const t = d0 / (d0 - d1);
+        return {
+          x: xs[i-1] + t * (xs[i] - xs[i-1]),
+          y: y1s[i-1] + t * (y1s[i] - y1s[i-1])
+        };
+      }
+    }
+    return null;
+  }
+
+  function findExtremum(xs, ys, kind) {
+    let idx = 0;
+    for (let i = 1; i < ys.length; i++) {
+      if (kind === 'max' ? ys[i] > ys[idx] : ys[i] < ys[idx]) idx = i;
+    }
+    return { x: xs[idx], y: ys[idx] };
+  }
+
+  function buildCurveData(curve, xs, params, paramNames) {
+    if (curve.type === 'time_series') {
+      // Discrete recursion: k_{t+1} = recursion(k_t, p), starting from initial.
+      const T = (curve.t_range && curve.t_range[1]) || 50;
+      const t0 = (curve.t_range && curve.t_range[0]) || 0;
+      const initFn = compileScalarExpr(curve.initial, paramNames);
+      const recFn = new Function('k', 'p',
+        'const {' + paramNames.join(',') + '} = p; return ' + curve.recursion + ';');
+      const ts = [t0], ks = [initFn(params)];
+      for (let t = t0 + 1; t <= T; t++) {
+        ks.push(recFn(ks[ks.length - 1], params));
+        ts.push(t);
+      }
+      return { x: ts, y: ks };
+    }
+    if (curve.type === 'piecewise') {
+      // [{when: "k < 10", expr: "..."}], else expr at end
+      const fns = curve.pieces.map(p => ({
+        when: p.when ? new Function('k', 'p',
+          'const {' + paramNames.join(',') + '} = p; return ' + p.when + ';') : null,
+        fn: compileExpr(p.expr, paramNames)
+      }));
+      return {
+        x: xs,
+        y: xs.map(k => {
+          for (const piece of fns) {
+            if (!piece.when || piece.when(k, params)) return piece.fn(k, params);
+          }
+          return null;
+        })
+      };
+    }
+    // default: type === 'expr'
+    const fn = compileExpr(curve.expr, paramNames);
+    return { x: xs, y: xs.map(k => fn(k, params)) };
+  }
+
+  function buildPanel(panel, params, paramNames, panelHostId) {
+    let xs;
+    // For panels containing only time_series curves, x_range may be omitted.
+    if (panel.x_range) {
+      xs = linspace(panel.x_range[0], panel.x_range[1], panel.n_points || 200);
+    } else {
+      xs = [];
+    }
+
+    const curveData = panel.curves.map(c => buildCurveData(c, xs, params, paramNames));
+
+    const traces = panel.curves.map((c, i) => ({
+      x: curveData[i].x, y: curveData[i].y,
+      name: c.name, mode: c.mode || 'lines',
+      line: { color: c.color, width: c.width || 1.6, dash: c.dash || 'solid' },
+      marker: { size: c.marker_size || 5, color: c.color, line: { color: 'white', width: 1 } }
+    }));
+
+    const shapes = [];
+    const annotations = [];
+    const readoutParts = [];
+
+    for (const m of (panel.markers || [])) {
+      let pt = null;
+      let line = null;
+
+      if (m.type === 'intersection') {
+        pt = findIntersection(curveData[m.curves[0]].x, curveData[m.curves[0]].y, curveData[m.curves[1]].y);
+      } else if (m.type === 'maximum' || m.type === 'minimum') {
+        const kind = m.type === 'maximum' ? 'max' : 'min';
+        pt = findExtremum(curveData[m.curve].x, curveData[m.curve].y, kind);
+      } else if (m.type === 'vertical_line') {
+        const x = compileScalarExpr(m.at, paramNames)(params);
+        line = { type: 'line', x0: x, x1: x, yref: 'paper', y0: 0, y1: 1,
+                 line: { color: m.color || '#5a7378', dash: m.dash || 'dash', width: 1 } };
+        if (m.label) annotations.push({
+          x: x, y: 0, xref: 'x', yref: 'paper', text: m.label,
+          showarrow: false, yshift: -18, font: { size: 11, color: '#111' }
+        });
+      } else if (m.type === 'horizontal_line') {
+        const y = compileScalarExpr(m.at, paramNames)(params);
+        line = { type: 'line', y0: y, y1: y, xref: 'paper', x0: 0, x1: 1,
+                 line: { color: m.color || '#5a7378', dash: m.dash || 'dash', width: 1 } };
+        if (m.label) annotations.push({
+          x: 1, y: y, xref: 'paper', yref: 'y', text: m.label,
+          showarrow: false, xshift: -8, yshift: -8, font: { size: 11, color: '#111' }
+        });
+      } else if (m.type === 'tangent_line') {
+        const x0 = compileScalarExpr(m.at, paramNames)(params);
+        const fn = compileExpr(panel.curves[m.curve].expr, paramNames);
+        const h = Math.max(0.001, Math.abs(x0) * 0.001);
+        const slope = (fn(x0 + h, params) - fn(x0 - h, params)) / (2 * h);
+        const y0v = fn(x0, params);
+        const xMin = panel.x_range[0], xMax = panel.x_range[1];
+        traces.push({
+          x: [xMin, xMax],
+          y: [y0v + slope * (xMin - x0), y0v + slope * (xMax - x0)],
+          mode: 'lines', name: m.label || 'tangent',
+          line: { color: m.color || '#16a34a', dash: 'dot', width: 2 }, showlegend: !!m.label
+        });
+        pt = { x: x0, y: y0v };
+      } else if (m.type === 'asymptote') {
+        const fn = compileExpr(panel.curves[m.curve].expr, paramNames);
+        const yInf = fn(1e9, params);
+        line = { type: 'line', y0: yInf, y1: yInf, xref: 'paper', x0: 0, x1: 1,
+                 line: { color: m.color || '#94a3b8', dash: 'dot', width: 1 } };
+        if (m.label) annotations.push({
+          x: 0.98, y: yInf, xref: 'paper', yref: 'y', text: m.label,
+          showarrow: false, xanchor: 'right', yshift: -8, font: { size: 11, color: '#666' }
+        });
+      } else if (m.type === 'area') {
+        // Shaded region between curves[0] and curves[1]
+        const ys1 = curveData[m.curves[0]].y;
+        const ys2 = curveData[m.curves[1]].y;
+        traces.push({
+          x: [...curveData[m.curves[0]].x, ...curveData[m.curves[0]].x.slice().reverse()],
+          y: [...ys1, ...ys2.slice().reverse()],
+          fill: 'toself', fillcolor: m.color || 'rgba(37,99,235,0.15)',
+          line: { width: 0 }, name: m.label || 'area', hoverinfo: 'skip',
+          showlegend: !!m.label
+        });
+      } else if (m.type === 'label_point') {
+        const x = compileScalarExpr(m.x, paramNames)(params);
+        const y = compileScalarExpr(m.y, paramNames)(params);
+        pt = { x, y };
+      }
+
+      if (pt) {
+        const pointTrace = {
+          x: [pt.x], y: [pt.y], mode: 'markers',
+          marker: { size: 8, color: m.color || '#003135', line: { color: 'white', width: 1.5 } },
+          name: m.label, showlegend: false,
+          hovertemplate: (m.label ? m.label + ' = ' : '') + '(%{x:.3f}, %{y:.3f})<extra></extra>'
+        };
+        // label_point markers render the label TEXT next to the dot; other marker
+        // types (intersection, max/min) write their label via annotations / guides.
+        if (m.type === 'label_point' && m.label) {
+          pointTrace.mode = 'markers+text';
+          pointTrace.text = [m.label];
+          pointTrace.textposition = m.textposition || 'top right';
+          pointTrace.textfont = {
+            size: 13, color: m.color || '#003135',
+            family: 'JetBrains Mono, ui-monospace, monospace', weight: 700
+          };
+        }
+        traces.push(pointTrace);
+        if (m.guide === 'vertical') {
+          shapes.push({ type: 'line', x0: pt.x, x1: pt.x, y0: 0, y1: pt.y,
+                        line: { color: '#5a7378', dash: 'dash', width: 1 } });
+        } else if (m.guide === 'horizontal') {
+          shapes.push({ type: 'line', xref: 'paper', x0: 0, x1: 1, y0: pt.y, y1: pt.y,
+                        line: { color: '#5a7378', dash: 'dash', width: 1 } });
+        } else if (m.guide === 'both') {
+          shapes.push({ type: 'line', x0: pt.x, x1: pt.x, y0: 0, y1: pt.y,
+                        line: { color: '#5a7378', dash: 'dash', width: 1 } });
+          shapes.push({ type: 'line', xref: 'paper', x0: 0, x1: 1, y0: pt.y, y1: pt.y,
+                        line: { color: '#5a7378', dash: 'dash', width: 1 } });
+        }
+        if (m.label && m.guide === 'vertical') annotations.push({
+          x: pt.x, y: 0, xref: 'x', yref: 'y', text: m.label + ' = ' + pt.x.toFixed(2),
+          showarrow: false, yshift: -18, font: { size: 11, color: '#111' }
+        });
+        readoutParts.push(panel.id + ': ' + (m.label || '?') +
+                          ' = ' + pt.x.toFixed(3) + ', y = ' + pt.y.toFixed(3));
+      }
+      if (line) shapes.push(line);
+    }
+
+    const layout = {
+      font: { family: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+              color: '#003135', size: 12 },
+      xaxis: { title: { text: panel.x_label, font: { size: 12, color: '#5a7378' } },
+               gridcolor: '#e6eef0', zerolinecolor: '#d4e1e4', linecolor: '#d4e1e4',
+               tickfont: { color: '#5a7378', size: 11 } },
+      yaxis: { title: { text: panel.y_label, font: { size: 12, color: '#5a7378' } },
+               gridcolor: '#e6eef0', zerolinecolor: '#d4e1e4', linecolor: '#d4e1e4',
+               tickfont: { color: '#5a7378', size: 11 } },
+      shapes: shapes, annotations: annotations,
+      margin: { t: 28, r: 20, b: 50, l: 60 },
+      title: panel.title ? { text: panel.title, font: { size: 13, color: '#024950' } } : undefined,
+      legend: { x: 0.02, y: 0.98, bgcolor: 'rgba(255,255,255,0.9)',
+                bordercolor: '#d4e1e4', borderwidth: 1, font: { size: 11, color: '#003135' } },
+      plot_bgcolor: '#ffffff', paper_bgcolor: '#ffffff'
+    };
+
+    Plotly.react(panelHostId, traces, layout, { responsive: true, displayModeBar: false });
+    return readoutParts;
+  }
+
+  function renderFigure(spec, hostId) {
+    const root = document.getElementById(hostId);
+    if (!root) { console.warn('Figure host not found:', hostId); return; }
+    const paramNames = Object.keys(spec.params);
+    const defaults = JSON.parse(JSON.stringify(spec.params));
+    const params = JSON.parse(JSON.stringify(spec.params));
+
+    const panels = spec.panels || [{
+      id: 'main', x_range: spec.x_range, n_points: spec.n_points,
+      x_label: spec.x_label, y_label: spec.y_label,
+      curves: spec.curves, markers: spec.markers
+    }];
+
+    function renderAll() {
+      const readoutLines = [];
+      panels.forEach((p, i) => {
+        const lines = buildPanel(p, params, paramNames, hostId + '-panel-' + i);
+        readoutLines.push(...lines);
+      });
+      const readoutEl = root.querySelector('.mf-readout');
+      if (readoutEl) readoutEl.textContent = readoutLines.join('   |   ');
+    }
+
+    // Wire sliders
+    (spec.sliders || []).forEach(s => {
+      const sl = root.querySelector('[data-slider="' + s.param + '"]');
+      const vsp = root.querySelector('[data-value="' + s.param + '"]');
+      if (sl) sl.addEventListener('input', e => {
+        params[s.param] = parseFloat(e.target.value);
+        if (vsp) vsp.textContent = params[s.param].toFixed(s.decimals || 2);
+        renderAll();
+      });
+    });
+
+    // Reset button
+    const resetBtn = root.querySelector('.mf-reset');
+    if (resetBtn) resetBtn.addEventListener('click', () => {
+      Object.assign(params, JSON.parse(JSON.stringify(defaults)));
+      (spec.sliders || []).forEach(s => {
+        const sl = root.querySelector('[data-slider="' + s.param + '"]');
+        const vsp = root.querySelector('[data-value="' + s.param + '"]');
+        if (sl) sl.value = defaults[s.param];
+        if (vsp) vsp.textContent = defaults[s.param].toFixed(s.decimals || 2);
+      });
+      renderAll();
+    });
+
+    renderAll();
+  }
+
+  return { renderFigure };
+})();
+</script>
+<style>
+:root{
+  --bg:#fdf6e3;
+  --card:#ffffff;
+  --border:#e6dcc4;
+  --text:#003135;
+  --muted:#5a7378;
+  --accent:#024950;
+  --accent-2:#0FA4AF;
+  --accent-bg:rgba(15,164,175,0.10);
+  --key:#964734;
+  --key-bg:rgba(150,71,52,0.08);
+  --box-fill:#003135;
+  --box-text:#e6f4f5;
+  --box-line:#0FA4AF;
+  --col-w:760px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background-color:var(--bg)}
+body{
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  color:var(--text);
+  line-height:1.7;
+  font-weight:400;
+  font-feature-settings:"cv11","ss01","ss03";
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.45  0 0 0 0 0.35  0 0 0 0 0.20  0 0 0 0.06 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  background-repeat:repeat;
+  background-attachment:fixed;
+}
+.container{
+  max-width:var(--col-w);
+  margin:0 auto;
+  padding:4rem 1.5rem 5rem;
+}
+h1{
+  font-size:2.5rem;
+  font-weight:300;
+  letter-spacing:-0.03em;
+  line-height:1.15;
+  margin-bottom:.6rem;
+  color:var(--text);
+}
+.meta{
+  color:var(--muted);
+  font-size:.85rem;
+  font-weight:400;
+  letter-spacing:.01em;
+  margin-bottom:2rem;
+  padding-bottom:1.25rem;
+  border-bottom:1px solid var(--border);
+}
+.progress{
+  display:flex;align-items:center;gap:.9rem;
+  margin-bottom:2.5rem;
+  font-size:.78rem;color:var(--muted);
+  position:sticky;top:0;
+  background:var(--bg);
+  padding:.85rem 0;
+  z-index:10;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+  border-bottom:1px solid var(--border);
+}
+.progress-bar{flex:1;height:1px;background:var(--border);overflow:hidden}
+.progress-fill{height:100%;background:var(--accent-2);transition:width .3s ease}
+.score-display{font-weight:500;color:var(--accent);font-variant-numeric:tabular-nums}
+
+/* ── Chain (scenario) block ──────────────────────────────────────────── */
+.chain-block{
+  position:relative;
+  margin:2.5rem 0;
+  padding:1.5rem 1.5rem 1rem;
+  outline:1px solid var(--accent);
+  outline-offset:6px;
+}
+.chain-label{
+  position:absolute;top:-9px;right:14px;
+  background:var(--bg);
+  padding:0 .5rem;
+  font-size:.65rem;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:var(--accent);
+  font-weight:600;
+}
+.chain-setup{
+  font-size:.95rem;
+  color:var(--text);
+  padding:0 0 1.1rem;
+  margin-bottom:1.25rem;
+  border-bottom:1px dashed var(--border);
+  line-height:1.65;
+}
+.chain-setup strong{color:var(--accent);font-weight:600}
+.chain-block .question-card{margin-bottom:1rem}
+.chain-block .question-card:last-child{margin-bottom:0}
+
+/* ── Question card ───────────────────────────────────────────────────── */
+.question-card{
+  background:var(--card);
+  border:1px solid var(--border);
+  padding:1.6rem 1.75rem;
+  margin-bottom:1.5rem;
+  transition:border-color .25s;
+}
+.question-card.answered-correct{border-color:var(--accent-2)}
+.question-card.answered-wrong{border-color:var(--key)}
+.question-header{
+  display:flex;justify-content:space-between;align-items:center;
+  margin-bottom:1.1rem;
+  padding-bottom:.7rem;
+  border-bottom:1px solid var(--border);
+}
+.question-number{
+  font-size:.75rem;font-weight:600;
+  color:var(--accent);
+  letter-spacing:.08em;
+}
+.question-style{
+  font-size:.65rem;
+  color:var(--muted);
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  font-weight:500;
+}
+.question-stem{
+  font-size:1rem;
+  margin-bottom:1.2rem;
+  line-height:1.7;
+}
+.question-stem p{margin-bottom:.7rem}
+.question-stem p:last-child{margin-bottom:0}
+
+/* ── Derivation step list (inside stem) ──────────────────────────────── */
+.derivation-block{
+  margin:1rem 0 1.2rem;
+  padding:1rem 1.2rem;
+  background:rgba(255,255,255,0.5);
+  border:1px solid var(--border);
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+  font-size:.9rem;
+}
+.derivation-step{
+  display:flex;
+  align-items:baseline;
+  gap:.9rem;
+  padding:.35rem 0;
+  line-height:1.5;
+}
+.derivation-step .step-num{
+  color:var(--muted);
+  font-size:.7rem;
+  min-width:1.6rem;
+  font-weight:500;
+}
+.derivation-step.highlight{
+  background:var(--accent-bg);
+  margin:.2rem -.8rem;
+  padding:.45rem .8rem;
+  border-left:2px solid var(--accent-2);
+}
+.derivation-step.highlight .step-num{color:var(--accent-2);font-weight:600}
+.derivation-step .step-body{flex:1;color:var(--text)}
+.derivation-step.missing .step-body{
+  color:var(--accent-2);
+  font-style:italic;
+  font-family:'Inter',sans-serif;
+}
+
+/* ── Embedded figure inside question stem ────────────────────────────── */
+.question-card .mf-figure{margin:1rem 0 1.2rem;border-color:var(--border)}
+
+/* ── Productive-failure reveal: hide answer surfaces until user thinks first ─ */
+.reveal-btn{
+  display:inline-block;
+  background:transparent;
+  color:var(--accent);
+  border:1px dashed var(--accent);
+  padding:.6rem 1.2rem;
+  margin:.5rem 0 1rem;
+  font-size:.75rem;
+  font-family:inherit;
+  font-weight:500;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+  cursor:pointer;
+  transition:background .15s, color .15s, border-style .15s;
+}
+.reveal-btn:hover{background:var(--accent);color:#fff;border-style:solid}
+.reveal-hint{
+  font-size:.7rem;color:var(--muted);
+  margin-left:.7rem;letter-spacing:.04em;
+  font-style:italic;
+}
+.choices,.mtf-statements,.submit-row{display:none}
+.question-card.revealed .choices{display:flex}
+.question-card.revealed .mtf-statements{display:block}
+.question-card.revealed .submit-row{display:flex}
+.question-card.revealed .reveal-btn{display:none}
+
+/* ── Choices ─────────────────────────────────────────────────────────── */
+.choices{flex-direction:column;gap:.45rem}
+.choice{
+  display:flex;align-items:flex-start;gap:.85rem;
+  padding:.75rem 1rem;
+  border:1px solid var(--border);
+  background:var(--card);
+  cursor:pointer;
+  transition:background .15s, border-color .15s;
+  font-size:.95rem;
+  line-height:1.55;
+}
+.choice:hover:not(.disabled){background:var(--accent-bg);border-color:var(--accent-2)}
+.choice.disabled{cursor:default}
+.choice.selected{background:var(--accent-bg);border-color:var(--accent-2)}
+.choice.correct-reveal{
+  background:var(--accent-bg);
+  border-color:var(--accent-2);
+}
+.choice.wrong-reveal{
+  background:var(--key-bg);
+  border-color:var(--key);
+}
+.choice.missed-reveal{
+  /* multi-select: correct option the user failed to tick */
+  background:transparent;
+  border-color:var(--accent-2);
+  border-style:dashed;
+}
+
+/* Single-MCQ: circular letter chip */
+.choice-letter{
+  min-width:1.7rem;height:1.7rem;
+  display:flex;align-items:center;justify-content:center;
+  background:transparent;
+  border:1px solid var(--border);
+  border-radius:50%;
+  font-weight:500;font-size:.78rem;
+  color:var(--muted);
+  flex-shrink:0;margin-top:.05rem;
+  transition:all .15s;
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+}
+.choice:hover:not(.disabled) .choice-letter{border-color:var(--accent-2);color:var(--accent-2)}
+.choice.correct-reveal .choice-letter{background:var(--accent-2);color:#fff;border-color:var(--accent-2)}
+.choice.wrong-reveal .choice-letter{background:var(--key);color:#fff;border-color:var(--key)}
+.choice.missed-reveal .choice-letter{background:transparent;color:var(--accent-2);border-color:var(--accent-2)}
+
+/* Multi-select: hollow square that fills cyan when ticked */
+.question-card.multi .choice-letter{
+  border-radius:0;
+  position:relative;
+}
+.question-card.multi .choice.selected .choice-letter{
+  background:var(--accent-2);
+  color:#fff;
+  border-color:var(--accent-2);
+}
+.question-card.multi .choice.selected .choice-letter::after{
+  content:'';
+  position:absolute;
+  left:5px;top:3px;
+  width:5px;height:9px;
+  border:solid #fff;
+  border-width:0 1.5px 1.5px 0;
+  transform:rotate(45deg);
+}
+.question-card.multi .choice.selected .choice-letter > span{visibility:hidden}
+
+/* Numeric: monospace choice text */
+.question-card.mono-choices .choice-body{
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+  font-size:.95rem;
+  color:var(--text);
+}
+
+/* ── MTF (multiple true-false) cluster ───────────────────────────────── */
+.mtf-statements{display:block}
+.mtf-row{
+  border:1px solid var(--border);
+  background:var(--card);
+  margin-bottom:.55rem;
+  padding:.75rem 1rem;
+  transition:border-color .15s;
+}
+.mtf-row.correct-reveal{border-color:var(--accent-2);background:var(--accent-bg)}
+.mtf-row.wrong-reveal{border-color:var(--key);background:var(--key-bg)}
+.mtf-row-body{
+  display:flex;
+  align-items:flex-start;
+  gap:.85rem;
+  font-size:.95rem;
+  line-height:1.55;
+}
+.mtf-letter{
+  min-width:1.7rem;height:1.7rem;
+  display:flex;align-items:center;justify-content:center;
+  background:transparent;
+  border:1px solid var(--border);
+  border-radius:50%;
+  font-weight:500;font-size:.78rem;
+  color:var(--muted);
+  flex-shrink:0;margin-top:.05rem;
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+}
+.mtf-text{flex:1}
+.mtf-pick{
+  display:flex;
+  gap:.35rem;
+  flex-shrink:0;
+}
+.mtf-pick button{
+  width:2.2rem;height:1.9rem;
+  background:transparent;
+  color:var(--muted);
+  border:1px solid var(--border);
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+  font-size:.85rem;
+  font-weight:500;
+  cursor:pointer;
+  transition:all .15s;
+}
+.mtf-pick button:hover:not(:disabled){border-color:var(--accent-2);color:var(--accent-2)}
+.mtf-pick button.picked{background:var(--accent-2);color:#fff;border-color:var(--accent-2)}
+.mtf-pick button:disabled{cursor:default;opacity:.6}
+.mtf-row.correct-reveal .mtf-letter{background:var(--accent-2);color:#fff;border-color:var(--accent-2)}
+.mtf-row.wrong-reveal .mtf-letter{background:var(--key);color:#fff;border-color:var(--key)}
+.mtf-defense{
+  display:none;
+  font-size:.78rem;
+  color:var(--muted);
+  font-style:italic;
+  margin-top:.5rem;
+  padding-top:.5rem;
+  border-top:1px dashed var(--border);
+  line-height:1.55;
+}
+.mtf-row.correct-reveal .mtf-defense,
+.mtf-row.wrong-reveal .mtf-defense{display:block}
+.mtf-row.correct-reveal .mtf-defense{color:var(--accent)}
+.mtf-row.wrong-reveal .mtf-defense{color:var(--key)}
+
+.choice-body{flex:1}
+
+/* Per-choice defense (revealed after submit) — small muted text under choice */
+.choice-defense{
+  display:none;
+  font-size:.78rem;
+  color:var(--muted);
+  font-style:italic;
+  margin-top:.35rem;
+  line-height:1.5;
+}
+.choice.disabled .choice-defense{display:block}
+.choice.correct-reveal .choice-defense{color:var(--accent)}
+.choice.wrong-reveal .choice-defense{color:var(--key)}
+
+/* Multi-select submit button */
+.submit-row{
+  margin-top:1rem;
+  display:flex;
+  align-items:center;
+  gap:1rem;
+  font-size:.75rem;
+  color:var(--muted);
+  letter-spacing:.04em;
+}
+.submit-btn{
+  background:transparent;
+  color:var(--accent);
+  border:1px solid var(--accent);
+  padding:.45rem 1.1rem;
+  font-size:.78rem;
+  font-family:inherit;
+  font-weight:500;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+  cursor:pointer;
+  transition:background .15s, color .15s;
+}
+.submit-btn:hover:not(:disabled){background:var(--accent);color:#fff}
+.submit-btn:disabled{opacity:.4;cursor:not-allowed}
+
+/* ── Explanation: HUD callout, same as lecture .example ──────────────── */
+.explanation{
+  display:none;
+  position:relative;
+  background:var(--box-fill);
+  color:var(--box-text);
+  padding:1.25rem 1.5rem;
+  margin:1.4rem 0 .25rem;
+  outline:1px solid var(--box-line);
+  outline-offset:4px;
+  font-size:.92rem;
+  line-height:1.65;
+}
+.explanation.visible{display:block}
+.explanation p{margin-bottom:.6rem}
+.explanation p:last-child{margin-bottom:0}
+.explanation strong{color:var(--box-line);font-weight:600;letter-spacing:.02em}
+.explanation .katex{color:var(--box-text)}
+.explanation code{background:rgba(255,255,255,0.08);color:var(--box-line);padding:.1rem .35rem;border-radius:2px;font-family:'JetBrains Mono',monospace;font-size:.85em}
+.explanation .connection{
+  margin-top:.9rem;
+  padding-top:.8rem;
+  border-top:1px solid rgba(15,164,175,0.3);
+  font-size:.85rem;
+  color:rgba(230,244,245,0.85);
+}
+.explanation .connection strong{color:#e8826a}
+
+/* HUD tracer extending leftward into gutter — mirrored from .example */
+.explanation::before{
+  content:'';
+  position:absolute;
+  width:74px;
+  height:60px;
+  pointer-events:none;
+  background-color:var(--box-line);
+  bottom:14px;left:-82px;
+  -webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;
+  -webkit-mask-position:center;mask-position:center;
+  -webkit-mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 74 60'><line x1='26' y1='9' x2='74' y2='9' stroke='black' stroke-width='3'/><line x1='52' y1='28' x2='74' y2='28' stroke='black' stroke-width='3'/><line x1='40' y1='47' x2='74' y2='47' stroke='black' stroke-width='3'/><rect x='8' y='4' width='10' height='10' fill='none' stroke='black' stroke-width='1.6'/></svg>");
+          mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 74 60'><line x1='26' y1='9' x2='74' y2='9' stroke='black' stroke-width='3'/><line x1='52' y1='28' x2='74' y2='28' stroke='black' stroke-width='3'/><line x1='40' y1='47' x2='74' y2='47' stroke='black' stroke-width='3'/><rect x='8' y='4' width='10' height='10' fill='none' stroke='black' stroke-width='1.6'/></svg>");
+}
+@media(max-width:1100px){.explanation::before{display:none}}
+
+/* ── Summary ─────────────────────────────────────────────────────────── */
+.summary{
+  background:var(--card);
+  border:1px solid var(--border);
+  padding:2.25rem;
+  margin-top:2.5rem;
+  display:none;
+}
+.summary h2{
+  font-size:1.55rem;font-weight:400;
+  letter-spacing:-0.02em;
+  color:var(--accent);
+  margin-bottom:.4rem;
+  text-align:center;
+}
+.summary .score-big{
+  font-size:3.5rem;font-weight:300;
+  color:var(--accent);
+  margin:.5rem 0;text-align:center;
+  letter-spacing:-0.03em;
+  font-variant-numeric:tabular-nums;
+}
+.summary .score-label{
+  color:var(--muted);font-size:.85rem;
+  text-align:center;margin-bottom:1.75rem;
+  letter-spacing:.02em;
+}
+.results-table{
+  width:100%;border-collapse:collapse;
+  margin:1.25rem 0;font-size:.85rem;
+}
+.results-table th,.results-table td{
+  padding:.55rem .75rem;
+  border-bottom:1px solid var(--border);
+  text-align:left;
+}
+.results-table th{
+  background:var(--accent-bg);
+  font-weight:600;color:var(--accent);
+  font-size:.7rem;text-transform:uppercase;
+  letter-spacing:.06em;
+}
+.results-table .row-correct td:last-child{color:var(--accent-2);font-weight:600}
+.results-table .row-wrong td:last-child{color:var(--key);font-weight:600}
+.json-section{margin-top:1.5rem}
+.json-section label{
+  display:block;font-weight:500;font-size:.7rem;
+  margin-bottom:.4rem;color:var(--muted);
+  letter-spacing:.08em;text-transform:uppercase;
+}
+.json-box{
+  width:100%;min-height:80px;
+  padding:.8rem;
+  border:1px solid var(--border);
+  background:rgba(255,255,255,0.5);
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+  font-size:.78rem;
+  color:var(--text);
+  resize:vertical;
+  line-height:1.5;
+}
+.btn-row{
+  display:flex;gap:.75rem;justify-content:center;
+  margin-top:1rem;flex-wrap:wrap;
+}
+.btn{
+  display:inline-block;
+  padding:.55rem 1.25rem;
+  background:var(--accent);
+  color:#fff;
+  border:none;
+  font-size:.78rem;
+  font-family:inherit;
+  font-weight:500;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  cursor:pointer;
+  transition:background .15s;
+}
+.btn:hover{background:var(--accent-2)}
+.btn-secondary{
+  background:transparent;
+  color:var(--accent);
+  border:1px solid var(--accent);
+}
+.btn-secondary:hover{background:var(--accent);color:#fff}
+.copy-toast{
+  position:fixed;bottom:2rem;left:50%;
+  transform:translateX(-50%);
+  background:var(--box-fill);color:var(--box-text);
+  padding:.6rem 1.25rem;
+  font-size:.85rem;
+  display:none;z-index:100;
+  outline:1px solid var(--box-line);outline-offset:3px;
+}
+
+.mf-figure { margin: 1.75rem 0; padding: 1.25rem; background: #ffffff;
+             border: 1px solid #b8dcd9; border-radius: 0; }
+.mf-figure h4 { margin: 0 0 0.8rem 0; font-size: 1rem; font-weight: 600;
+                color: #024950; letter-spacing: -0.01em; }
+.mf-panels { display: grid; gap: 1rem; }
+.mf-panels.cols-2 { grid-template-columns: 1fr 1fr; }
+@media (max-width: 720px) { .mf-panels.cols-2 { grid-template-columns: 1fr; } }
+.mf-panel { min-height: 380px; }
+.mf-sliders { display: grid; gap: 0.35rem; margin-top: 1.25rem; padding: 0;
+              background: transparent; border: none; }
+.mf-slider-row { display: grid; grid-template-columns: 160px 1fr 70px;
+                 align-items: center; gap: 0.9rem; }
+.mf-slider-row label { font-size: 0.76rem; color: #5a7378; font-weight: 400;
+                       letter-spacing: 0.01em; }
+.mf-slider-row input[type=range] {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 16px; background: transparent; margin: 0; padding: 0;
+  cursor: pointer;
+}
+.mf-slider-row input[type=range]::-webkit-slider-runnable-track {
+  height: 1px; background: #b8dcd9; border: none;
+}
+.mf-slider-row input[type=range]::-moz-range-track {
+  height: 1px; background: #b8dcd9; border: none;
+}
+.mf-slider-row input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  height: 9px; width: 9px; border-radius: 50%;
+  background: #0FA4AF; border: none; margin-top: -4px;
+  cursor: pointer; transition: transform .12s, background .12s;
+}
+.mf-slider-row input[type=range]::-moz-range-thumb {
+  height: 9px; width: 9px; border-radius: 50%;
+  background: #0FA4AF; border: none;
+  cursor: pointer; transition: transform .12s, background .12s;
+}
+.mf-slider-row input[type=range]:hover::-webkit-slider-thumb {
+  background: #024950; transform: scale(1.25);
+}
+.mf-slider-row input[type=range]:hover::-moz-range-thumb {
+  background: #024950; transform: scale(1.25);
+}
+.mf-slider-row .mf-value { font-family: 'JetBrains Mono', ui-monospace, monospace;
+                           text-align: right; color: #024950; font-weight: 400;
+                           font-size: 0.76rem; }
+.mf-slider-row .mf-value::before { content: ''; }
+.mf-reset { background: transparent; border: none;
+            padding: 0.35rem 0; margin-top: 0.4rem; cursor: pointer; font-size: 0.72rem;
+            color: #5a7378; justify-self: start; letter-spacing: 0.05em;
+            text-transform: uppercase; font-family: inherit;
+            border-bottom: 1px solid transparent; transition: color .15s, border-color .15s; }
+.mf-reset:hover { color: #024950; border-bottom-color: #0FA4AF; }
+.mf-readout { font-family: 'JetBrains Mono', ui-monospace, monospace;
+              font-size: 0.74rem; color: #964734; font-weight: 400;
+              margin-top: 0.6rem; padding: 0.4rem 0;
+              border-top: 1px dashed #b8dcd9; min-height: 1rem;
+              letter-spacing: 0.01em; }
+.mf-caption { font-size: 0.84rem; color: #5a7378; line-height: 1.6;
+              margin-top: 1rem; padding: 0.75rem 0 0;
+              border-top: 1px solid #b8dcd9; }
+.mf-caption strong { color: #024950; font-weight: 600; letter-spacing: 0.01em; }
+
+@media(max-width:600px){
+  .container{padding:2rem 1rem 3rem}
+  .question-card{padding:1.25rem}
+  h1{font-size:1.8rem}
+}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Quiz: Module 3 — Human Capital and Scarce Resources</h1>
+<div class="meta">Macroeconomics III — Module 3 — 2026-05-27 — 20 questions</div>
+<div class="progress">
+<span id="prog-text">0 / 20</span>
+<div class="progress-bar"><div class="progress-fill" id="prog-fill" style="width:0%"></div></div>
+<span class="score-display" id="score-text"></span>
+</div>
+<div class="question-card mtf" id="q-1" data-correct="{&quot;A&quot;: true, &quot;B&quot;: false, &quot;C&quot;: true, &quot;D&quot;: false}" data-topic="MRW production function and per-effective-worker form" data-done="0"><div class="question-header"><span class="question-number">Q1</span><span class="question-style">Multi true-false</span></div><div class="question-stem"><p>Mankiw, Romer and Weil (1992) augment the general Solow model with human capital. The production function is $Y_t = K_t^\alpha H_t^\phi (A_tL_t)^{1-\alpha-\phi}$ with $\alpha, \phi > 0$ and $\alpha+\phi < 1$. Let $\tilde k_t \equiv K_t/(A_tL_t)$ and $\tilde h_t \equiv H_t/(A_tL_t)$. Evaluate each statement.</p></div><button class="reveal-btn" type="button" onclick="reveal(1)">Reveal statements</button><span class="reveal-hint">Think through the setup first.</span><div class="mtf-statements"><div class="mtf-row" data-letter="A"><div class="mtf-row-body"><span class="mtf-letter">A</span><span class="mtf-text">In per-effective-worker form, $\tilde y_t = \tilde k_t^\alpha \tilde h_t^\phi$.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(1,'A',true)">T</button><button type="button" data-value="false" onclick="pickTF(1,'A',false)">F</button></div></div><div class="mtf-defense">Divide $Y = K^\alpha H^\phi (AL)^{1-\alpha-\phi}$ by $AL$: the exponents of $K$ and $H$ stay, the $(AL)^{1-\alpha-\phi}$ cancels against the divisor (correctly normalised). A standard MRW manipulation.</div></div><div class="mtf-row" data-letter="B"><div class="mtf-row-body"><span class="mtf-letter">B</span><span class="mtf-text">The labour share of national income is $1-\alpha-\phi$.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(1,'B',true)">T</button><button type="button" data-value="false" onclick="pickTF(1,'B',false)">F</button></div></div><div class="mtf-defense">The labour share is $1-\alpha$, not $1-\alpha-\phi$. Workers receive both raw-labour compensation AND the return on human capital (since $H$ cannot be separated from $L$). Picked by students who mechanically read off the exponent on $(AL)$ as 'labour share'.</div></div><div class="mtf-row" data-letter="C"><div class="mtf-row-body"><span class="mtf-letter">C</span><span class="mtf-text">The model exhibits constant returns to $(K, H, L)$ jointly.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(1,'C',true)">T</button><button type="button" data-value="false" onclick="pickTF(1,'C',false)">F</button></div></div><div class="mtf-defense">The sum of exponents on $K, H$, and $L$ (note: $L$ appears inside $(AL)^{1-\alpha-\phi}$, so its exponent is $1-\alpha-\phi$) is $\alpha + \phi + 1-\alpha-\phi = 1$. Standard replication argument.</div></div><div class="mtf-row" data-letter="D"><div class="mtf-row-body"><span class="mtf-letter">D</span><span class="mtf-text">There are decreasing returns to $K$ alone (holding $H, L, A$ fixed), but constant returns to $(K, H)$ jointly.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(1,'D',true)">T</button><button type="button" data-value="false" onclick="pickTF(1,'D',false)">F</button></div></div><div class="mtf-defense">Holding $L$ fixed there are decreasing returns to $(K,H)$ jointly because $\alpha+\phi < 1$. Picked by students who forget that the constant-returns property holds over ALL three accumulable+labour inputs, not over capital subaggregates.</div></div></div><div class="submit-row"><button type="button" class="submit-btn" disabled onclick="submitMtf(1)">Submit</button><span>Pick T or F for each statement.</span></div><div class="explanation"><p>The cluster targets four common MRW confusions: (i) the mechanics of converting to effective-labour units, (ii) the subtle distinction that the labour share is $1-\alpha$ (since $H$'s return accrues to workers) and not $1-\alpha-\phi$, (iii) what 'constant returns' applies to, and (iv) the failure of CRS over capital subaggregates because $\alpha + \phi < 1$.</p></div></div>
+<div class="question-card mtf" id="q-2" data-correct="{&quot;A&quot;: true, &quot;B&quot;: false, &quot;C&quot;: true, &quot;D&quot;: false}" data-topic="MRW transition and phase diagram" data-done="0"><div class="question-header"><span class="question-number">Q2</span><span class="question-style">Multi true-false</span></div><div class="question-stem"><p>The MRW law of motion is a coupled pair of difference equations in $(\tilde k_t, \tilde h_t)$: $$\tilde k_{t+1} = \tfrac{1}{(1+n)(1+g)}\big[s_K \tilde k_t^\alpha \tilde h_t^\phi + (1-\delta)\tilde k_t\big], \quad \tilde h_{t+1} = \tfrac{1}{(1+n)(1+g)}\big[s_H \tilde k_t^\alpha \tilde h_t^\phi + (1-\delta)\tilde h_t\big].$$ Evaluate each statement.</p></div><button class="reveal-btn" type="button" onclick="reveal(2)">Reveal statements</button><span class="reveal-hint">Think through the setup first.</span><div class="mtf-statements"><div class="mtf-row" data-letter="A"><div class="mtf-row-body"><span class="mtf-letter">A</span><span class="mtf-text">At the steady state, $\tilde h^* / \tilde k^* = s_H / s_K$.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(2,'A',true)">T</button><button type="button" data-value="false" onclick="pickTF(2,'A',false)">F</button></div></div><div class="mtf-defense">Setting $\Delta \tilde k = \Delta \tilde h = 0$ gives $s_K \tilde y^* = (n+g+\delta+ng) \tilde k^*$ and $s_H \tilde y^* = (n+g+\delta+ng) \tilde h^*$; divide one by the other and the common factor cancels.</div></div><div class="mtf-row" data-letter="B"><div class="mtf-row-body"><span class="mtf-letter">B</span><span class="mtf-text">Convergence in the MRW model can be analysed with a single one-dimensional Solow diagram (as in basic Solow).</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(2,'B',true)">T</button><button type="button" data-value="false" onclick="pickTF(2,'B',false)">F</button></div></div><div class="mtf-defense">The state is two-dimensional $(\tilde k, \tilde h)$, requiring a phase diagram (Lecture 3a p17). Cozzi explicitly notes 'there is no easy diagrammatic way' to show convergence in one dimension. Picked by students projecting basic-Solow intuition.</div></div><div class="mtf-row" data-letter="C"><div class="mtf-row-body"><span class="mtf-letter">C</span><span class="mtf-text">The two $\Delta\tilde k = 0$ and $\Delta\tilde h = 0$ loci intersect at a unique positive point.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(2,'C',true)">T</button><button type="button" data-value="false" onclick="pickTF(2,'C',false)">F</button></div></div><div class="mtf-defense">Both loci pass through the origin and are upward-sloping; the relative slopes (one steeper than the other) ensure a unique positive crossing. Cozzi verifies this analytically and via simulation (p15-18).</div></div><div class="mtf-row" data-letter="D"><div class="mtf-row-body"><span class="mtf-letter">D</span><span class="mtf-text">In steady state, $\tilde k_t$ and $\tilde h_t$ both grow at rate $g$.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(2,'D',true)">T</button><button type="button" data-value="false" onclick="pickTF(2,'D',false)">F</button></div></div><div class="mtf-defense">In steady state $\tilde k$ and $\tilde h$ are CONSTANT (that's the definition of $\tilde k^*, \tilde h^*$); $k_t = A_t \tilde k^*$ grows at $g$, but $\tilde k_t$ does not. Picked by students conflating $k$ with $\tilde k$.</div></div></div><div class="submit-row"><button type="button" class="submit-btn" disabled onclick="submitMtf(2)">Submit</button><span>Pick T or F for each statement.</span></div><div class="explanation"><p>Targets: (i) the symmetric structure $\tilde h^*/\tilde k^* = s_H/s_K$ from dividing the two steady-state equations; (ii) that MRW dynamics live in 2D, not 1D; (iii) the unique positive steady-state intersection; (iv) the per-effective-worker variables are stationary, while the level variables grow at $g$.</p></div></div>
+<div class="question-card mtf" id="q-3" data-correct="{&quot;A&quot;: true, &quot;B&quot;: true, &quot;C&quot;: false, &quot;D&quot;: true}" data-topic="MRW steady-state elasticities" data-done="0"><div class="question-header"><span class="question-number">Q3</span><span class="question-style">Multi true-false</span></div><div class="question-stem"><p>Solving the MRW steady-state system gives $y_t^* = A_t \big(s_K^\alpha s_H^\phi / (n+g+\delta)^{\alpha+\phi}\big)^{1/(1-\alpha-\phi)}$ (ignoring the tiny $ng$ cross term). Take $\alpha = \phi = 1/3$ as the canonical calibration. Evaluate each statement about the elasticities of $y^*$ wrt parameters.</p></div><button class="reveal-btn" type="button" onclick="reveal(3)">Reveal statements</button><span class="reveal-hint">Think through the setup first.</span><div class="mtf-statements"><div class="mtf-row" data-letter="A"><div class="mtf-row-body"><span class="mtf-letter">A</span><span class="mtf-text">The elasticity of $y^*$ with respect to $s_K$ is $\alpha/(1-\alpha-\phi) \approx 1$.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(3,'A',true)">T</button><button type="button" data-value="false" onclick="pickTF(3,'A',false)">F</button></div></div><div class="mtf-defense">Take logs: $\ln y^* = \text{const} + \frac{\alpha}{1-\alpha-\phi}\ln s_K + \cdots$. With $\alpha = 1/3, \alpha+\phi = 2/3$: $(1/3)/(1/3) = 1$. Roughly twice the basic-Solow figure of $\alpha/(1-\alpha) = 0.5$.</div></div><div class="mtf-row" data-letter="B"><div class="mtf-row-body"><span class="mtf-letter">B</span><span class="mtf-text">The elasticity of $y^*$ with respect to $s_H$ has the same sign and roughly the same magnitude as the elasticity wrt $s_K$.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(3,'B',true)">T</button><button type="button" data-value="false" onclick="pickTF(3,'B',false)">F</button></div></div><div class="mtf-defense">By the symmetry of the steady-state formula, the $s_H$ elasticity is $\phi/(1-\alpha-\phi)$; with $\alpha = \phi$ it equals the $s_K$ elasticity. This is exactly Cozzi's conclusion 'the effect of $s_H$ is of the same size as the effect of $s_K$' (p20).</div></div><div class="mtf-row" data-letter="C"><div class="mtf-row-body"><span class="mtf-letter">C</span><span class="mtf-text">The elasticity of $y^*$ wrt $(n+g+\delta)$ is approximately $-0.5$ (same as basic Solow).</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(3,'C',true)">T</button><button type="button" data-value="false" onclick="pickTF(3,'C',false)">F</button></div></div><div class="mtf-defense">It is $-(\alpha+\phi)/(1-\alpha-\phi) \approx -2$, FOUR times the basic-Solow value. Picked by students who don't apply the elasticity formula to MRW separately.</div></div><div class="mtf-row" data-letter="D"><div class="mtf-row-body"><span class="mtf-letter">D</span><span class="mtf-text">These elasticities resolve the cross-country investment-rate puzzle that the basic Solow model could not explain.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(3,'D',true)">T</button><button type="button" data-value="false" onclick="pickTF(3,'D',false)">F</button></div></div><div class="mtf-defense">The empirical cross-country slope of $\ln y$ on $\ln s$ is around 1.5 (Lecture 2b regression); basic Solow predicts 0.5 (too small); MRW predicts ~1 (much closer). That's the main empirical motivation for adding $H$.</div></div></div><div class="submit-row"><button type="button" class="submit-btn" disabled onclick="submitMtf(3)">Submit</button><span>Pick T or F for each statement.</span></div><div class="explanation"><p>All four elasticity facts come from the same log-differentiation of the steady-state $y^*$ formula. The qualitative jump from basic Solow ($\alpha/(1-\alpha) \approx 0.5$) to MRW (~1) is doubled, and the $n+g+\delta$ elasticity is quadrupled — both shifts move predictions toward observed cross-country patterns.</p></div></div>
+<div class="question-card mtf" id="q-4" data-correct="{&quot;A&quot;: true, &quot;B&quot;: true, &quot;C&quot;: true, &quot;D&quot;: false}" data-topic="MRW Golden Rule" data-done="0"><div class="question-header"><span class="question-number">Q4</span><span class="question-style">Multi true-false</span></div><div class="question-stem"><p>The MRW Golden Rule maximises steady-state consumption per worker over $(s_K, s_H)$. Cozzi states (Lecture 3a p20): $s_K^{**} = \alpha$, $s_H^{**} = \phi$. Evaluate each statement.</p></div><button class="reveal-btn" type="button" onclick="reveal(4)">Reveal statements</button><span class="reveal-hint">Think through the setup first.</span><div class="mtf-statements"><div class="mtf-row" data-letter="A"><div class="mtf-row-body"><span class="mtf-letter">A</span><span class="mtf-text">At the MRW Golden Rule, the total share of output saved is $\alpha + \phi$.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(4,'A',true)">T</button><button type="button" data-value="false" onclick="pickTF(4,'A',false)">F</button></div></div><div class="mtf-defense">$s_K^{**} + s_H^{**} = \alpha + \phi \approx 2/3$ under canonical calibration — much higher than the basic-Solow Golden Rule of $\alpha \approx 1/3$. The model recommends saving twice as much when human-capital investment is taken seriously.</div></div><div class="mtf-row" data-letter="B"><div class="mtf-row-body"><span class="mtf-letter">B</span><span class="mtf-text">$s_K^{**} = \alpha$ in MRW for exactly the same reason that $s^{**} = \alpha$ in basic Solow: each one is the output elasticity of the corresponding capital.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(4,'B',true)">T</button><button type="button" data-value="false" onclick="pickTF(4,'B',false)">F</button></div></div><div class="mtf-defense">The Golden Rule equates the marginal product of the relevant capital, net of depreciation, to the effective growth rate; by Cobb-Douglas, MPK = $\alpha y/k$. Solving gives $s = \alpha$. Same derivation, applied separately to each capital good.</div></div><div class="mtf-row" data-letter="C"><div class="mtf-row-body"><span class="mtf-letter">C</span><span class="mtf-text">Under the MRW Golden Rule, the consumption share of output is $1-\alpha-\phi$, which is approximately the labour share.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(4,'C',true)">T</button><button type="button" data-value="false" onclick="pickTF(4,'C',false)">F</button></div></div><div class="mtf-defense">$c = (1 - s_K - s_H)y = (1 - \alpha - \phi)y \approx 1/3$. Numerically this equals the share NOT going to either capital — a clean parallel to basic Solow where Golden-Rule consumption equals the labour share.</div></div><div class="mtf-row" data-letter="D"><div class="mtf-row-body"><span class="mtf-letter">D</span><span class="mtf-text">Because both Golden-Rule conditions are met at $s_K = \alpha, s_H = \phi$, real-world economies that achieve the Golden Rule for physical capital also achieve it for human capital.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(4,'D',true)">T</button><button type="button" data-value="false" onclick="pickTF(4,'D',false)">F</button></div></div><div class="mtf-defense">The two are INDEPENDENT structural parameters; achieving one says nothing about the other. Empirically OECD physical-capital savings rates ($\sim 20$-$25\%$) are below $\alpha \approx 1/3$; education spending is even further from $\phi \approx 1/3$. Picked by students who think 'Golden Rule' is a binary state.</div></div></div><div class="submit-row"><button type="button" class="submit-btn" disabled onclick="submitMtf(4)">Submit</button><span>Pick T or F for each statement.</span></div><div class="explanation"><p>The Golden Rule applies separately to each accumulable factor, giving $s_K^{**} = \alpha$, $s_H^{**} = \phi$. Total Golden-Rule saving is $\alpha + \phi$ (≈ 2/3 under canonical calibration), and the remaining consumption share matches the labour share — a structural symmetry between the two-capital MRW and the one-capital basic Solow.</p></div></div>
+<div class="question-card mtf" id="q-5" data-correct="{&quot;A&quot;: true, &quot;B&quot;: false, &quot;C&quot;: true, &quot;D&quot;: false}" data-topic="Empirical fit of MRW vs basic Solow" data-done="0"><div class="question-header"><span class="question-number">Q5</span><span class="question-style">Multi true-false</span></div><div class="question-stem"><p>Cozzi reports that MRW's cross-country regression substantially improves on the basic Solow regression: $R^2$ rises (~0.63 → ~0.79) and the implied slope coefficient on $\ln s$ moves from ~0.59 to ~0.93, both much closer to the observed cross-country relationship. Evaluate each statement.</p></div><button class="reveal-btn" type="button" onclick="reveal(5)">Reveal statements</button><span class="reveal-hint">Think through the setup first.</span><div class="mtf-statements"><div class="mtf-row" data-letter="A"><div class="mtf-row-body"><span class="mtf-letter">A</span><span class="mtf-text">The MRW model also predicts a slower convergence rate than basic Solow — $\lambda = (1-\alpha-\phi)(n+g+\delta) \approx 2\%$ instead of $\approx 5\%$ — matching the empirical rate much more closely.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(5,'A',true)">T</button><button type="button" data-value="false" onclick="pickTF(5,'A',false)">F</button></div></div><div class="mtf-defense">For $\alpha = \phi = 1/3$, $1-\alpha-\phi = 1/3$; with $n+g+\delta = 0.075$ this gives $\lambda = 0.025$, roughly the observed 2% per year. This is the second of MRW's empirical wins (Ex 3's falsification probe foreshadowed this).</div></div><div class="mtf-row" data-letter="B"><div class="mtf-row-body"><span class="mtf-letter">B</span><span class="mtf-text">Adding human capital makes the basic Solow model fit better because human capital is an additional productive factor that the basic model ignored.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(5,'B',true)">T</button><button type="button" data-value="false" onclick="pickTF(5,'B',false)">F</button></div></div><div class="mtf-defense">That's the LOOSE intuition, but the technical reason is sharper: adding $H$ raises the 'broad capital' elasticity from $\alpha$ to $\alpha+\phi$, which mechanically increases the elasticity of $y^*$ wrt $s$ and lowers the implied convergence speed — both via the SAME structural shift. Picked by students who give the verbal answer without the algebra.</div></div><div class="mtf-row" data-letter="C"><div class="mtf-row-body"><span class="mtf-letter">C</span><span class="mtf-text">The cross-country regression assumes that countries share the same technology $A$ and growth rate $g$.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(5,'C',true)">T</button><button type="button" data-value="false" onclick="pickTF(5,'C',false)">F</button></div></div><div class="mtf-defense">Yes — this is the maintained identifying assumption Cozzi explicitly highlights (p19, p24). Without it, country fixed effects in $A$ would confound the savings-rate effect. Empirically this is a strong assumption that MRW partly relax via instrumental variables.</div></div><div class="mtf-row" data-letter="D"><div class="mtf-row-body"><span class="mtf-letter">D</span><span class="mtf-text">MRW's empirical success means we should adopt their model as the final word on cross-country income differences.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(5,'D',true)">T</button><button type="button" data-value="false" onclick="pickTF(5,'D',false)">F</button></div></div><div class="mtf-defense">It still leaves $s_K$, $s_H$, and $g$ unexplained; Cozzi (p31) writes 'we have understood almost everything, and yet almost nothing.' The model motivates the next step (endogenous growth). Picked by students who confuse empirical fit with theoretical completeness.</div></div></div><div class="submit-row"><button type="button" class="submit-btn" disabled onclick="submitMtf(5)">Submit</button><span>Pick T or F for each statement.</span></div><div class="explanation"><p>MRW improves both the steady-state regression ($R^2$, slope on $s$) and the convergence-speed regression ($\lambda$ closer to 2% than to 5%) via the same structural change — raising broad-capital elasticity from $\alpha$ to $\alpha+\phi$. But it does not explain why countries differ in $s_K, s_H$, or $g$, which is what motivates Modules 4-5.</p></div></div>
+<div class="question-card mtf" id="q-6" data-correct="{&quot;A&quot;: true, &quot;B&quot;: false, &quot;C&quot;: true, &quot;D&quot;: false}" data-topic="Solow with land: production and classical vs modern" data-done="0"><div class="question-header"><span class="question-number">Q6</span><span class="question-style">Multi true-false</span></div><div class="question-stem"><p>The Solow model with land (Lecture 3b) uses $Y_t = K_t^\alpha (A_tL_t)^\beta X^\kappa$ with $\alpha + \beta + \kappa = 1$ and $X$ a fixed factor. The balanced-growth rate of GDP per capita is $g^y = (\beta g - \kappa n)/(\beta + \kappa)$. Evaluate each statement.</p></div><button class="reveal-btn" type="button" onclick="reveal(6)">Reveal statements</button><span class="reveal-hint">Think through the setup first.</span><div class="mtf-statements"><div class="mtf-row" data-letter="A"><div class="mtf-row-body"><span class="mtf-letter">A</span><span class="mtf-text">The 'classical case' of the model ($g = 0$, $n > 0$) predicts $g^y < 0$ — Smith/Ricardo/Malthus pessimism is mechanically built in.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(6,'A',true)">T</button><button type="button" data-value="false" onclick="pickTF(6,'A',false)">F</button></div></div><div class="mtf-defense">Plug $g=0$: $g^y = -\kappa n / (\beta+\kappa) < 0$. With limited land and growing population, the land-per-worker $X/L$ falls, and constant returns to $K, L$ alone do not exist (it's CRS to $K,L,X$ jointly). Cozzi's growth-drag intuition.</div></div><div class="mtf-row" data-letter="B"><div class="mtf-row-body"><span class="mtf-letter">B</span><span class="mtf-text">The 'modern case' ($g > 0$, $n = 0$) predicts $g^y = g$ exactly — technology fully overcomes the land constraint.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(6,'B',true)">T</button><button type="button" data-value="false" onclick="pickTF(6,'B',false)">F</button></div></div><div class="mtf-defense">$g^y = \beta g/(\beta+\kappa) < g$ — there's still a drag, just a smaller one. With $\beta = 0.6, \kappa = 0.2$: $g^y = 0.75g$, i.e., 25% of technology's effect is 'lost' to diminishing returns. Picked by students who think zero population growth eliminates the drag entirely.</div></div><div class="mtf-row" data-letter="C"><div class="mtf-row-body"><span class="mtf-letter">C</span><span class="mtf-text">Abundance of land (high $X/L$) raises the LEVEL of the steady-state growth path but not the growth RATE.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(6,'C',true)">T</button><button type="button" data-value="false" onclick="pickTF(6,'C',false)">F</button></div></div><div class="mtf-defense">From the per-capita production function, $y_t$ depends on $x_t = X/L_t$ to the power $\kappa$ — a level effect. The growth-rate formula $g^y = (\beta g - \kappa n)/(\beta+\kappa)$ does not contain $X$. Cozzi explicitly states 'it is good to have plenty of land' for levels (p15).</div></div><div class="mtf-row" data-letter="D"><div class="mtf-row-body"><span class="mtf-letter">D</span><span class="mtf-text">For typical OECD parameters ($g = 2\%$, $n = 1\%$, $\beta = 0.6$, $\kappa = 0.2$), the model predicts negative per-capita growth.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(6,'D',true)">T</button><button type="button" data-value="false" onclick="pickTF(6,'D',false)">F</button></div></div><div class="mtf-defense">$g^y = (0.6 \cdot 0.02 - 0.2 \cdot 0.01)/0.8 = (0.012 - 0.002)/0.8 = 0.0125$ = 1.25% — positive. Cozzi's whole point: 'the classics were right' but technological progress saves us in practice. Picked by students who don't plug in actual numbers.</div></div></div><div class="submit-row"><button type="button" class="submit-btn" disabled onclick="submitMtf(6)">Submit</button><span>Pick T or F for each statement.</span></div><div class="explanation"><p>Targets: classical pessimism falls out of the model when $g=0$; the modern case still has a drag (just smaller); abundance of land affects levels, not growth rates; and with realistic Western parameters, technological progress wins.</p></div></div>
+<div class="question-card mtf" id="q-7" data-correct="{&quot;A&quot;: true, &quot;B&quot;: true, &quot;C&quot;: false, &quot;D&quot;: true}" data-topic="Solow with oil: depletion drag" data-done="0"><div class="question-header"><span class="question-number">Q7</span><span class="question-style">Multi true-false</span></div><div class="question-stem"><p>The Solow model with land AND oil adds an exhaustible resource: $Y_t = K_t^\alpha (A_tL_t)^\beta X^\kappa E_t^\epsilon$ with energy $E_t = s_E R_t$ extracted from a finite reserve $R_t = (1-s_E)^t R_0$. Evaluate each statement.</p></div><button class="reveal-btn" type="button" onclick="reveal(7)">Reveal statements</button><span class="reveal-hint">Think through the setup first.</span><div class="mtf-statements"><div class="mtf-row" data-letter="A"><div class="mtf-row-body"><span class="mtf-letter">A</span><span class="mtf-text">The reserve depletes at a constant geometric rate $s_E$ per period, so $R_t \to 0$ as $t \to \infty$.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(7,'A',true)">T</button><button type="button" data-value="false" onclick="pickTF(7,'A',false)">F</button></div></div><div class="mtf-defense">$R_{t+1} = R_t - E_t = R_t - s_E R_t = (1-s_E)R_t$. Standard geometric decay. For $s_E = 0.005$ per year, the reserve halves every $\ln 2 / s_E \approx 139$ years.</div></div><div class="mtf-row" data-letter="B"><div class="mtf-row-body"><span class="mtf-letter">B</span><span class="mtf-text">The balanced-growth rate of $y$ subtracts a growth drag $\epsilon \cdot s_E / (\beta + \kappa + \epsilon)$ on top of the land drag.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(7,'B',true)">T</button><button type="button" data-value="false" onclick="pickTF(7,'B',false)">F</button></div></div><div class="mtf-defense">Energy use shrinks at rate $s_E$ (since $g_E = -s_E$), which contributes a negative term $-\epsilon s_E$ inside the same divisor $1 - \alpha = \beta + \kappa + \epsilon$. Cozzi writes the full formula on p20-21.</div></div><div class="mtf-row" data-letter="C"><div class="mtf-row-body"><span class="mtf-letter">C</span><span class="mtf-text">Raising the extraction rate $s_E$ unambiguously raises steady-state per-capita growth $g^y$, because more energy means more output.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(7,'C',true)">T</button><button type="button" data-value="false" onclick="pickTF(7,'C',false)">F</button></div></div><div class="mtf-defense">FALSE — raising $s_E$ depletes the reserve FASTER, lowering long-run $g_E$ and hence lowering $g^y$. The instantaneous output flow is higher, but the BGP growth rate is lower. Picked by students confusing levels with growth rates.</div></div><div class="mtf-row" data-letter="D"><div class="mtf-row-body"><span class="mtf-letter">D</span><span class="mtf-text">With $\alpha = 0.2$, $\beta = 0.6$, $\kappa = \epsilon = 0.1$, $g = 2\%$, $n = 1\%$, $s_E = 0.005$, the model still predicts positive long-run per-capita growth.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(7,'D',true)">T</button><button type="button" data-value="false" onclick="pickTF(7,'D',false)">F</button></div></div><div class="mtf-defense">$g^y = (\beta g - \kappa n - \epsilon(n+s_E))/(\beta+\kappa+\epsilon) = (0.012 - 0.001 - 0.0015)/0.8 = 0.00963$ = ~1%. Positive — Cozzi calls this 'growth optimism' (p21).</div></div></div><div class="submit-row"><button type="button" class="submit-btn" disabled onclick="submitMtf(7)">Submit</button><span>Pick T or F for each statement.</span></div><div class="explanation"><p>Oil depletes geometrically, and the depletion shows up as an extra growth drag inside the BGP formula. Faster extraction worsens the drag (counterintuitive for those thinking in flow terms). Calibrated Western values still leave room for positive long-run growth — but developing-country population growth can flip the sign.</p></div></div>
+<div class="question-card mtf" id="q-8" data-correct="{&quot;A&quot;: true, &quot;B&quot;: true, &quot;C&quot;: true, &quot;D&quot;: false}" data-topic="Education subsidies — when justified" data-done="0"><div class="question-header"><span class="question-number">Q8</span><span class="question-style">Multi true-false</span></div><div class="question-stem"><p>Cozzi argues (Lecture 3a p21-22) that subsidising education or physical-capital investment requires a market-imperfection justification. Evaluate each statement about which imperfections justify public subsidies for education.</p></div><button class="reveal-btn" type="button" onclick="reveal(8)">Reveal statements</button><span class="reveal-hint">Think through the setup first.</span><div class="mtf-statements"><div class="mtf-row" data-letter="A"><div class="mtf-row-body"><span class="mtf-letter">A</span><span class="mtf-text">Imperfect credit markets justify education subsidies because adverse selection limits poor students' borrowing capacity.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(8,'A',true)">T</button><button type="button" data-value="false" onclick="pickTF(8,'A',false)">F</button></div></div><div class="mtf-defense">Credit-market frictions mean even high-return-to-education students cannot borrow against future earnings. Cozzi lists this as the first imperfection (p22).</div></div><div class="mtf-row" data-letter="B"><div class="mtf-row-body"><span class="mtf-letter">B</span><span class="mtf-text">Imperfect insurance against future income risk discourages individuals from over-investing in education, justifying public action.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(8,'B',true)">T</button><button type="button" data-value="false" onclick="pickTF(8,'B',false)">F</button></div></div><div class="mtf-defense">Moral hazard prevents private full-income insurance, so risk-averse students under-invest. Listed second on Cozzi's p22 list.</div></div><div class="mtf-row" data-letter="C"><div class="mtf-row-body"><span class="mtf-letter">C</span><span class="mtf-text">Education has positive externalities (educated workers raise each other's productivity), which the private market does not internalise.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(8,'C',true)">T</button><button type="button" data-value="false" onclick="pickTF(8,'C',false)">F</button></div></div><div class="mtf-defense">Classic Marshallian externalities or Lucas-style human-capital spillovers. Listed third on Cozzi's p22 list.</div></div><div class="mtf-row" data-letter="D"><div class="mtf-row-body"><span class="mtf-letter">D</span><span class="mtf-text">The Solow model with human capital itself implies education subsidies are warranted, since $H$ enters the production function.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(8,'D',true)">T</button><button type="button" data-value="false" onclick="pickTF(8,'D',false)">F</button></div></div><div class="mtf-defense">This is the core trap. The Solow model gives a Golden Rule LEVEL for $s_H$ but says nothing about whether private decisions DELIVER that level. Cozzi explicitly says 'government subsidies have to be motivated by specific market imperfections' (p21) — not by the existence of the model. Picked by students conflating positive analysis with normative policy.</div></div></div><div class="submit-row"><button type="button" class="submit-btn" disabled onclick="submitMtf(8)">Submit</button><span>Pick T or F for each statement.</span></div><div class="explanation"><p>The first three are concrete imperfections Cozzi names on p22. Statement D is the meta-trap: the existence of $H$ in the production function does NOT, by itself, justify subsidies — only deviations from social optimum do. This is the distinction between positive and normative economics that Cozzi insists on.</p></div></div>
+<div class="question-card" id="q-9" data-correct="C" data-topic="Scope of MRW: what it does NOT explain" data-done="0"><div class="question-header"><span class="question-number">Q9</span><span class="question-style">Boundary</span></div><div class="question-stem"><p>The MRW Solow-with-human-capital model resolves two of the basic Solow model's empirical problems. Which of the following is NOT addressed by MRW?</p></div><button class="reveal-btn" type="button" onclick="reveal(9)">Reveal options</button><span class="reveal-hint">Try answering in your head first.</span><div class="choices"><div class="choice" onclick="pick(9,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">The cross-country slope of $\ln y$ on $\ln s$ being larger than basic Solow predicts.<div class="choice-defense">MRW does address this — raising broad-capital elasticity from $\alpha$ to $\alpha+\phi$ approximately doubles the predicted slope.</div></div></div><div class="choice" onclick="pick(9,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">The observed cross-country rate of convergence being slower than the basic Solow model predicts.<div class="choice-defense">MRW also addresses this — the convergence formula becomes $\lambda = (1-\alpha-\phi)(n+g+\delta) \approx 2\%$, matching observation.</div></div></div><div class="choice" onclick="pick(9,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">Why countries differ in their savings rates $s_K$ and $s_H$ and in their rate of technological progress $g$.<div class="choice-defense">Correct — MRW takes $s_K, s_H, g$ as exogenous parameters and offers no theory of WHY they differ. Cozzi (p31) is explicit: 'important parameters are unexplained.'</div></div></div><div class="choice" onclick="pick(9,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">The strong negative empirical effect of $n$ on $y$.<div class="choice-defense">MRW addresses this too — the elasticity of $y^*$ wrt $(n+g+\delta)$ rises in magnitude from $-0.5$ to $-2$, matching the strong observed negative cross-country correlation.</div></div></div></div><div class="explanation"><p>MRW resolves both Solow puzzles via one structural change. What it leaves untouched is the determination of the structural parameters themselves — that's the gap endogenous-growth theory (Modules 4-5) tries to fill. The Cozzi quote 'we have understood almost everything, and yet almost nothing' captures exactly this boundary.</p></div></div>
+<div class="question-card" id="q-10" data-correct="B" data-topic="MRW vs endogenous growth" data-done="0"><div class="question-header"><span class="question-number">Q10</span><span class="question-style">Spot the flaw</span></div><div class="question-stem"><p>A student argues: 'The MRW model adds human capital and gets sustained long-run growth in $y$ even though all capital experiences diminishing returns. So MRW is an endogenous growth model — growth is generated from inside the model.' What is wrong with this argument?</p></div><button class="reveal-btn" type="button" onclick="reveal(10)">Reveal options</button><span class="reveal-hint">Try answering in your head first.</span><div class="choices"><div class="choice" onclick="pick(10,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">The argument is correct — MRW is the simplest example of an endogenous growth model and is the prototype for Module 4's R&D-based models.<div class="choice-defense">Tempting because MRW does generate higher and more realistic growth predictions, but it's not endogenous growth — the long-run rate is still pinned by exogenous $g$.</div></div></div><div class="choice" onclick="pick(10,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">In MRW, the long-run growth rate of $y$ is still $g$ — the exogenous technological progress rate. The model explains LEVELS better than basic Solow, but not the existence of growth itself.<div class="choice-defense">Correct. $y_t^* = A_t (\cdot)^{1/(1-\alpha-\phi)}$ grows at the rate of $A_t$, which is $g$ — exogenous. MRW raises the level of the growth path; endogenous growth would mean the rate itself emerges from inside.</div></div></div><div class="choice" onclick="pick(10,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">MRW's long-run growth rate is $g/(1-\alpha-\phi)$, which is endogenous because it depends on $\phi$.<div class="choice-defense">Wrong formula. The growth rate of $y$ is $g$ exactly, not $g/(1-\alpha-\phi)$. The elasticity formula confuses level elasticity with growth-rate determination.</div></div></div><div class="choice" onclick="pick(10,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">The argument is wrong because human capital exhibits constant returns when combined with physical capital, contradicting diminishing returns.<div class="choice-defense">Misstates the production function: $K^\alpha H^\phi (AL)^{1-\alpha-\phi}$ has diminishing returns to capital subaggregates, exactly as the student noted. The flaw is elsewhere.</div></div></div></div><div class="explanation"><p>The critical distinction: MRW improves LEVEL predictions (the steady-state level of the growth path) but the long-run GROWTH RATE is still $g$ — the exogenous technology trend. Endogenous growth (Module 4+) means the rate itself is determined inside the model. This distinction is the hinge between Solow-style and Romer-style growth theory.</p></div></div>
+<div class="question-card" id="q-11" data-correct="A" data-topic="Interpretation of $\tilde h$ vs $h$" data-done="0"><div class="question-header"><span class="question-number">Q11</span><span class="question-style">What it measures</span></div><div class="question-stem"><p>In the MRW analysis, two human-capital symbols appear: $h_t \equiv H_t/L_t$ (human capital per worker) and $\tilde h_t \equiv H_t/(A_tL_t)$ (human capital per effective worker). What is $\tilde h_t$?</p></div><button class="reveal-btn" type="button" onclick="reveal(11)">Reveal options</button><span class="reveal-hint">Try answering in your head first.</span><div class="choices"><div class="choice" onclick="pick(11,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">The amount of human capital per unit of effective labour input, used to make the dynamic system stationary along the BGP.<div class="choice-defense">Correct interpretation. Just as $\tilde k_t = k_t/A_t$ in the general Solow model makes the system stationary by normalising out the technology trend, $\tilde h_t$ does the same for human capital — both $\tilde k$ and $\tilde h$ converge to constants in steady state.</div></div></div><div class="choice" onclick="pick(11,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">The total human capital embodied in a single representative worker, including learning-by-doing.<div class="choice-defense">That's $h_t$ (per-worker), not $\tilde h_t$. Picked by students reading the tilde as a 'fancier' version of $h$ without understanding the normalisation.</div></div></div><div class="choice" onclick="pick(11,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">Human capital adjusted for inflation, expressed in real terms.<div class="choice-defense">All Solow-model variables are already in real terms; $A_t$ is productivity, not a price index. Confusion with finance-style notation.</div></div></div><div class="choice" onclick="pick(11,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">The marginal product of human capital in equilibrium.<div class="choice-defense">That would be a price/return; $\tilde h_t$ is a quantity. Picked by students who associate tildes with shadow prices.</div></div></div></div><div class="explanation"><p>The tilde normalisation $\tilde X_t \equiv X_t/(A_tL_t)$ is the standard trick that makes a system with persistent technological growth analytically tractable: in steady state $\tilde X^*$ is constant, even though $X_t$ itself grows. Once you see this, the entire MRW phase-diagram analysis becomes a generalisation of the Lecture 2b general-Solow approach.</p></div></div>
+<div class="question-card" id="q-12" data-correct="A" data-topic="Convergence speed in MRW vs basic Solow" data-done="0"><div class="question-header"><span class="question-number">Q12</span><span class="question-style">Deep-short</span></div><div class="question-stem"><p>In a Cobb-Douglas economy with $\alpha = 1/3$, the basic-Solow convergence speed is $\lambda_\text{basic} = (1-\alpha)(n+g+\delta)$. The MRW convergence speed is $\lambda_\text{MRW} = (1-\alpha-\phi)(n+g+\delta)$. With $\phi = 1/3$, the ratio $\lambda_\text{MRW}/\lambda_\text{basic}$ is...</p></div><button class="reveal-btn" type="button" onclick="reveal(12)">Reveal options</button><span class="reveal-hint">Try answering in your head first.</span><div class="choices"><div class="choice" onclick="pick(12,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">...$1/2$ — MRW convergence is half as fast as basic Solow.<div class="choice-defense">Correct: $(1-1/3-1/3)/(1-1/3) = (1/3)/(2/3) = 1/2$. So if basic Solow predicts $\lambda = 4\%$, MRW predicts $\lambda = 2\%$ — closer to the observed 1-2%.</div></div></div><div class="choice" onclick="pick(12,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">...$2$ — MRW convergence is twice as fast as basic Solow.<div class="choice-defense">Reversed: adding $\phi$ to the production function makes effective capital broader, so the decay coefficient $(1-\alpha-\phi)$ is SMALLER than $(1-\alpha)$. Picked by students computing the ratio in the wrong direction.</div></div></div><div class="choice" onclick="pick(12,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">...$3$ — MRW gives three times the basic-Solow $\lambda$.<div class="choice-defense">Mathematically inconsistent with $\alpha = \phi = 1/3$. Picked by students who don't actually compute.</div></div></div><div class="choice" onclick="pick(12,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">...$1$ — adding $H$ does not change the convergence speed.<div class="choice-defense">This would be true only if $\phi = 0$ (i.e., no human capital). The whole point of MRW is that $\phi > 0$ changes the convergence rate.</div></div></div></div><div class="explanation"><p>The ratio is $(1-\alpha-\phi)/(1-\alpha) = (1/3)/(2/3) = 1/2$. Adding human capital with the same elasticity as physical capital halves the predicted convergence rate. This is exactly the empirical correction MRW achieves — and what Ex 3's falsification probe in the M1+M2 exercise set foreshadowed.</p></div></div>
+<div class="question-card mono-choices" id="q-13" data-correct="D" data-topic="MRW parameter inversion from observed convergence speed" data-done="0"><div class="question-header"><span class="question-number">Q13</span><span class="question-style">Numeric</span></div><div class="question-stem"><p>Suppose the empirical cross-country convergence speed is $\lambda = 2\%$ per year, and $n + g + \delta = 8\%$ per year. The MRW formula is $\lambda = (1 - \alpha - \phi)(n+g+\delta)$. What is the implied broad-capital elasticity $\alpha + \phi$?</p></div><button class="reveal-btn" type="button" onclick="reveal(13)">Reveal options</button><span class="reveal-hint">Try answering in your head first.</span><div class="choices"><div class="choice" onclick="pick(13,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">$\alpha + \phi = 0.25$<div class="choice-defense">Would give $\lambda = 0.75 \cdot 0.08 = 6\%$, much too high. Picked by students who solve $(1-x) \cdot 0.08 = 0.02$ as $1 - x = 0.25$ instead of correctly getting $1-x = 0.02/0.08 = 0.25$ and then $x = 0.75$. The arithmetic-direction error.</div></div></div><div class="choice" onclick="pick(13,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">$\alpha + \phi = 0.5$<div class="choice-defense">Gives $\lambda = 0.5 \cdot 0.08 = 4\%$, twice the observed value. Picked by students who pick a 'round' middle value without solving.</div></div></div><div class="choice" onclick="pick(13,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">$\alpha + \phi = 0.67$<div class="choice-defense">Close to MRW's canonical calibration ($\alpha = \phi = 1/3$, so $\alpha + \phi = 2/3$) but gives $\lambda \approx 0.33 \cdot 0.08 = 2.7\%$ — too high by a third. Picked by students who recall the canonical $\alpha = \phi = 1/3$ but don't check the calibration.</div></div></div><div class="choice" onclick="pick(13,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">$\alpha + \phi = 0.75$<div class="choice-defense">Correct. $(1 - 0.75)(0.08) = 0.25 \cdot 0.08 = 0.02 = 2\%$. The recovered broad-capital elasticity is much higher than the physical-capital share of $1/3$ — exactly the empirical case for adding human capital.</div></div></div></div><div class="explanation"><p>Solve $\lambda = (1 - (\alpha+\phi))(n+g+\delta)$ for $\alpha+\phi$: $1 - (\alpha+\phi) = \lambda/(n+g+\delta) = 0.02/0.08 = 0.25$, so $\alpha + \phi = 0.75$. The recovered value far exceeds the physical-capital income share ($\approx 1/3$), demonstrating empirically that 'broad capital' must include more than physical $K$. This is exactly the calculation Ex 3 of the M1+M2 exercise set walked through.</p></div></div>
+<div class="question-card" id="q-14" data-correct="C" data-topic="M2 → M3 bridge: convergence-speed puzzle" data-done="0"><div class="question-header"><span class="question-number">Q14</span><span class="question-style">Cross-topic</span></div><div class="question-stem"><p>The general Solow model (Module 2) predicts a convergence speed of $\lambda = (1-\alpha)(n+g+\delta) \approx 5\%$ per year. The empirical rate is closer to 2%. MRW resolves this by changing one structural element of the production function. Which change, and through what mechanism, exactly reconciles the puzzle?</p></div><button class="reveal-btn" type="button" onclick="reveal(14)">Reveal options</button><span class="reveal-hint">Try answering in your head first.</span><div class="choices"><div class="choice" onclick="pick(14,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">Adding labour-augmenting technology $A_t$ to the production function, which makes the convergence formula $(1-\alpha)(n+g+\delta+ng)$ — slightly slower due to the cross term.<div class="choice-defense">This is the basic-to-general Solow step (Module 2 itself), not the MRW step. The $ng$ term is empirically tiny and does not close the 5%-vs-2% gap. Picked by students who confuse Module 2's reformulation with Module 3's extension.</div></div></div><div class="choice" onclick="pick(14,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">Replacing the Cobb-Douglas with a CES production function, which mechanically lowers the convergence speed when elasticity of substitution is below 1.<div class="choice-defense">Mathematically possible but not what MRW does. MRW keeps Cobb-Douglas and adds a new factor.</div></div></div><div class="choice" onclick="pick(14,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">Adding human capital as a separate accumulable factor, raising 'broad capital' elasticity from $\alpha$ to $\alpha+\phi$ and making the convergence coefficient $(1-\alpha-\phi)$ smaller — exactly halving $\lambda$ at canonical calibration.<div class="choice-defense">Correct. The mechanism is that the convergence speed depends on the elasticity of OUTPUT with respect to all DIMINISHING-RETURNS capital factors taken jointly. Adding $H$ shrinks the gap between $\alpha+\phi$ and $1$, slowing decay.</div></div></div><div class="choice" onclick="pick(14,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">Allowing $\alpha$ itself to take a higher value of $\approx 0.75$, consistent with the convergence regression.<div class="choice-defense">This is the 'naive fix' — but it contradicts the labour-share evidence that $\alpha \approx 1/3$. MRW's elegance is providing structural justification for the higher effective elasticity without violating income-share evidence (since $H$'s return accrues to workers as labour income).</div></div></div></div><div class="explanation"><p>The MRW bridge: a SINGLE structural change — adding $H$ as an accumulable factor — solves BOTH the convergence-speed puzzle AND the savings-rate-elasticity puzzle of basic/general Solow. The mechanism is mechanical (raising the joint capital elasticity from $\alpha$ to $\alpha+\phi$ in both formulas), not a coincidence. Choice D fails because the structural-vs-income-share consistency requirement forbids it.</p><div class="connection"><strong>Connection:</strong> In Module 2, the general Solow's convergence formula $\lambda = (1-\alpha)(n+g+\delta)$ overshoots the data. The M1+M2 Exercise 3 'falsification probe' inverted the formula to find an $\alpha$ that fits — got $\alpha \approx 0.75$, contradicting the labour-share evidence. MRW resolves this by re-interpreting that $\alpha$ as $\alpha + \phi$, where $\phi$'s return accrues to workers (preserving labour share = $1-\alpha$) but enters the diminishing-returns formula. Same mathematical fix, structurally legitimate.</div></div></div>
+<div class="question-card" id="q-15" data-correct="D" data-topic="MRW steady-state derivation" data-done="0"><div class="question-header"><span class="question-number">Q15</span><span class="question-style">Derivation · justify step</span></div><div class="question-stem"><p>The derivation below leads to the MRW steady-state ratio $\tilde h^* / \tilde k^* = s_H/s_K$. Which assumption or definition justifies line (3)?</p><div class="derivation-block"><div class="derivation-step"><span class="step-num">(1)</span><span class="step-body">\Delta\tilde k = 0 \Rightarrow s_K \tilde y^* = (n+g+\delta+ng)\tilde k^*</span></div><div class="derivation-step"><span class="step-num">(2)</span><span class="step-body">\Delta\tilde h = 0 \Rightarrow s_H \tilde y^* = (n+g+\delta+ng)\tilde h^*</span></div><div class="derivation-step highlight"><span class="step-num">(3)</span><span class="step-body">\frac{s_K \tilde y^*}{s_H \tilde y^*} = \frac{(n+g+\delta+ng)\tilde k^*}{(n+g+\delta+ng)\tilde h^*}</span></div><div class="derivation-step"><span class="step-num">(4)</span><span class="step-body">\frac{s_K}{s_H} = \frac{\tilde k^*}{\tilde h^*}\;\Rightarrow\;\frac{\tilde h^*}{\tilde k^*} = \frac{s_H}{s_K}</span></div></div></div><button class="reveal-btn" type="button" onclick="reveal(15)">Reveal options</button><span class="reveal-hint">Try answering in your head first.</span><div class="choices"><div class="choice" onclick="pick(15,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">Use of the Golden Rule condition $s_K = \alpha$, $s_H = \phi$.<div class="choice-defense">Wrong — the steady-state structure holds for ANY $(s_K, s_H)$, not just at the Golden Rule. The Golden Rule is a SEPARATE further optimization.</div></div></div><div class="choice" onclick="pick(15,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">Substitution of $\tilde y^* = \tilde k^{*\alpha}\tilde h^{*\phi}$ into both equations.<div class="choice-defense">Plausible-sounding but wrong — line (3) does NOT substitute the production function (the $\tilde y^*$ symbol still appears on both sides). Picked by students who pattern-match on 'something must use the production function'.</div></div></div><div class="choice" onclick="pick(15,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">Application of L'Hôpital's rule at the steady-state intersection.<div class="choice-defense">Irrelevant — no limit is being taken. Picked by students who confuse linear-system manipulation with calculus.</div></div></div><div class="choice" onclick="pick(15,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">Term-by-term division of equation (1) by equation (2), valid because $\tilde y^*$ and $(n+g+\delta+ng)$ are both nonzero.<div class="choice-defense">Correct. The step is a legitimate algebraic division as long as the divisors are nonzero — and both are guaranteed positive at any economically meaningful steady state.</div></div></div></div><div class="explanation"><p>Line (3) is pure algebra — dividing the two steady-state conditions. The key insight: the common factors $\tilde y^*$ and $(n+g+\delta+ng)$ cancel cleanly, leaving the ratio $\tilde k^*/\tilde h^* = s_K/s_H$. This holds for ANY parameter values, not just Golden-Rule ones — that's why it's a useful intermediate identity for solving the steady-state system.</p></div></div>
+<div class="question-card" id="q-16" data-correct="C" data-topic="MRW phase diagram in $(\tilde k, \tilde h)$ space" data-done="0"><div class="question-header"><span class="question-number">Q16</span><span class="question-style">Graph</span></div><div class="question-stem"><p>The diagram below shows a stylised MRW phase plane: the $\Delta\tilde k = 0$ locus (cyan) and the $\Delta\tilde h = 0$ locus (orange). Four labeled points are marked. Which is the steady state $(\tilde k^*, \tilde h^*)$?</p><div class="mf-figure" id="fig-q16"><div class="mf-panels "><div id="fig-q16-panel-0" class="mf-panel"></div></div><div class="mf-readout"></div><script>(function(){var spec={"id": "fig-q16", "params": {"sk": 0.2, "sh": 0.15, "alpha": 0.33, "phi": 0.33, "drag": 0.08}, "x_range": [0.5, 15], "n_points": 200, "x_label": "k_tilde", "y_label": "h_tilde", "curves": [{"name": "Delta_k=0 locus", "expr": "Math.pow((drag/sk) * Math.pow(k, 1-alpha), 1/phi)", "color": "#0FA4AF"}, {"name": "Delta_h=0 locus", "expr": "Math.pow((sh/drag) * Math.pow(k, alpha), 1/(1-phi))", "color": "#964734"}], "markers": [{"type": "label_point", "x": 3, "y": 1, "label": "A", "color": "#003135"}, {"type": "label_point", "x": 3, "y": 8, "label": "B", "color": "#003135"}, {"type": "intersection", "curves": [0, 1], "label": "C", "color": "#003135"}, {"type": "label_point", "x": 14, "y": 6, "label": "D", "color": "#003135"}]};var hostId="fig-q16";function go(){if(!window.MacroFigures){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.MacroFigures not defined. Did FIGURE_JS load before this snippet?</div>");return;}if(!window.Plotly){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.Plotly not loaded.</div>");return;}try{window.MacroFigures.renderFigure(spec,hostId);}catch(e){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Render error: "+e.message+"</div>");}}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",go);}else{go();}})();</script></div></div><button class="reveal-btn" type="button" onclick="reveal(16)">Reveal options</button><span class="reveal-hint">Try answering in your head first.</span><div class="choices"><div class="choice" onclick="pick(16,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">Point A — to the lower-left of where the loci meet, off both curves.<div class="choice-defense">Wrong — A lies off both loci, so neither $\tilde k$ nor $\tilde h$ is stationary there. Steady state requires both simultaneously.</div></div></div><div class="choice" onclick="pick(16,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">Point B — to the upper-left, off both curves.<div class="choice-defense">Wrong — same reason as A. Picked by students who interpret 'high $\tilde h$' as 'closer to the human-capital target' without checking that $\Delta\tilde k$ also has to vanish.</div></div></div><div class="choice" onclick="pick(16,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">Point C — at the intersection of the two loci.<div class="choice-defense">Correct. Steady state requires BOTH $\Delta\tilde k = 0$ AND $\Delta\tilde h = 0$, which holds only where the two loci cross.</div></div></div><div class="choice" onclick="pick(16,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">Point D — to the right of where the loci meet, off both curves.<div class="choice-defense">Wrong — D is past the intersection in $\tilde k$, with both stocks decumulating toward the steady state. Not a fixed point of the dynamics.</div></div></div></div><div class="explanation"><p>Steady state requires both $\Delta\tilde k = 0$ AND $\Delta\tilde h = 0$ simultaneously — which can only happen at the intersection of the two loci. Off the intersection at least one variable is moving. This is the MRW analogue of basic Solow's intersection of $sf(k)$ with $(n+\delta)k$, but in 2D rather than 1D.</p></div></div>
+<div class="chain-block"><span class="chain-label">Scenario</span><div class="chain-setup"><p><strong>Setup.</strong> Country X uses the Solow model with land and oil: $Y_t = K_t^\alpha (A_tL_t)^\beta X^\kappa E_t^\epsilon$ with $\alpha = 0.2$, $\beta = 0.6$, $\kappa = \epsilon = 0.1$. Energy is extracted at rate $s_E$ from a finite reserve $R_t$. The country observes $g = 2\%$, $n = 1\%$. The BGP per-capita growth rate is $g^y = (\beta g - \kappa n - \epsilon(n+s_E))/(\beta+\kappa+\epsilon)$.</p></div><div class="question-card mono-choices" id="q-17" data-correct="C" data-topic="Solow with oil: growth-rate component identification" data-done="0"><div class="question-header"><span class="question-number">Q17</span><span class="question-style">Numeric</span></div><div class="question-stem"><p>With the chain's parameters and an extraction rate $s_E = 0.005$, what is the predicted per-capita growth rate $g^y$? (Round to two decimal places of a percent.)</p></div><button class="reveal-btn" type="button" onclick="reveal(17)">Reveal options</button><span class="reveal-hint">Try answering in your head first.</span><div class="choices"><div class="choice" onclick="pick(17,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">$g^y \approx 2.00\%$ — the BGP growth rate equals $g$.<div class="choice-defense">Wrong — that would be true only if there were no drags. Picked by students who treat technology as fully effective.</div></div></div><div class="choice" onclick="pick(17,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">$g^y \approx 1.50\%$ — close to $0.75g$.<div class="choice-defense">Wrong — that's the LAND-only model's prediction with $n=0$. Doesn't account for the additional energy and population drags.</div></div></div><div class="choice" onclick="pick(17,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">$g^y \approx 1.19\%$.<div class="choice-defense">Correct. $g^y = (0.6 \cdot 0.02 - 0.1 \cdot 0.01 - 0.1 \cdot (0.01 + 0.005))/0.8 = (0.012 - 0.001 - 0.0015)/0.8 = 0.0095/0.8 = 0.0119 = 1.19\%$.</div></div></div><div class="choice" onclick="pick(17,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">$g^y \approx -0.50\%$ — the depletion drag dominates.<div class="choice-defense">Wrong — depletion ($\epsilon s_E$) contributes only $-0.000625/0.8 = -0.078\%$. Picked by students overweighting the energy drag.</div></div></div></div><div class="explanation"><p>Plug-and-evaluate: $g^y = (0.012 - 0.001 - 0.0015)/0.8 = 0.0119$. The breakdown: technology contributes $0.012/0.8 = 1.5\%$; land drag $-0.125\%$; energy+population drag $-0.1875\%$. Net ~1.19%. Despite finite resources, sustained positive growth is feasible.</p></div></div><div class="question-card" id="q-18" data-correct="B" data-topic="Oil model counterfactual: extraction-rate change" data-done="0"><div class="question-header"><span class="question-number">Q18</span><span class="question-style">Deep-short</span></div><div class="question-stem"><p>Continuing from Q17. If country X DOUBLES its extraction rate to $s_E = 0.010$ (mining the oil twice as fast), what happens to the long-run per-capita growth rate $g^y$?</p></div><button class="reveal-btn" type="button" onclick="reveal(18)">Reveal options</button><span class="reveal-hint">Try answering in your head first.</span><div class="choices"><div class="choice" onclick="pick(18,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">$g^y$ rises — more energy in production raises output growth.<div class="choice-defense">Wrong. Higher $s_E$ raises CURRENT energy flow but depletes the reserve faster; the long-run BGP rate $g^y$ depends on the depletion rate $s_E$ negatively through the term $-\epsilon(n+s_E)$.</div></div></div><div class="choice" onclick="pick(18,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">$g^y$ falls by $\epsilon \cdot 0.005 / (\beta+\kappa+\epsilon) = 0.0625$ percentage points.<div class="choice-defense">Correct. The derivative $\partial g^y / \partial s_E = -\epsilon/(\beta+\kappa+\epsilon) = -0.125$. Doubling $s_E$ from 0.005 to 0.010 adds $\Delta s_E = 0.005$, so $\Delta g^y = -0.125 \cdot 0.005 = -0.000625 = -0.0625$ pp.</div></div></div><div class="choice" onclick="pick(18,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">$g^y$ is unchanged — the BGP rate depends only on technology $g$.<div class="choice-defense">Wrong — that's the basic Solow / general Solow result, NOT the Solow-with-oil result. The whole point of Chapter 7 is that resource extraction enters the growth-rate formula.</div></div></div><div class="choice" onclick="pick(18,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">$g^y$ doubles — extraction effort directly scales output growth.<div class="choice-defense">Wrong in both direction (higher extraction lowers growth) and magnitude (effect is small in percentage-point terms).</div></div></div></div><div class="explanation"><p>Higher $s_E$ depletes the reserve faster, which lowers the long-run energy flow growth from $-s_E$ to $-2s_E$. In the BGP formula, this enters as $-\epsilon s_E/(\beta+\kappa+\epsilon)$. The Cozzi take-away: faster extraction trades short-run output for long-run growth. The optimal extraction policy is a non-trivial question (touched on in Hotelling-type analyses outside this course).</p></div></div><div class="question-card" id="q-19" data-correct="A" data-topic="Sketch numerical simulation (Mock Q2 link)" data-done="0"><div class="question-header"><span class="question-number">Q19</span><span class="question-style">Deep-short</span></div><div class="question-stem"><p>You are asked to numerically simulate the transition path of $\tilde z_t \equiv K_t/Y_t$ (the capital-output ratio) toward $\tilde z^*$ in the oil model, given parameters and an initial $K_0, L_0, R_0$. Which step list correctly captures the algorithm sketch (the kind requested in Mock Exam Q2)?</p></div><button class="reveal-btn" type="button" onclick="reveal(19)">Reveal options</button><span class="reveal-hint">Try answering in your head first.</span><div class="choices"><div class="choice" onclick="pick(19,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">Initialize $K, L, A, R$; in each period compute $Y_t$ from production function, $E_t = s_E R_t$, update $L, A, R$ at constant rates, update $K$ via $K_{t+1} = K_t + sY_t - \delta K_t$; plot $\tilde z_t = K_t/Y_t$.<div class="choice-defense">Correct algorithm. Five updates per iteration: $E_t$ from $R_t$; $Y_t$ from inputs; $K_{t+1}$ from $S - \delta K$; $L_{t+1}, A_{t+1}, R_{t+1}$ at their rates. Cozzi's Mock Q2 expects exactly this style of sketch (Excel/Python pseudo-algorithm).</div></div></div><div class="choice" onclick="pick(19,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">Compute steady-state $\tilde z^*$ analytically and report it — no time-series simulation needed.<div class="choice-defense">Wrong — that gives the destination, not the path. Mock Q2 explicitly asks for the simulation path, not just the steady state.</div></div></div><div class="choice" onclick="pick(19,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">Run an OLS regression of growth on saving and population growth across countries, recover parameters, then project.<div class="choice-defense">Conflates estimation with simulation. The Mock Q2 task assumes parameters are given, then simulates.</div></div></div><div class="choice" onclick="pick(19,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">Solve the BGP equations $g_y = g_k = (\beta g - \kappa n - \epsilon(n+s_E))/(\beta+\kappa+\epsilon)$, then plot the BGP line.<div class="choice-defense">Also gives only the destination — no transition. Picked by students who treat simulation as identical to solving the steady-state algebra.</div></div></div></div><div class="explanation"><p>Mock Exam Q2 style requires a step-by-step algorithm: initialise state variables, write a per-period update rule for each, iterate $T$ periods, plot the chosen output. This is exactly the kind of sketch Cozzi expects — not analytical solution. The plot of $\tilde z_t$ shows the gradual approach to $\tilde z^*$, which is the transition the BGP formula misses.</p></div></div></div>
+<div class="question-card" id="q-20" data-correct="B" data-topic="Land growth rate: classical vs modern case" data-done="0"><div class="question-header"><span class="question-number">Q20</span><span class="question-style">Deep-short</span></div><div class="question-stem"><p>In the Solow-with-land model, $g^y = (\beta g - \kappa n)/(\beta+\kappa)$. The 'classical case' ($g = 0$) and the 'modern case' ($n = 0$) are stylised limits. Which statement correctly captures both?</p></div><button class="reveal-btn" type="button" onclick="reveal(20)">Reveal options</button><span class="reveal-hint">Try answering in your head first.</span><div class="choices"><div class="choice" onclick="pick(20,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">Classical case predicts $g^y = 0$ (Smith equilibrium); modern case predicts $g^y = g$ (technology fully offsets land).<div class="choice-defense">Wrong on both — classical gives strictly negative growth (Malthus's pessimism); modern still has the $\beta/(\beta+\kappa) < 1$ drag.</div></div></div><div class="choice" onclick="pick(20,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">Classical case predicts $g^y = -\kappa n/(\beta+\kappa) < 0$ (Malthusian decline); modern case predicts $g^y = \beta g/(\beta+\kappa) < g$ (technology partially blunted by land scarcity).<div class="choice-defense">Correct. Classical case: with no technological progress and positive population, growing labour presses on fixed land and per-capita output must fall. Modern case: with no population growth and positive $g$, technology raises output, but per-capita gain is less than $g$ because of the diminishing-returns drag.</div></div></div><div class="choice" onclick="pick(20,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">Classical case predicts $g^y < 0$ (correct); modern case predicts $g^y > g$ because zero population growth amplifies per-capita gains.<div class="choice-defense">Wrong on modern — $g^y$ is bounded above by $g$, never exceeds it; $\beta/(\beta+\kappa) < 1$ since $\kappa > 0$. Picked by students applying basic Solow intuition where $n=0$ removes the dilution drag.</div></div></div><div class="choice" onclick="pick(20,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">Both cases predict $g^y$ depends only on the labour-share parameter $\beta$, not on $\kappa$.<div class="choice-defense">Wrong — $\kappa$ appears in both numerator (classical case) and denominator (both cases). Land's exponent matters for the magnitude of the drag.</div></div></div></div><div class="explanation"><p>The two limits decompose into Malthusian decline (classical) and partially-realised technology (modern). The key insight is that even when $g > 0$, land scarcity caps the per-capita gain at $g \cdot \beta/(\beta+\kappa) < g$ — never recovering the full technological progress rate. Cozzi's running theme: 'the classics were right' about the structural pressure, but historical Western experience escaped it because $g$ exceeded the relevant thresholds.</p></div></div>
+<div class="summary" id="summary">
+<h2>Quiz Complete</h2>
+<div class="score-big" id="final-score"></div>
+<div class="score-label" id="final-label"></div>
+<table class="results-table" id="results-table">
+<thead><tr><th>#</th><th>Topic</th><th>Correct</th><th>Yours</th><th></th></tr></thead>
+<tbody id="results-body"></tbody>
+</table>
+<div class="json-section">
+<label>Paste this into chat to update your learning state</label>
+<textarea class="json-box" id="json-export" readonly></textarea>
+</div>
+<div class="btn-row">
+<button class="btn" onclick="copyJson()">Copy JSON</button>
+<button class="btn btn-secondary" onclick="document.querySelectorAll('.explanation').forEach(e=>e.classList.add('visible'))">Show All Explanations</button>
+</div>
+</div>
+</div>
+<div class="copy-toast" id="copy-toast">Copied to clipboard</div>
+<script>
+const total=20;
+let answered=0,correct=0;
+const results=[];
+
+function setsEqual(a,b){
+  if(a.length!==b.length)return false;
+  const sa=new Set(a),sb=new Set(b);
+  for(const x of sa)if(!sb.has(x))return false;
+  return true;
+}
+
+/* Productive-failure: hide answer surfaces until user clicks reveal */
+function reveal(qid){
+  document.getElementById('q-'+qid).classList.add('revealed');
+}
+
+function pickTF(qid,letter,value){
+  const card=document.getElementById('q-'+qid);
+  if(card.dataset.done==='1')return;
+  const row=card.querySelector('.mtf-row[data-letter="'+letter+'"]');
+  row.dataset.pick=String(value);
+  row.querySelectorAll('.mtf-pick button').forEach(b=>{
+    b.classList.toggle('picked',b.dataset.value===String(value));
+  });
+  // Enable submit when every row has a pick
+  const rows=card.querySelectorAll('.mtf-row');
+  const allPicked=Array.from(rows).every(r=>r.dataset.pick!==undefined);
+  const btn=card.querySelector('.submit-btn');
+  if(btn)btn.disabled=!allPicked;
+}
+
+function submitMtf(qid){
+  const card=document.getElementById('q-'+qid);
+  if(card.dataset.done==='1')return;
+  const truth=JSON.parse(card.dataset.correct);  // {"A":true,"B":false,...}
+  const topic=card.dataset.topic||'';
+  const userPicks={};
+  let allRight=true;
+  card.querySelectorAll('.mtf-row').forEach(row=>{
+    const letter=row.dataset.letter;
+    const pick=row.dataset.pick==='true';
+    userPicks[letter]=pick;
+    const right=truth[letter]===pick;
+    row.classList.add(right?'correct-reveal':'wrong-reveal');
+    row.querySelectorAll('.mtf-pick button').forEach(b=>b.disabled=true);
+    if(!right)allRight=false;
+  });
+  card.querySelector('.submit-row').style.display='none';
+  // For LEARNING_STATE updates we treat the cluster as a single all-or-nothing item.
+  const correctStr=Object.entries(truth).map(([k,v])=>k+':'+(v?'T':'F')).join(' ');
+  const userStr=Object.entries(userPicks).map(([k,v])=>k+':'+(v?'T':'F')).join(' ');
+  commitAnswer(qid,userStr,correctStr,allRight,topic);
+}
+
+function commitAnswer(qid,userAnswer,correctAnswer,isCorrect,topic){
+  const card=document.getElementById('q-'+qid);
+  if(card.dataset.done==='1')return;
+  card.dataset.done='1';
+  card.querySelectorAll('.choice').forEach(c=>c.classList.add('disabled'));
+  if(isCorrect){card.classList.add('answered-correct');correct++}
+  else{card.classList.add('answered-wrong')}
+  card.querySelector('.explanation').classList.add('visible');
+  results.push({
+    id:qid,topic:topic,
+    correct_answer:Array.isArray(correctAnswer)?correctAnswer.join('+'):correctAnswer,
+    user_answer:Array.isArray(userAnswer)?(userAnswer.length?userAnswer.join('+'):'—'):userAnswer,
+    is_correct:isCorrect
+  });
+  answered++;
+  document.getElementById('prog-text').textContent=answered+' / '+total;
+  document.getElementById('prog-fill').style.width=(answered/total*100)+'%';
+  document.getElementById('score-text').textContent=correct+'/'+answered;
+  if(answered===total)showSummary();
+}
+
+/* Single-MCQ pick: click commits answer */
+function pick(qid,letter){
+  const card=document.getElementById('q-'+qid);
+  if(card.dataset.done==='1')return;
+  const correctLetter=card.dataset.correct;
+  const topic=card.dataset.topic||'';
+  card.querySelectorAll('.choice').forEach(c=>{
+    const l=c.dataset.letter;
+    if(l===correctLetter)c.classList.add('correct-reveal');
+    if(l===letter&&l!==correctLetter)c.classList.add('wrong-reveal');
+  });
+  commitAnswer(qid,letter,correctLetter,letter===correctLetter,topic);
+}
+
+/* Multi-select toggle: click toggles, submit commits */
+function toggle(qid,letter){
+  const card=document.getElementById('q-'+qid);
+  if(card.dataset.done==='1')return;
+  const choice=card.querySelector('.choice[data-letter="'+letter+'"]');
+  choice.classList.toggle('selected');
+  const anySel=card.querySelectorAll('.choice.selected').length>0;
+  const btn=card.querySelector('.submit-btn');
+  if(btn)btn.disabled=!anySel;
+}
+
+function submitMulti(qid){
+  const card=document.getElementById('q-'+qid);
+  if(card.dataset.done==='1')return;
+  const correctSet=JSON.parse(card.dataset.correct);
+  const topic=card.dataset.topic||'';
+  const selected=Array.from(card.querySelectorAll('.choice.selected'))
+    .map(c=>c.dataset.letter).sort();
+  const isCorrect=setsEqual(selected,correctSet);
+  card.querySelectorAll('.choice').forEach(c=>{
+    const l=c.dataset.letter;
+    const wasPicked=c.classList.contains('selected');
+    const isRight=correctSet.includes(l);
+    c.classList.remove('selected');
+    if(wasPicked&&isRight)c.classList.add('correct-reveal');
+    else if(wasPicked&&!isRight)c.classList.add('wrong-reveal');
+    else if(!wasPicked&&isRight)c.classList.add('missed-reveal');
+  });
+  card.querySelector('.submit-row').style.display='none';
+  commitAnswer(qid,selected,correctSet,isCorrect,topic);
+}
+
+function showSummary(){
+  const s=document.getElementById('summary');
+  s.style.display='block';
+  document.getElementById('final-score').textContent=correct+' / '+total;
+  const pct=Math.round(correct/total*100);
+  document.getElementById('final-label').textContent=
+    pct+'% — '+(pct>=80?'strong understanding':pct>=60?'good, review marked items':'review recommended');
+  const tbody=document.getElementById('results-body');
+  results.sort((a,b)=>a.id-b.id);
+  results.forEach(r=>{
+    const tr=document.createElement('tr');
+    tr.className=r.is_correct?'row-correct':'row-wrong';
+    tr.innerHTML='<td>Q'+r.id+'</td><td>'+r.topic+'</td><td>'+r.correct_answer+
+      '</td><td>'+r.user_answer+'</td><td>'+(r.is_correct?'✓':'✗')+'</td>';
+    tbody.appendChild(tr);
+  });
+  const answers={};
+  results.sort((a,b)=>a.id-b.id).forEach(r=>{answers['Q'+r.id]=r.user_answer});
+  const exportData={file:"module-3-conceptual_2026-05-27",score:correct+'/'+total,answers:answers};
+  document.getElementById('json-export').value=JSON.stringify(exportData);
+  s.scrollIntoView({behavior:'smooth'});
+}
+
+function copyJson(){
+  const box=document.getElementById('json-export');
+  box.select();
+  document.execCommand('copy');
+  const toast=document.getElementById('copy-toast');
+  toast.style.display='block';
+  setTimeout(()=>{toast.style.display='none'},1500);
+}
+
+document.addEventListener('DOMContentLoaded',()=>{
+  renderMathInElement(document.body,{delimiters:[
+    {left:"$$",right:"$$",display:true},
+    {left:"$",right:"$",display:false},
+    {left:"\\(",right:"\\)",display:false},
+    {left:"\\[",right:"\\]",display:true}
+  ]});
+});
+</script>
+</body>
+</html>

@@ -1,326 +1,223 @@
 ---
 name: exam
-description: "Generate exam-style practice tests with mixed question types (MCQ, T/F, numeric, checkbox, dropdown) organized in scenario chains that mirror the professor's testing style. Use this skill whenever the user says '/exam', asks for an exam simulation, wants exam-style practice, mock exam, or exam training. Also triggers on 'simulate the exam', 'exam practice on [topic]', 'mock test', 'exam-style questions', or any request for mixed-format exam questions with scenarios. Distinct from /quiz (MCQ only) and /exercise (single-block compute/derive)."
+description: "Generate a full essay-style mock exam matching Prof. Cozzi's format (4 questions, 25% each, ~20 min per question). Use this skill whenever the user says '/exam', asks for an exam simulation, wants exam-style practice, mock exam, or exam training. Also triggers on 'simulate the exam', 'exam practice on [topic]', 'mock test', 'full exam', or any request for timed essay simulation. Distinct from /quiz (MCQ recognition) and /exercise (deep proof drilling)."
 ---
 
-# /exam — Exam Simulator Skill
+# /exam — Exam Simulator
 
-Generate exam-style practice tests with mixed question types and scenario chains. Output goes to `.claude/output/exams/`.
+Generate a 4-question essay-style mock exam matching Prof. Cozzi's format, then save to `outputs/exams/`.
+
+The mock exam (`Material/mock exam/Mock_Exam-1.pdf`) shows the format precisely: **4 essay questions, 25% each, ~90 minutes total**. No MCQ. No T/F. No sub-parts. Each question has a **technical component + interpretive component** (Derive + discuss, Explain + sketch, Describe + critique, Derive + intuition).
+
+This skill simulates *that* test. Use it late in the study cycle for fluency under time pressure — it is not a learning tool, it is a self-assessment tool. **No hints during the exam.** The user reads each prompt, drafts an answer (mentally or on paper, ~20 min per question), then reveals the skeleton to self-check coverage, then the full model answer for comparison.
+
+@docs/COGNITIVE_PREFS.md
+@docs/OUTPUT_CONVENTIONS.md
+@docs/EXAM_PROFILE.md
 
 ## Invocation
 
-User says `/exam [topics or module range]` with optional flags:
-- `--difficulty 1|2|3` (default: 1)
-- `--questions N` (default: ~15–20)
+User says `/exam` (full 4-question simulation across modules, mirroring the mock's module distribution: M1, M3, M5, M6 by default) or `/exam <module-list>` to focus.
 
-Example: `/exam M01-M06 --difficulty 2 --questions 20`
-
-## How This Differs from /quiz and /exercise
-
-| Feature | /quiz | /exercise | /exam |
-|---|---|---|---|
-| Question types | MCQ only | Single-block compute/derive | MCQ, T/F, numeric, checkbox, dropdown |
-| Structure | Flat list, independent | Flat list, independent | Parts with scenario chains |
-| Sub-parts | No | No (explicitly banned) | Yes — answers feed forward within a scenario |
-| Difficulty | Fixed (60-75% target) | Fixed | Adaptive (3 levels) |
-| Scenarios | No | Sometimes a setup | Always — named agents, concrete decisions |
-| Goal | Test conceptual understanding | Test computational ability | Simulate the actual exam format |
+---
 
 ## Workflow
 
 ### Step 1 — Read context
 
-Read these files (in this order):
-1. `.claude/CONVENTIONS.md` — naming, folder structure, output rules
-2. `PREFERENCES.md` — cognitive preferences
-3. `LEARNING_STATE.json` — current understanding per topic
-4. `subject-config.md` — subject context, exam scope, calibrated style (if exists)
-5. All course material files relevant to the requested topics — slides, homeworks, tutorials, old exams
-6. Old exams in `material/old_exams/` — to calibrate question style, difficulty, and format
+The three `@import`s above are already in context. Also read:
+- `docs/LEARNING_STATE.json` — used only to pick the *trickiest* angle per module (the user's weak spots from recent quizzes)
+- `Material/mock exam/Mock_Exam-1.pdf` (or its `.md` sibling if extracted) — the canonical reference for verb-pair phrasing and prompt length
+- `Material/modules/<N>/CLAUDE.md` + relevant lecture files for the modules in scope
 
-**IMPORTANT:** Read ALL material comprehensively. Scan slides for definitions, theorems, and worked examples. Scan homeworks and tutorials for the kinds of problems the professor assigns. Study old exams for the professor's testing psychology (see Professor Psychology section below).
+### Step 2 — Confirm scope
 
-### Step 2 — Calibration (first use only)
+State which 4 modules you'll target and the verb-pair for each. Default mirrors the mock: M1 (describe+critique), M3 (explain+sketch), M5 (derive+discuss), M6 (derive+intuition). Wait for "go" or revisions.
 
-If `subject-config.md` has no `[exam_style]` section:
-1. Generate 3 sample scenario-chain questions (2 questions each) in different styles:
-   - **Style A**: Clean conceptual setup → T/F + MCQ
-   - **Style B**: Numeric scenario → compute + dropdown comparative statics
-   - **Style C**: Edge-case scenario → checkbox + numeric
-2. Ask the user to grade them
-3. Write calibrated style to `subject-config.md` under `## Calibration` → `[exam_style]`
+Example:
 
-If calibration already exists, skip to Step 3.
+> "Generating a full mock-style exam. 4 questions, 25% each, ~20 min target per question:
+> - **Q1 — M1, describe + critique**: empirical evidence for/against basic Solow
+> - **Q2 — M3, explain + sketch**: Solow with land + numerical simulation
+> - **Q3 — M5, derive + discuss**: Cozzi (2017) hybrid + policy implications
+> - **Q4 — M6, derive + intuition**: Solow conditions of efficiency wages
+>
+> Match the mock exactly. Ready?"
 
-### Step 3 — Plan the exam
+If the user asks for `/exam M1 M2` (different module set), substitute accordingly — but keep the verb-pair distribution diverse (don't generate 4 "derive + discuss" in a row).
 
-Design the exam structure. Present the plan:
+### Step 3 — Generate JSON
 
-> "I'll generate a Level [X] exam covering [topics]. Structure:
-> - Part I: [N] standalone conceptual questions (MCQ, T/F, checkbox)
-> - Part II: [Scenario name] — [N] questions (types: ...)
-> - Part III: [Scenario name] — [N] questions (types: ...)
-> Total: [N] questions. Ready?"
+Author the JSON per the schema below. Apply all Design Rules.
 
-**Structural rules:**
-- Part I is ALWAYS standalone conceptual questions (no scenario). Mix of MCQ, T/F, and checkbox. These test definition edge cases, boundary conditions, and tricky conceptual distinctions.
-- Parts II–IV are ALWAYS scenario chains with a named agent facing a concrete decision problem. Questions within a scenario build on each other — later questions may use results from earlier ones.
-- Total: 15–20 questions by default (user can override).
-- Each scenario has 4–8 questions with at least 2 different question types.
+### Step 4 — Self-audit (mandatory before build)
 
-### Step 4 — Generate the JSON payload
+Print the audit verbatim in chat. Every box must check.
 
-Generate a JSON payload following the format below. Apply ALL rules from the Question Design Rules and Professor Psychology sections.
+```
+## Exam Audit
 
-**JSON format:**
+### Format fidelity (mock-exam matching)
+- [ ] Exactly 4 questions
+- [ ] All weights 25%; total = 100%
+- [ ] target_minutes per question ≈ 20 (acceptable 18-25); sum ≈ 80-90
+- [ ] Each prompt is 2-4 lines, declarative, Cozzi-style — no scaffolded sub-parts
+- [ ] Each question has a verb-pair tag (technical + interpretive)
+- [ ] Verb pairs across the 4 questions are diverse — not all "derive"
+
+### Prompts
+- [ ] No "discuss in detail" / "explain comprehensively" filler. Cozzi's mock is terse.
+- [ ] Specific named results / models cited where the mock does (e.g. "Cozzi (2017)
+      hybrid model", "Solow conditions of efficiency wages")
+- [ ] Topic stays inside the cited module(s)
+
+### Skeleton (the self-check helper)
+- [ ] Every question has a `skeleton` field with 4-6 bullet points
+- [ ] Each bullet is a point a full-credit answer must cover (not a hint to a sub-step)
+- [ ] Skeleton bullets are PROSE summaries, not algebra fragments — they tell the
+      reader "did you cover X?", not "do this calculation"
+
+### Model answer
+- [ ] Every question has a `model_answer` field
+- [ ] Length: 600-800 words (exam-realistic — not the 1500-word /exercise length)
+- [ ] Organized with <h3> sub-section headers when the answer has natural sections
+- [ ] Uses <div class="key-result">...</div> to highlight final equations / conclusions
+- [ ] Algebra is woven into prose (not labor-by-labor like /exercise solutions);
+      key derivation steps shown, micro-steps elided — this is what graded essays look like
+- [ ] Empirical claims are concrete (numbers, country examples) where the question
+      asks for "evidence"
+
+### Notation and style
+- [ ] Symbols match the lecture's notation conventions
+- [ ] Each "Derive + …" answer hits its key result in the body, not just the skeleton
+- [ ] "Discuss policy" / "Give intuition" sections are 100-200 words each — substantive
+      paragraphs, not afterthoughts
+
+### Technical
+- [ ] JSON parses; LaTeX backslashes doubled
+- [ ] All question IDs unique
+- [ ] No HTML in skeleton bullet text (skeleton is plain prose)
+```
+
+### Step 5 — Build
+
+```powershell
+$tmp = Join-Path $env:TEMP "exam_payload.json"
+# (write JSON to $tmp)
+python tools/build_exam.py $tmp outputs/exams/<slug>_<YYYY-MM-DD>.html
+```
+
+Smoke checks: 4-question count, target-time consistency, no empty prompts or model answers, verb-pair present on every question.
+
+### Step 6 — Update LEARNING_STATE.json
+
+When the user reports having gone through an `/exam` simulation (self-grading by comparison to model answers), advance every covered topic by one level (capped at `mastered`). Never downgrade.
+
+---
+
+## Design Rules
+
+### R-format: 4 questions, 25% each, terse Cozzi phrasing
+
+The real mock has prompts like:
+> "Describe the main empirical evidence supporting and contradicting the basic Solow model."
+> "Derive the 'Solow conditions' of the efficiency wages model and give an intuitive explanation of them."
+
+Each is 1-2 lines, declarative, no instructions about answer length. Match this style. **Do not** write prompts like "In a 600-word essay, carefully explain X with three examples." That's a different course's style.
+
+### R-verb-pair: technical + interpretive, always
+
+Every question has both halves. The five canonical verb-pairs (observed in the mock plus one plausible extension):
+
+| Verb pair | Technical half | Interpretive half | Mock example |
+|---|---|---|---|
+| `describe + critique` | Describe a body of evidence | Discuss what supports / contradicts | Q1 |
+| `explain + sketch` | Explain a model | Sketch how to simulate it numerically | Q2 |
+| `derive + discuss` | Derive a result formally | Discuss policy / economic implications | Q3 |
+| `derive + intuition` | Derive a result formally | Give an intuitive explanation | Q4 |
+| `compare + judge` | Compare two models | Judge which better explains a phenomenon | (extension; not on mock but plausible) |
+
+### R-skeleton: 4-6 bullets per question, prose summaries
+
+The skeleton tells the user "did you remember to cover X?" — it is NOT a step-by-step hint chain. Each bullet is a coverage point: "Define what 'basic Solow' predicts (steady state in *levels*, not growth rates)" or "Resolution: conditional vs absolute convergence". The user reveals the skeleton AFTER drafting an answer to self-check coverage; they should not see it during the attempt.
+
+### R-model-answer: 600-800 words, exam-quality
+
+Model answers reflect what a graded exam essay looks like:
+- **600-800 words** total (≈ what fits in 20 minutes on paper)
+- Equations woven into prose, not labor-by-labor algebra (that's `/exercise`)
+- Key derivation steps shown; micro-steps elided
+- `<h3>` sub-headers when there's a natural sectioning (e.g. "Supporting evidence" / "Contradicting evidence")
+- `<div class="key-result">…</div>` for the final identity / steady-state formula / Solow condition
+- Empirical content uses concrete numbers (MRW slope 0.59-0.93, ~2% convergence, etc.) where the question asks for evidence
+
+This is the polished exam essay — distinct from the `/exercise` model answer, which is the underlying algebra in full.
+
+### R-no-hints: the exam has no hints
+
+Unlike `/quiz` (productive-failure reveal of choices) and `/exercise` (progressive hints per sub-move), `/exam` has only two reveals per question: the skeleton (self-check) and the model answer (comparison). No progressive hint chain. This matches the real exam.
+
+### R-no-sub-parts
+
+The mock has no sub-parts. Cozzi's prompts are single declarative sentences (often two). **Do not** write `(a) … (b) … (c) …` exam questions. Every question is one cohesive prompt covering both technical and interpretive halves.
+
+---
+
+## JSON Schema
+
 ```json
 {
-  "title": "Exam: [Topic Range]",
-  "meta": "Microeconomics III (4,202) — [Module range] — [Date]",
-  "difficulty": 1,
-  "parts": [
+  "title": "Mock Exam Simulation",
+  "meta": "Macroeconomics III — full 4-question simulation — YYYY-MM-DD",
+  "exam_info": {
+    "total_minutes": 90,
+    "num_questions": 4,
+    "weight_per_question": "25%",
+    "format_note": "4 essay questions, equal weight. No MCQ, no T/F, no sub-parts. Verb-pair format throughout."
+  },
+  "questions": [
     {
-      "title": "Part I — Conceptual Questions",
-      "scenario": null,
-      "questions": [
-        {
-          "id": "q1",
-          "type": "mcq",
-          "label": "Question 1",
-          "stem": "<p>Which of the following...</p>",
-          "choices": [
-            {"letter": "A", "text": "First choice"},
-            {"letter": "B", "text": "Second choice"},
-            {"letter": "C", "text": "Third choice"},
-            {"letter": "D", "text": "Fourth choice"}
-          ],
-          "correct": "B",
-          "explanation": "B is correct because..."
-        },
-        {
-          "id": "q2",
-          "type": "tf",
-          "label": "Question 2",
-          "stem": "<p>Statement: Every complete preference...</p>",
-          "choices": [
-            {"letter": "A", "text": "True"},
-            {"letter": "B", "text": "False"}
-          ],
-          "correct": "B",
-          "explanation": "False. Completeness requires..."
-        },
-        {
-          "id": "q3",
-          "type": "checkbox",
-          "label": "Question 3",
-          "stem": "<p>Select all normative statements. <em>(Select all that apply.)</em></p>",
-          "choices": [
-            {"letter": "A", "text": "Statement 1", "value": "A"},
-            {"letter": "B", "text": "Statement 2", "value": "B"},
-            {"letter": "C", "text": "Statement 3", "value": "C"},
-            {"letter": "D", "text": "Statement 4", "value": "D"}
-          ],
-          "correct": "A,C",
-          "explanation": "A and C are normative because..."
-        }
-      ]
-    },
-    {
-      "title": "Part II — Elena's Insurance Decision",
-      "scenario": {
-        "title": "Scenario — Elena's Insurance Decision",
-        "html": "<p>Elena has initial wealth \\(w = 200\\) and faces...</p>"
-      },
-      "questions": [
-        {
-          "id": "q6",
-          "type": "numeric",
-          "label": "Question 6",
-          "stem": "<p>Compute Elena's expected utility without insurance.</p>",
-          "correct": "12.5",
-          "tolerance": 0.1,
-          "explanation": "EU = 0.8 × u(200) + 0.2 × u(50) = ..."
-        },
-        {
-          "id": "q7",
-          "type": "dropdown",
-          "label": "Question 7",
-          "stem_html": "<p>If the insurance premium increases from 30 to 45, Elena's optimal coverage <select data-answer=\"decreases\"><option value=\"\">— select —</option><option value=\"increases\">increases</option><option value=\"decreases\">decreases</option><option value=\"stays the same\">stays the same</option></select> because the marginal cost of coverage now <select data-answer=\"exceeds\"><option value=\"\">— select —</option><option value=\"exceeds\">exceeds</option><option value=\"equals\">equals</option><option value=\"is below\">is below</option></select> the marginal benefit at the original optimum.</p>",
-          "correct": "decreases",
-          "explanation": "At a higher premium, the price of coverage rises..."
-        }
-      ]
+      "id": 1,
+      "module": 1,
+      "verb_pair": "describe + critique",
+      "weight": "25%",
+      "target_minutes": 20,
+      "prompt": "Describe the main empirical evidence supporting and contradicting the basic Solow model.",
+      "skeleton": [
+        "Define what 'basic Solow' predicts: steady state in levels (not growth), conditional convergence",
+        "Supporting: Kaldor facts (constant labor share, K/Y, r); cross-country positive correlation of y* with s, negative with n+δ",
+        "Contradicting: speed of convergence ~2%/yr observed vs ~5-6% predicted; large unexplained y* dispersion across countries",
+        "Resolution attempt: MRW's α+φ ≈ 0.66 partially closes both puzzles",
+        "Verdict: Solow is right in direction, wrong in magnitudes — points to missing factors (human capital, scale of TFP differences)"
+      ],
+      "model_answer": "<p>Basic Solow predicts that economies converge to a country-specific steady state determined by parameters $s$, $n$, $\\delta$, and the Cobb-Douglas exponent $\\alpha$. ...</p><h3>Supporting evidence</h3><p>...</p><h3>Contradicting evidence</h3><p>...</p><div class=\"key-result\"><strong>Verdict.</strong> Solow gets the direction right (richer countries have higher $s$, lower $n$) but misses on magnitudes — the convergence rate puzzle and the cross-country dispersion of $y^*$ both point to the same fix: a broader notion of accumulable capital.</div>"
     }
   ]
 }
 ```
 
-### Step 5 — Build the HTML
+### Notes
 
-1. Write JSON to `/tmp/exam_payload.json`
-2. Run: `python .claude/scripts/build_exam.py /tmp/exam_payload.json .claude/output/exams/[filename].html`
-3. Copy the output file to the workspace root for user access
-4. Present the file link using a `computer://` link
-
-### Step 6 — Update LEARNING_STATE.json
-
-After generating the exam:
-- Topics covered → set level to at least `tested` if previously `seen`
-- Never downgrade existing levels
-
-### File naming
-
-Follow `.claude/CONVENTIONS.md`. Pattern: `[topic-slug]_[YYYY-MM-DD].html` in `.claude/output/exams/`.
+- **`module`** is just a tag (integer); used only to display "Module N" on the card.
+- **`verb_pair`** is one of the five canonical pairs (or one you can defend as a mock-style extension).
+- **`target_minutes`** is per-question; the builder warns if their sum drifts from `exam_info.total_minutes` by more than ±15 minutes.
+- **`skeleton`** is a list of strings (no HTML).
+- **`model_answer`** is HTML, with LaTeX in `$…$` or `$$…$$` (double-backslash in JSON), and may include `<h3>`, `<p>`, `<ul>`, `<div class="key-result">…</div>`.
+- **No `hints` field** — `/exam` has none by design.
 
 ---
 
-## Professor Psychology — How She Tests
+## Pre-Build Checklist
 
-These patterns were extracted from the 2024 and 2025 final exams. Use them to calibrate the style, NOT to copy questions.
-
-### Part I: Definition edge cases and tricky T/F
-
-The professor loves testing the *boundary* of definitions — not whether you know them, but whether you know exactly where they stop.
-
-**Patterns observed:**
-- **Transitivity trick (2024 Q1):** "Is the relation 'has the same birthday' transitive?" — tests whether students confuse transitivity with reflexivity. The answer is yes, because the edge case (A shares birthday with B who shares with C → A shares with C) holds trivially.
-- **Completeness trick (2024 Q2):** "Is strict preference complete?" — No, because \\(x \\succ x\\) fails. Students who conflate weak and strict preference get this wrong.
-- **Variance ≠ MPS (2024 Q9):** "Higher variance always means lower EU for risk-averse agents" — False, because higher variance alone does not imply MPS.
-- **Normative vs. positive (2024 Q6):** Checkbox asking which statements are normative — tests whether students can distinguish value judgments from factual claims.
-
-**How to replicate:** Create T/F or MCQ questions where the "obvious" answer is wrong because of an edge case in the definition. The question should look easy but require precise knowledge.
-
-### Parts II–IV: Named-agent scenario chains
-
-**Structure:**
-- A named agent (Seraina, Fabio, Elena, Edna) faces a concrete decision problem with explicit numbers.
-- Questions build sequentially: compute a value in Q1, use it in Q2, etc.
-- Mix of question types within a single scenario: compute EU (numeric), identify optimal action (MCQ), comparative statics (dropdown), identify which properties hold (checkbox).
-
-**Number style:**
-- Clean numbers: probabilities like 0.75, 0.25, 1/3; wealth like 100, 200, 240; utilities like \\(\\sqrt{x}\\), \\(\\ln(x)\\), \\(x^2\\).
-- Answers should come to 3 significant digits at most. If intermediate steps produce ugly decimals, the problem setup is wrong — redesign it.
-
-**Scenario depth:**
-- 2024 Part 2 (Seraina): 6 questions, one scenario about club preferences → calibrate EU → predict choices → identify strict preference conditions.
-- 2024 Part 3 (Fabio): 10 questions, information cascade with sequential Bayesian updating → posteriors → WTP for signals.
-- 2025 Part II: Monopolist with reliable/unreliable products → signaling with warranty → pooling vs separating equilibria.
-- 2025 Part III: Information cascade with costly signals → posterior computation → cascade breaking conditions.
-
-**Key insight:** The professor tests whether students can *apply* theory to a specific situation, not whether they can state the theory. The scenarios are always concrete enough that there's one right answer, never vague or open-ended.
-
-### Comparative statics via dropdowns
-
-The professor frequently uses dropdown questions for comparative statics: "If parameter X increases, the optimal Y [increases/decreases/stays the same]." These test economic intuition — whether the student can reason about the direction of an effect without computing it.
-
-### What she does NOT test
-
-- Pure memorization of definitions without application
-- Long algebraic derivations on the exam (these are in homeworks, not exams)
-- Open-ended essay questions
-- Questions requiring material beyond the slides
-
----
-
-## Difficulty Levels
-
-### Level 1 — Exam-level (default)
-
-Matches the professor's actual exam difficulty. Same number complexity, same depth of reasoning, same question types.
-
-- Numbers: clean (0.75, 100, \\(\\sqrt{x}\\))
-- Part I: 1-2 tricky edge cases, rest are standard but require careful reading
-- Scenario chains: 4-6 questions, straightforward sequential reasoning
-- Target: a well-prepared student gets 70-85%
-
-### Level 2 — Harder
-
-Same clean numbers, but more conceptual twists and edge cases. Does NOT make numbers dirtier.
-
-- Part I: more edge cases, more "almost true but not quite" statements
-- Scenario chains: extra twist (e.g., a parameter changes mid-scenario, forcing re-computation)
-- Questions that combine concepts from different modules in non-obvious ways
-- Target: a well-prepared student gets 55-70%
-
-### Level 3 — Easier
-
-Same structure, but simpler setups and more guidance in stems.
-
-- Part I: standard definitions, fewer edge cases
-- Scenario chains: shorter (3-4 questions), more guidance in stems ("Recall that CE is defined as...")
-- Numbers even cleaner (round numbers like 100, 0.5)
-- Target: a student who has read the slides gets 75-90%
-
----
-
-## Question Design Rules
-
-### Rule 1: Exam authenticity over pedagogical novelty
-
-Every question should feel like it could appear on the actual exam. Mimic the professor's phrasing style, scenario structure, and level of precision. This is NOT a quiz — it's exam simulation.
-
-### Rule 2: Clean numbers, 3 significant digits max
-
-Use numbers that simplify cleanly. If an intermediate step produces 0.728723..., the problem setup is wrong. Redesign with numbers that give cleaner results. Final numeric answers should have at most 3 significant digits.
-
-**Good:** priors (1/3, 2/3), probabilities (0.75, 0.25), wealth (100, 200), \\(u(x) = \\sqrt{x}\\)
-**Bad:** priors (0.37, 0.63), probabilities (0.82, 0.18), wealth (147)
-
-### Rule 3: Scenarios with named agents
-
-Every scenario chain must have a named agent (not "an agent" or "a consumer"). Use realistic names and concrete decision contexts. The agent's problem should be stated with all parameters explicit — no ambiguity about what to compute.
-
-### Rule 4: Sequential answer chains
-
-Within a scenario, later questions should build on earlier ones. The student who gets Q1 wrong can still attempt Q2 using the correct Q1 answer (which is revealed when they check). Design the chain so that each question adds one new concept or computation.
-
-### Rule 5: Mixed question types within scenarios
-
-Each scenario should use at least 2 different question types. Typical pattern:
-- Start with a numeric computation (compute EU, CE, posterior)
-- Follow with an MCQ or T/F about interpretation
-- End with a dropdown comparative statics question
-
-### Rule 6: No giveaway patterns
-
-All rules from the quiz skill apply: length parity across MCQ choices, no hedging tells, position distribution across A/B/C/D, tone parity. For T/F questions, distribute True and False answers roughly evenly.
-
-### Rule 7: Explanations must be complete
-
-Every question's explanation must:
-1. State why the correct answer is right (with computation if numeric)
-2. For MCQ/checkbox: explain why each wrong choice fails
-3. For dropdown: explain the economic intuition behind the direction
-4. For numeric: show every intermediate step
-
-### Rule 8: Bridge questions in Part I
-
-At least 1-2 Part I questions should connect concepts from different modules (same rule as quiz skill's bridge style, with mechanically derivable answers — never subjective analogy-matching).
-
-### Rule 9: Dropdown answer encoding
-
-For dropdown questions, the `stem_html` field must contain the full HTML including `<select>` elements with `data-answer` attributes. Each `<select>` must have:
-- A blank placeholder `<option value="">— select —</option>`
-- All answer options as `<option value="...">display text</option>`
-- The `data-answer` attribute set to the correct value
-
-Multiple dropdowns in one question are supported — the JS checks all of them.
-
----
-
-## Pre-Generation Checklist
-
-Before writing the JSON:
-- [ ] Read CONVENTIONS.md and confirmed output path + LaTeX delimiter rules
-- [ ] Read PREFERENCES.md for cognitive preferences
-- [ ] Read LEARNING_STATE.json and calibrated difficulty
-- [ ] Read subject-config.md for calibrated exam style (or ran calibration)
-- [ ] Scanned ALL relevant material: slides, homeworks, tutorials, old exams
-- [ ] Designed Part I with at least 1-2 definition edge cases
-- [ ] Designed scenario chains with named agents and explicit parameters
-- [ ] Verified all numeric answers come to ≤3 significant digits
-- [ ] Every question satisfies rules 1-9
-- [ ] Mixed question types within each scenario
-- [ ] No giveaway patterns in phrasing, length, or hedging
-- [ ] Explanations cover all choices and show all computation steps
-- [ ] LaTeX uses only `\\(\\)` and `\\[\\]` — never `$`
+- [ ] Confirmed module distribution + verb pairs with user (Step 2 mandatory)
+- [ ] Read mock exam reference (`Material/mock exam/Mock_Exam-1.pdf`)
+- [ ] Read relevant lecture files for each module
+- [ ] Exactly 4 questions
+- [ ] All weights = 25%; target_minutes sum ≈ 80-90
+- [ ] Prompts are 1-2 lines, declarative, Cozzi-style
+- [ ] Each question has skeleton (4-6 bullets) + model answer (~600-800 words)
+- [ ] Verb pairs diverse across the 4 questions
+- [ ] Model answers exam-quality, not /exercise-quality (woven algebra, not micro-steps)
+- [ ] Notation matches lecture conventions
+- [ ] Audit printed verbatim; every box checked
+- [ ] JSON parses; LaTeX backslashes doubled; all IDs unique

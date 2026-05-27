@@ -28,10 +28,13 @@ Before generating:
 - Read `docs/LEARNING_STATE.json` for the topic's current level (calibrates difficulty).
 - Read the relevant `Material/modules/<N>/CLAUDE.md` to find which lecture files cover the topic, then read those.
 
-### Step 2 — Plan and confirm
+### Step 2 — Module/topic confirmation (mandatory)
 
-Present a one-line plan:
-> "I'll generate 20 questions covering [topic list], mixed across types. Ready?"
+Before generating, **state which module(s) and which specific lecture files you will draw from**, and ask the user to confirm. Example:
+
+> "Generating 20 questions on **module 1 (basic Solow)** from `Lecture 1a.md`, `Lecture 1b.md`, `Lecture 1c.md`. Topics covered: production function, capital accumulation, steady state, convergence. Ready?"
+
+This catches the most damaging failure mode — silently drawing from the wrong module. If the user asked for "module 1" but the closest material is in module 2, surface that mismatch *before* generating, not after.
 
 If the user says "go", proceed. No fixed type ratios — pick types that fit the material.
 
@@ -87,11 +90,12 @@ When the user pastes the quiz JSON export into chat, parse it and update `LEARNI
 | `derivation-source` | Show a final identity in the stem; ask which derivation produces it. Choices are alternative derivation paths. Requires no `derivation` field on the stem (it's in the choices). |
 | `derivation-why` | Show an identity; ask which mechanism makes it true (distinguishes accounting identities from behavioral conditions, etc.). |
 
-### Multi-answer type (correct: ["A", "C"])
+### Multi-answer types
 
 | Type | When to use |
 |---|---|
 | `multi-select` | At least 2 of 4 options are correct; user must pick all and only the correct ones. Scored all-or-nothing; partial feedback shown on reveal. Use for "select all that apply" style or to defeat process-of-elimination. |
+| `mtf-cluster` | **The highest-value type.** A shared setup (1-3 sentences) followed by 4 short statements, each independently T/F. Tests a tight family of micro-misconceptions for the cost of one stem. Matches the user's preferred exam-style format. **Use heavily**: 25-40% of any quiz should be MTF clusters once the topic supports it. Each statement gets its own `defense` field. |
 
 ---
 
@@ -99,13 +103,18 @@ When the user pastes the quiz JSON export into chat, parse it and update `LEARNI
 
 The generator chooses freely, with **only these floors**:
 
-1. **At least 1 `bridge` question** — cross-topic connections are non-negotiable.
-2. **At least 1 question from a new-format type** (`multi-select`, `numeric`, `graph`, or any `derivation-*`) — prevents silent regression to single-MCQ-only quizzes.
-3. **No single type exceeds ~30% of questions** — keeps variety without forcing balance.
-4. **1 scenario chain when the topic supports it** (a shared setup + 2 linked questions). Skip if forced.
-5. **Default total: 20 questions.** User can override.
+1. **MTF clusters carry the quiz.** Aim for **25-40% of questions to be `mtf-cluster`** — the user's preferred format, and the highest signal-per-stem type. Don't drop below 25% unless the topic genuinely doesn't support T/F statement clusters.
+2. **At least 1 `bridge` question** — cross-topic connections are non-negotiable.
+3. **At least 1 `derivation-*` question** on any topic with formal results. The user is here to learn proofs, not definitions.
+4. **No single type exceeds ~35% of questions** — keeps variety. MTF is the exception (allowed up to 40%).
+5. **1 scenario chain when the topic supports it.** Skip if forced.
+6. **Default total: 20 questions.** User can override.
 
-Beyond these floors, let the topic drive the mix. Solow-mechanics quizzes will naturally lean graph + derivation + numeric; empirical-evidence quizzes will lean boundary + flaw + multi-select.
+Beyond these floors, let the topic drive the mix.
+
+### Productive-failure mode (default ON)
+
+All quizzes ship with choices hidden by default — the user sees the stem, thinks about the answer, then clicks "Reveal options" to see the choices. This is baked into the template; no JSON flag controls it. **Implication for stem writing**: stems must be self-sufficient enough to be answerable mentally. Never write stems whose meaning only becomes clear after seeing the options (e.g. "Which of the following best describes…" — bad; "An economy has $\dot k = 0$. What does this imply for $r$?" — good).
 
 ---
 
@@ -121,7 +130,9 @@ Test where understanding breaks down. Instead of "What is unbiasedness?", ask "W
 
 Each wrong answer is a misconception a partial-understander would pick. Mandatory `defense` field per choice documents this. Types of good distractors: sign errors, scope errors (theorem overreach), condition swap (correct result, wrong assumption set), partial truth (true in a special case), plausible-but-flawed reasoning chain.
 
-**Never use**: obviously absurd options, joke answers, "all of the above", "none of the above", "less correct" alternatives.
+**The "Gini" failure mode (don't repeat):** in a question about Solow-model stylized facts, one of the four choices was "Gini coefficient". This is **on a different topic entirely** — no student conflates it with growth-model facts. The question collapses to 3 real options and trivial process-of-elimination. **All four distractors must live inside the topic's conceptual neighborhood** — same module, related family of misconceptions. If a distractor is from a different module/chapter, it's filler and the question is solved before it's read.
+
+**Never use**: obviously absurd options, joke answers, "all of the above", "none of the above", "less correct" alternatives, distractors from a different topic family.
 
 ### Rule 3 — No giveaway patterns
 
@@ -138,9 +149,23 @@ Stems describe symptoms/scenarios; concepts are named only in the choices. Bad: 
 
 Every choice (including the correct one) has a `defense` field. If you cannot write a one-line plausibility argument, the distractor is filler.
 
-### Rule 6 — Conceptual default
+### Rule 6 — Conceptual default + inverted numerics
 
-Default mode is conceptual. `numeric` questions are *allowed* without user request, but require conceptual setup (no pure arithmetic).
+Default mode is conceptual. `numeric` questions are *allowed* without user request, but they must test **inversion**, not arithmetic.
+
+**Banned numeric pattern (the Q11 failure mode):**
+> *"With $\alpha=0.3$, $s=0.2$, $n=0.01$, $\delta=0.04$, $k^* = (s/(n+\delta))^{1/(1-\alpha)} = ?"*
+
+This is a calculator test. Even if the formula is omitted, the question is one substitution away from arithmetic.
+
+**Required numeric pattern (solve-backwards):**
+> *"A Cobb-Douglas economy is at the Golden Rule with $k^*=4$ and $\delta = 0.05$, no population growth. What is $\alpha$?"*
+
+The student must (a) recognize Golden Rule ⇒ $\text{MPK} = n + \delta$, (b) write $\alpha (k^*)^{\alpha-1} = \delta$, (c) solve for $\alpha$. Tests *understanding of which direction the formula pushes* — not arithmetic.
+
+Other valid patterns: given an observed outcome (e.g. $r^* = 0.08$), recover a parameter; given two steady states, find the parameter difference between them; given a numerical claim, identify which assumption it depends on.
+
+**Rule of thumb**: if you can solve the question by typing into a calculator without thinking, it fails.
 
 ### Rule 7 — Cross-topic connections
 
@@ -262,6 +287,34 @@ Figure spec uses the same format as lecture figures (see `tools/build_figure.py`
 - `derivation` strings are LaTeX (no `$`) — rendered in JetBrains Mono with KaTeX.
 - `highlight` is 1-indexed; only used by `derivation-justify` (the other two derivation styles don't need it since the question is about the *result*, not an intermediate step).
 
+### MTF cluster (multiple true-false)
+
+```json
+{
+  "id": 4,
+  "style": "mtf-cluster",
+  "topic": "Solow steady state",
+  "setup": "<p>A Cobb-Douglas Solow economy with $\\alpha = 0.3$ sits at its steady state with saving rate $s = 0.25$. Evaluate each statement.</p>",
+  "statements": [
+    {"letter": "A", "text": "Capital per worker $k$ is constant.", "true": true,
+     "defense": "Definition of steady state: $\\dot k = 0$."},
+    {"letter": "B", "text": "Output per worker $y$ grows at rate $g$.", "true": false,
+     "defense": "Without technology in the model, $y$ is constant in steady state. Picked by students who conflate basic Solow with the Solow-with-technology variant."},
+    {"letter": "C", "text": "The economy is at the Golden Rule.", "true": false,
+     "defense": "Golden Rule requires $s = \\alpha = 0.3$, but here $s = 0.25$. Tempting because 'steady state' and 'Golden Rule' are introduced near each other."},
+    {"letter": "D", "text": "$r = \\alpha(n+\\delta)/s$.", "true": true,
+     "defense": "Substitute $k^* = (s/(n+\\delta))^{1/(1-\\alpha)}$ into $r = \\alpha k^{\\alpha-1}$. Holds at the steady state regardless of whether it's Golden Rule."}
+  ],
+  "explanation": "<p>The cluster targets the four most common Solow confusions: (i) what 'steady state' actually constrains, (ii) the role of technology in producing growth in $y$, (iii) the difference between any steady state and the Golden Rule, (iv) the steady-state rental-rate formula.</p>"
+}
+```
+
+- **Always 4 statements.** Each independently true or false. Mix at least 1 true and 1 false (a cluster of all-true or all-false is too easy to spot).
+- Statements share the setup, but each one must be **logically independent** of the others — solving statement A should not commit you to a particular answer on B.
+- Each statement gets a `defense` (rendered under the statement on reveal). For false statements, the defense should explain *who picks this and why they're wrong*. For true statements, why a doubter rejects it.
+- The cluster's `explanation` is the final wrap-up — the meta-takeaway across all four statements. Use it to surface the *family* of misconceptions the cluster targets.
+- Scoring: all-or-nothing per cluster (matches existing multi-select convention).
+
 ### Chain (scenario) block
 
 ```json
@@ -294,18 +347,22 @@ Per-choice `defense` fields are also rendered under each choice on reveal — th
 
 ## Pre-Build Checklist
 
+- [ ] Confirmed module/topic with user before generating (Step 2 mandatory)
 - [ ] Read `LEARNING_STATE.json` and calibrated difficulty
-- [ ] Read relevant `Material/modules/<N>/CLAUDE.md` + lecture files
+- [ ] Read relevant `Material/modules/<N>/CLAUDE.md` + lecture files **from the confirmed module**
 - [ ] If lecture files have `<!-- formula-not-decoded -->` or scrambled tokens on a referenced equation, read the corresponding `.pages/p<NNN>.png`
-- [ ] Planned topic distribution
-- [ ] ≥1 `bridge`, ≥1 new-format type, no type >30%
+- [ ] ≥25% of questions are `mtf-cluster` (unless topic genuinely doesn't support it)
+- [ ] ≥1 `bridge` and ≥1 `derivation-*`
 - [ ] Optional chain block if topic supports it
-- [ ] Every choice has `defense` field
-- [ ] Every stem describes a scenario, not a concept name
+- [ ] Every choice/statement has `defense` field
+- [ ] Every stem describes a scenario, not a concept name; stems are answerable without seeing choices (productive-failure compatible)
+- [ ] All distractors live inside the topic's conceptual neighborhood — no "Gini in a Solow question"
+- [ ] No numeric question is solvable by typing into a calculator (inverted-numerics rule)
 - [ ] Length parity within ±30% across all choices
 - [ ] Correct-letter positions distributed roughly evenly
 - [ ] No "all of the above", no "none of the above"
 - [ ] Multi-select: `correct` is an array, not a string
-- [ ] Graph questions: `figure.markers` use palette colors, no `sliders`
+- [ ] MTF clusters: exactly 4 statements, mix of true and false, each with `defense`
+- [ ] Graph questions: `figure.markers` use palette colors, no `sliders`; `label_point` markers actually render labels (verified in preview)
 - [ ] Derivation questions: `derivation` is a list of LaTeX strings (no `$`)
 - [ ] All IDs unique across the flattened question list (including inside chains)

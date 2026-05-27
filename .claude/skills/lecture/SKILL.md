@@ -179,13 +179,26 @@ R4. **NARRATE EVERY DERIVATION STEP.** Each transition gets a sentence on WHY,
     not just WHAT. Never present a chain of equations without explaining each
     step's motivation. "Because we want X, we multiply both sides by Y."
 
-R11. **SELF-CONTAINMENT.** Citations to textbook, lecture slides, or exercises
-     are NOT substitutes for explanation. If the reader needs equation X to
-     follow the argument, equation X must appear in the lecture, fully derived.
-     Citations are for "where this came from historically," never for "where
-     to look this up." Forbidden patterns (audit greps for these):
+R11. **SELF-CONTAINMENT, external AND internal.** Citations to textbook,
+     lecture slides, exercises, OR YOUR OWN PRIOR SECTIONS / MODULES are NOT
+     substitutes for explanation. If the reader needs equation X to follow the
+     argument, equation X must appear in the body, fully derived, **at the
+     point of use** — even if it was derived earlier in the same lecture (then
+     re-state it; R14) or in a prior module (then re-derive it; the reader
+     does not have Module 1 open in another window).
+     Citations are for attribution after a self-contained explanation, never
+     a substitute for one.
+     **External forbidden patterns** (audit greps):
      `(see textbook`, `(textbook ch`, `Lecture .* p\d+`, `walks through`,
-     `see Exercise`, `as shown in textbook` — used as substitutes for content.
+     `see Exercise`, `as shown in textbook`.
+     **Internal forbidden patterns** (audit greps — same severity):
+     `from Module \d`, `from Module \d's`, `applied (at|to) the`,
+     `as we (saw|computed|derived) in`, `we (saw|computed|derived) in`,
+     `Cozzi's argument`, `Cozzi (showed|argued)`, `(applying|using) Module \d`.
+     A match is OK only if the formula or result being referenced is RESTATED
+     in the same paragraph. "From Module 1, $r^* = \alpha(n+\delta)/s$" with
+     the formula explicit = OK. "From Module 1, applied at the world level" with
+     no formula = FAIL.
 
 R12. **DERIVE-DON'T-STATE.** Any closed-form result the lecture mentions by
      name must be derived in the lecture body. The manifest's
@@ -224,7 +237,13 @@ R8. Supplement sparse slides using own knowledge. Flag out-of-scope:
     `<p><em>Beyond exam scope, but useful:</em> ...</p>`
 R9. Optional: cite source pages parenthetically ("Lecture 1a p7") — ONLY in
     addition to (never instead of) a self-contained explanation. See R11.
-R10. **Length: 4000-8000 words** for multi-module topics. When in doubt, longer.
+R10. **Length: 6000-12000 words** for multi-module topics. When in doubt, do
+     NOT compress. The lecture is the reader's entire study material — there
+     is no textbook to fall back on for a step you skipped. A passage that
+     feels "rushed" or "exogenous" is almost always one where (a) a prior
+     result was cited instead of restated (R11), (b) an algebraic step was
+     collapsed (V2), or (c) a model-variant switch was silent (V5). Fix by
+     expansion, not by trimming elsewhere.
 
 For bad/good examples of R1-R10: Read `references/rules.md`.
 For R11-R14 examples: see `<anti_patterns>` below (concrete failures observed
@@ -289,6 +308,212 @@ The reader has NOT seen Fig 2.6. The reference is empty.
 Fix: Either reproduce the regression equation and the empirical result in the
 lecture, or omit the claim entirely. There is no third option.
 </anti_patterns>
+
+<user_voice_vignettes>
+Calibration data distilled from prior tutoring sessions with this specific reader.
+The reader is a Bachelor student who has already seen Solow once but found the
+existing lectures "still super abstract" and "hiding the mechanisms". These four
+patterns are what consistently worked. Apply them as content guidelines on top
+of R1-R14.
+
+### V1. Math FIRST, intuition AFTER (with role-labels)
+
+The reader can follow algebra. What they can't do is reverse-engineer math from
+intuition prose. Lead with the derived expression; THEN tag each term with a
+role-name in plain English. Never the opposite.
+
+**Bad** (intuition before math):
+> "Higher saving means more capital per worker, raising output per worker. The
+> Solow equation captures this: $\dot k = sf(k) - (n+\delta)k$."
+
+The reader gets to the equation and has to back-figure which symbol matches
+which sentence.
+
+**Good** (math first, role-labeled gloss after):
+> "From $\dot K = sY - \delta K$, divide by $L$ and use $L_{t+1}/L_t = 1+n$:
+>
+> $$\dot k = sf(k) - (n+\delta) k$$
+>
+> Two pieces. The first, $sf(k)$, is **actual investment per worker** — each
+> worker's share of new capital. The second, $(n+\delta)k$, is **break-even
+> investment per worker** — what's needed just to keep $k$ from falling,
+> because depreciation eats $\delta$ and population growth dilutes the rest
+> among $n$ more workers next period. So $\dot k$ is the gap between what
+> investment adds and what dilution + wear take away."
+
+The reader sees both terms in the equation BEFORE being told what they mean.
+The labels arrive AFTER the formal object.
+
+### V2. Show every algebraic step. "We get…" / "Rearranging…" = red flag.
+
+The reader keeps a pen running on paper. Every collapsed line is one they can't
+reproduce. Examples that have triggered explicit pushback ("show this", "show
+explicitly", "where does this come from?"):
+
+- $F'_K \cdot K = \alpha B K^\alpha L^{1-\alpha} \;\to\; = \alpha Y$ — must
+  explicitly note that $B K^\alpha L^{1-\alpha} = Y$.
+- $sB(k^*)^\alpha = (n+\delta)k^* \;\to\; k^* = (sB/(n+\delta))^{1/(1-\alpha)}$ —
+  must show the intermediate $(k^*)^{1-\alpha} = sB/(n+\delta)$ and the inversion
+  to power $1/(1-\alpha)$.
+- $r = \alpha B K^{\alpha-1} L^{1-\alpha} \;\to\; r = \alpha B (K/L)^{\alpha-1}$ —
+  must show $K^{\alpha-1} L^{1-\alpha} = K^{\alpha-1} L^{-(\alpha-1)} = (K/L)^{\alpha-1}$.
+- Terms that "disappear" need to be tracked. When $(1-\alpha)$ vanishes in the
+  per-worker form $y = Bk^\alpha$ but reappears in $w = (1-\alpha)Bk^\alpha$,
+  plant a flag in both places: at the disappearance, *"the $(1-\alpha)$ exponent
+  isn't gone, it'll come back in §X when we compute wages"*; at the reappearance,
+  link back: *"recall the $(1-\alpha)$ from the production function — taking the
+  FOC w.r.t. $L$, here it is again"*.
+
+If you write "we get" or "rearranging" in a derivation, stop and check whether
+you skipped a line. Usually yes. Show it.
+
+### V3. Contrast pattern — "what changes if we drop X?"
+
+The reader's clearest "ah" moments come from contrast. Highest-yield contrasts
+observed in past sessions:
+
+- **Closed vs open economy MPK pinning.** Closed: $r$ is endogenous, MPK
+  determines $r$ from $k$. Open: $r$ is exogenous (world rate), MPK determines
+  $k$ from $r$. Same equation $r = \alpha B k^{\alpha-1}$, different variable
+  is the free one — that's the entire pedagogical content of the comparison.
+- **$\alpha + \phi$ in MRW vs $\alpha$ alone in basic Solow.** Same algebra,
+  different exponent, predicts different convergence speeds and different
+  long-run dispersion.
+- **Golden Rule ($s = \alpha$) vs arbitrary steady state ($s \ne \alpha$).**
+  Why GR maximizes consumption; why a real planner might still not pick it.
+
+When you state a result, ask: "what would change if I dropped one assumption?"
+If you can answer in one sentence, include it. Comparison tables and one-line
+*"If we instead assumed Y, …"* sidebars carry most of this for free.
+
+### V4. Invite self-derivation before formalizing (productive failure)
+
+The reader's biggest click moment in past sessions came from restating a result
+in their own words before being shown the proof:
+
+> User, mid-derivation of Euler's theorem: *"so doing $F_K \cdot K + F_L \cdot L$
+> is like saying the difference in output when I increase each input by its
+> current input (double) right? and this must be equal to the current production…
+> and the fact that outputs exactly double is because $\alpha + (1-\alpha) = 1$?"*
+
+That restatement was the moment Euler stuck. Build space for it: pose the result
+as a question first, hint at the structure, give the reader a one-line setup to
+try mentally, then formalize.
+
+**Good pattern:**
+> "Suppose we double both $K$ and $L$. What happens to $Y = BK^\alpha L^{1-\alpha}$?
+> Try it: $B(2K)^\alpha (2L)^{1-\alpha} = B \cdot 2^\alpha \cdot 2^{1-\alpha} \cdot
+> K^\alpha L^{1-\alpha} = 2^{\alpha + (1-\alpha)} Y = 2Y$. Output exactly doubles.
+> That's constant returns to scale, and the reason is just that the exponents
+> sum to 1. Now we can formalize this as Euler's theorem for homogeneous-degree-1
+> functions: …"
+
+The reader did the algebra in their head before reading the formalization. The
+formalization confirms what they already derived — that's the click.
+
+### V5. Name every model-variant switch; state every implicit assumption
+
+Past failure (real, from a prior lecture):
+> "4.1 Open economy: stability. The transition curve in Figure 2 must be flatter
+> than the 45° line for the economy to converge — otherwise iterations diverge.
+> Algebraically: $(1 + s\bar r)/(1+n) < 1 \;\Leftrightarrow\; s\bar r < n$.
+> Stability condition (open economy): $s\bar r < n$."
+
+Four failures stacked into one paragraph:
+1. Silent switch from closed-economy Solow (endogenous $r$) to open-economy
+   Solow ($\bar r$ exogenous, set by world markets). No "we now switch" sentence.
+2. The transition curve $k_{t+1} = k_t \cdot (1 + s\bar r)/(1+n)$ was never
+   written down, so the slope $(1+s\bar r)/(1+n)$ appears from nowhere.
+3. Implicit CA = 0 (no foreign-asset accumulation in steady state) never
+   stated — a load-bearing assumption that completely changes the law of motion
+   if dropped.
+4. The general fact "linear difference equation with $|slope| < 1$ converges"
+   is invoked silently — the reader doesn't see why slope-less-than-one implies
+   convergence.
+
+**Fix pattern.** Every model-variant switch (closed↔open, with↔without
+technology, basic Solow↔MRW, deterministic↔stochastic, exogenous↔endogenous
+growth, etc.) opens with a transition paragraph containing THREE required parts:
+
+- (a) **Named switch.** "We now move to the open-economy variant."
+- (b) **What changed.** "The key difference: $\bar r$ is set by world capital
+  markets, not by domestic MPK. So instead of $r$ adjusting to clear the capital
+  market, $k$ adjusts to satisfy $\alpha B k^{\alpha-1} = \bar r$."
+- (c) **What is now assumed.** "Throughout this section we take CA = 0 (no
+  foreign-asset accumulation in steady state); we'll revisit this in §X."
+
+THEN derive the new variant's law of motion explicitly. THEN do stability.
+Skipping any of (a)/(b)/(c) is the failure pattern above.
+
+### Triage: when the lecture "still feels abstract" or "rushed"
+
+1. Did the derivation skip algebraic steps? (V2)
+2. Did intuition come before the math? (V1)
+3. Were symbols re-tagged with role-labels each section, or named once and
+   abandoned? Re-tag.
+4. Was a result stated but never derived, OR cited from a prior module/section
+   without restating? (R12, R11.)
+5. Was a model-variant switched silently? Is some assumption load-bearing but
+   never stated? (V5.)
+6. Is notation drifting (same symbol means two things, or two symbols mean the
+   same thing)? See `<notation_conventions>`.
+
+This list, applied mechanically, fixes essentially every "abstract" or "rushed"
+complaint.
+</user_voice_vignettes>
+
+<notation_conventions>
+Notation must be internally consistent across the entire lecture. The course
+materials use inconsistent symbols (e.g. $\alpha$ vs $\phi$ for the capital
+exponent; $A$ vs $B$ for TFP; $\dot X$ vs $\Delta X$ for time change). The
+lecture must pick ONE convention and stick with it.
+
+### Canonical macro notation (default; use unless the source overrides)
+
+| Symbol | Meaning |
+|---|---|
+| $K, L, Y$ | aggregate capital, labor, output |
+| $k = K/L, \, y = Y/L$ | per-worker capital, output (lowercase = per worker) |
+| $\tilde k = K/(AL)$ | per-effective-worker capital (only when labor-augmenting tech is in play) |
+| $\alpha$ | Cobb-Douglas capital exponent / capital income share. **Reserved** — never use $\alpha$ for anything else. |
+| $\phi$ | MRW human-capital exponent. **Reserved** for MRW. |
+| $n$ | population (labor) growth rate |
+| $g$ | labor-augmenting technology growth rate |
+| $\delta$ | depreciation rate |
+| $s$ | saving rate |
+| $r$ | rental / interest rate (endogenous in closed economy) |
+| $\bar r$ | world interest rate (exogenous in open economy) |
+| $B$ | Hicks-neutral total factor productivity — used in $Y = B K^\alpha L^{1-\alpha}$ |
+| $A$ | labor-augmenting technology — used in $Y = K^\alpha (AL)^{1-\alpha}$. **Never use $A$ for Hicks-neutral TFP.** |
+| $\dot X$ | continuous-time derivative $dX/dt$ |
+| $\Delta X_t = X_{t+1} - X_t$ | discrete-time change |
+| $X^*$ | steady-state value of $X$ |
+| $X^{**}$ | Golden-Rule value of $X$ |
+| $\bar X$ | world average of $X$ (open economy / multi-country) |
+| CA, NX, F | current account, net exports, net foreign assets |
+
+### Rules
+
+1. **§2 (Object Definitions) must contain a notation table** listing every symbol
+   the lecture uses, with its meaning. Use the canonical symbols above unless
+   you have a reason to deviate (in which case state the reason in the table).
+2. **One symbol per concept.** $\alpha$ does not also mean "convergence speed"
+   or "risk-aversion parameter" anywhere else in this lecture. If the source
+   uses $\alpha$ for two things, rename one (and note the rename in the table).
+3. **One convention per category, per derivation.** Within a single derivation,
+   pick continuous-time ($\dot X$) OR discrete-time ($\Delta X_t$, $X_{t+1}$) —
+   never mix both in the same equation. If both are needed across the lecture,
+   say so once and stick to one per section.
+4. **One symbol per concept across modules.** If Module 1 uses $\phi$ for the
+   convergence rate and Module 3 uses $\lambda$, pick one for the lecture and
+   silently translate the other. Flag the translation in the notation table:
+   "we use $\lambda$ for convergence speed throughout (Module 1 calls this $\phi$)."
+5. **Deviations require a note in the table.** "$B$ here is Hicks-neutral TFP,
+   not labor-augmenting technology — Module 2 uses this convention."
+6. **Decoration consistency.** Bars always = world average. Stars always =
+   steady state. Double stars always = Golden Rule. Tildes always = per
+   effective worker. Don't reuse decorations for other purposes.
+</notation_conventions>
 
 <manifest_schema>
 Type:
@@ -591,13 +816,25 @@ audit. The build phase is a SEPARATE response turn from the audit.
 **R11 (self-containment): grep payload for forbidden patterns.**
 Run mentally or via Bash: search the payload text for each pattern. List every
 match. Each match must be either (a) attribution AFTER a self-contained
-explanation, or (b) deleted/rewritten. Substitutional citations are FAIL.
-- [ ] Pattern `(see textbook`: <N> matches. Each one self-contained? Y/N
-- [ ] Pattern `(textbook ch`: <N> matches. Each one self-contained? Y/N
-- [ ] Pattern `Lecture .* p\d`: <N> matches. Each one self-contained? Y/N
-- [ ] Pattern `walks through`: <N> matches. Each one self-contained? Y/N
-- [ ] Pattern `see Exercise`: <N> matches. Each one self-contained? Y/N
-- [ ] Pattern `as shown in textbook`: <N> matches. Each one self-contained? Y/N
+explanation (formula restated in the same paragraph), or (b) deleted/rewritten.
+Substitutional citations are FAIL.
+
+External (textbook / slides / exercises):
+- [ ] Pattern `(see textbook`: <N> matches. Each self-contained? Y/N
+- [ ] Pattern `(textbook ch`: <N> matches. Each self-contained? Y/N
+- [ ] Pattern `Lecture .* p\d`: <N> matches. Each self-contained? Y/N
+- [ ] Pattern `walks through`: <N> matches. Each self-contained? Y/N
+- [ ] Pattern `see Exercise`: <N> matches. Each self-contained? Y/N
+- [ ] Pattern `as shown in textbook`: <N> matches. Each self-contained? Y/N
+
+Internal (prior modules / sections / the professor — same severity):
+- [ ] Pattern `from Module \d`: <N> matches. Each restates the formula? Y/N
+- [ ] Pattern `applied (at|to) the`: <N> matches. Each restates the formula? Y/N
+- [ ] Pattern `as we (saw|computed|derived) in`: <N> matches. Each restates? Y/N
+- [ ] Pattern `we (saw|computed|derived) in`: <N> matches. Each restates? Y/N
+- [ ] Pattern `Cozzi's argument`: <N> matches. Each restates Cozzi's argument? Y/N
+- [ ] Pattern `Cozzi (showed|argued)`: <N> matches. Each restates the result? Y/N
+- [ ] Pattern `(applying|using) Module \d`: <N> matches. Each restates? Y/N
 
 **R12 (derive-don't-state): every result in `derivations_required` is derived.**
 For each entry in the manifest's `derivations_required`, find the derivation
@@ -629,6 +866,19 @@ List each named concept and confirm:
 - [ ] Pick 2 random derivations. Each transition step has a connective
       ("because", "so", "now we want to", "multiply both sides by Y so that…")
       explaining WHY the step is taken.
+
+**V5 (model-variant switches): every switch is properly introduced.**
+List every model variant the lecture covers (closed economy, open economy,
+basic Solow, Solow-with-technology, MRW with human capital, etc.). For every
+transition between variants, confirm:
+  - (a) Named switch sentence ("we now move to the X variant")
+  - (b) What changed vs. the previous variant (which variable is now endogenous,
+        which assumption was dropped, what's now exogenous, etc.)
+  - (c) New assumptions stated explicitly (CA = 0, $r = \bar r$ exogenous, etc.)
+List each switch and check all three:
+  - Switch <variant A> → <variant B> at §<section>: (a) Y/N  (b) Y/N  (c) Y/N
+  - ... (one line per switch)
+- [ ] Every model-variant switch satisfies all three of (a), (b), (c).
 
 ### Coverage (manifest cross-check)
 - [ ] Every "core" manifest concept appears in its assigned section
@@ -662,12 +912,27 @@ List each named concept and confirm:
 - [ ] R6: Key results in .key-concept boxes
 - [ ] R8: Out-of-scope content flagged with caveat
 - [ ] R9: Source citations (if any) ADDITIONAL to, never substituting for, self-contained explanation
-- [ ] R10: Word count between 4000-8000. Current: <N>.
+- [ ] R10: Word count between 6000-12000. Current: <N>. If below 6000, expand
+      compressed passages (do NOT trim elsewhere to compensate).
 
 ### Persona
 - [ ] No blunt fact-dump passages
 - [ ] Digressions (if any) genuinely illuminate
 - [ ] Voice matches "patient teacher" throughout
+
+### Notation (mechanical — see `<notation_conventions>`)
+- [ ] §2 (Object Definitions) contains a notation table listing every symbol
+      used in the lecture with its meaning
+- [ ] No symbol means two different things in the lecture (e.g. $\alpha$ as
+      both capital share AND something else)
+- [ ] No two symbols mean the same thing (e.g. one section uses $\phi$ for
+      convergence speed, another uses $\lambda$ for the same — pick one)
+- [ ] Time-derivative convention is consistent WITHIN each derivation
+      (no $\dot k$ + $\Delta k_t$ mixed in the same equation chain)
+- [ ] Decorations consistent: bars = world average, stars = steady state,
+      double-stars = Golden Rule, tildes = per effective worker — never reused
+- [ ] Any non-canonical symbol (deviation from the table in `<notation_conventions>`)
+      has an inline justification in the §2 notation table
 
 ### Technical
 - [ ] JSON parses (mental check or use: python -c "import json; json.load(open('$env:TEMP/<slug>-payload.json'))")

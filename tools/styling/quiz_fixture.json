@@ -185,11 +185,24 @@
       "explanation": "<p>$\\text{CA} = S - I$ is an <em>identity</em> derived from the definition of saving and the expenditure decomposition of $Y$. It holds in every period of every economy regardless of policy, behavior, or equilibrium concept. The other options confuse identities with equilibrium conditions or invent relationships.</p>"
     },
     {
+      "id": 12,
+      "style": "mtf-cluster",
+      "topic": "Solow steady state, mixed",
+      "setup": "<p>Consider a Cobb-Douglas Solow economy with $\\alpha = 0.3$, $\\delta = 0.05$, $n = 0.01$, and saving rate $s = 0.25$. The economy sits at its steady state. Evaluate each statement.</p>",
+      "statements": [
+        {"letter": "A", "text": "Capital per worker $k$ is constant over time.", "true": true, "defense": "By definition of steady state, $\\dot k = 0$."},
+        {"letter": "B", "text": "Output per worker $y$ grows at rate $g$.", "true": false, "defense": "There is no technology term in basic Solow; $y$ is constant in steady state. Picked by students who conflate basic Solow with the Solow-plus-technology variant."},
+        {"letter": "C", "text": "The economy is at the Golden Rule.", "true": false, "defense": "Golden Rule requires $s = \\alpha = 0.3$, but here $s = 0.25$. Tempting because 'steady state' and 'Golden Rule' are introduced near each other."},
+        {"letter": "D", "text": "The steady-state rental rate equals $\\alpha(n+\\delta)/s$.", "true": true, "defense": "Plug $k^* = (s/(n+\\delta))^{1/(1-\\alpha)}$ into $r = \\alpha k^{\\alpha-1}$ and simplify. Holds at any steady state, GR or not."}
+      ],
+      "explanation": "<p>The cluster targets the four most common Solow confusions: (i) what 'steady state' actually constrains ($k$, not $y$ growth in basic Solow); (ii) the role of technology in producing growth in $y$ — absent here; (iii) the gap between any steady state and the Golden Rule; (iv) the formula $r^* = \\alpha(n+\\delta)/s$ that holds at every steady state.</p>"
+    },
+    {
       "type": "chain",
       "setup": "<p><strong>Setup.</strong> Consider a closed economy in basic Solow with Cobb-Douglas $f(k) = k^{0.3}$, depreciation $\\delta = 0.05$, population growth $n = 0.01$, and saving rate $s = 0.2$. The economy is initially at its steady state $k^*_0$. Then the saving rate permanently rises to $s' = 0.3$.</p>",
       "questions": [
         {
-          "id": 12,
+          "id": 13,
           "style": "deep-short",
           "topic": "Solow comparative statics",
           "stem": "<p>Immediately after the saving rate rises (before $k$ has time to adjust), which is true at the old $k^*_0$?</p>",
@@ -203,7 +216,7 @@
           "explanation": "<p>At $k^*_0$, the new investment curve $s'f(k)$ lies above the depreciation line, so $\\dot k > 0$ and capital starts accumulating toward the new (higher) steady state.</p>"
         },
         {
-          "id": 13,
+          "id": 14,
           "style": "numeric",
           "topic": "Solow steady state computation",
           "stem": "<p>What is the new steady-state capital per worker $k^*_1$ (to 1 decimal)?</p>",

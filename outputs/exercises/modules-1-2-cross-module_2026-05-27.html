@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Exercises: Modules 1 + 2 — Basic Solow, Open Economy, and Technological Progress</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+
+
+<style>
+:root{
+  --bg:#fdf6e3;
+  --card:#ffffff;
+  --border:#e6dcc4;
+  --text:#003135;
+  --muted:#5a7378;
+  --accent:#024950;
+  --accent-2:#0FA4AF;
+  --accent-bg:rgba(15,164,175,0.10);
+  --key:#964734;
+  --key-bg:rgba(150,71,52,0.08);
+  --box-fill:#003135;
+  --box-text:#e6f4f5;
+  --box-line:#0FA4AF;
+  --col-w:820px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background-color:var(--bg)}
+body{
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  color:var(--text);
+  line-height:1.7;
+  font-weight:400;
+  font-feature-settings:"cv11","ss01","ss03";
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.45  0 0 0 0 0.35  0 0 0 0 0.20  0 0 0 0.06 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  background-repeat:repeat;
+  background-attachment:fixed;
+}
+.container{
+  max-width:var(--col-w);
+  margin:0 auto;
+  padding:4rem 1.5rem 5rem;
+}
+h1{
+  font-size:2.5rem;
+  font-weight:300;
+  letter-spacing:-0.03em;
+  line-height:1.15;
+  margin-bottom:.6rem;
+  color:var(--text);
+}
+.meta{
+  color:var(--muted);
+  font-size:.85rem;
+  font-weight:400;
+  letter-spacing:.01em;
+  margin-bottom:2rem;
+  padding-bottom:1.25rem;
+  border-bottom:1px solid var(--border);
+}
+
+/* ── Coverage banner ─────────────────────────────────────────────────── */
+.coverage{
+  margin:0 0 3rem;
+  padding:1.25rem 1.4rem;
+  outline:1px solid var(--accent);
+  outline-offset:5px;
+  position:relative;
+}
+.coverage-label{
+  position:absolute;top:-9px;left:14px;
+  background:var(--bg);
+  padding:0 .5rem;
+  font-size:.65rem;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:var(--accent);
+  font-weight:600;
+}
+.coverage-scope{
+  font-size:.78rem;
+  color:var(--muted);
+  letter-spacing:.04em;
+  text-transform:uppercase;
+  margin-bottom:.7rem;
+}
+.coverage-scope strong{color:var(--accent);font-weight:600}
+.coverage-list{
+  list-style:none;
+  font-size:.92rem;
+  display:grid;
+  gap:.45rem;
+}
+.coverage-list li{
+  display:flex;
+  gap:.85rem;
+  align-items:baseline;
+}
+.coverage-list .cov-num{
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+  font-size:.75rem;
+  color:var(--accent-2);
+  font-weight:600;
+  min-width:2rem;
+}
+.coverage-excluded{
+  margin-top:.9rem;
+  padding-top:.7rem;
+  border-top:1px dashed var(--border);
+  font-size:.82rem;
+  color:var(--muted);
+  font-style:italic;
+}
+
+/* ── Exercise card ───────────────────────────────────────────────────── */
+.exercise{
+  background:var(--card);
+  border:1px solid var(--border);
+  padding:1.75rem 2rem;
+  margin-bottom:2rem;
+}
+.exercise-header{
+  display:flex;
+  justify-content:space-between;
+  align-items:baseline;
+  gap:1rem;
+  margin-bottom:.4rem;
+  padding-bottom:.7rem;
+  border-bottom:1px solid var(--border);
+}
+.exercise-number{
+  font-size:.75rem;
+  font-weight:600;
+  color:var(--accent);
+  letter-spacing:.12em;
+  text-transform:uppercase;
+}
+.exercise-title{
+  font-size:1.25rem;
+  font-weight:400;
+  letter-spacing:-0.01em;
+  color:var(--text);
+  flex:1;
+}
+.exercise-scope{
+  font-size:.72rem;
+  color:var(--muted);
+  letter-spacing:.04em;
+  margin-bottom:1.4rem;
+  font-style:italic;
+}
+.exercise-scope strong{color:var(--accent);font-style:normal;font-weight:600;letter-spacing:.02em}
+
+/* ── Sub-move ────────────────────────────────────────────────────────── */
+.sub-move{
+  margin-bottom:1.5rem;
+  padding-top:.8rem;
+}
+.sub-move:first-of-type{padding-top:0}
+.sub-move-label{
+  display:inline-block;
+  font-size:.7rem;
+  font-weight:600;
+  color:var(--accent-2);
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  margin-bottom:.55rem;
+  padding-bottom:.25rem;
+  border-bottom:1px solid var(--accent-2);
+}
+.sub-move-prompt{
+  font-size:.97rem;
+  line-height:1.7;
+}
+.sub-move-prompt p{margin-bottom:.7rem}
+.sub-move-prompt p:last-child{margin-bottom:0}
+.sub-move-prompt ol,.sub-move-prompt ul{margin:0 0 .8rem 1.5rem}
+.sub-move-prompt li{margin-bottom:.3rem}
+
+/* Hints — progressive reveal per sub-move */
+.hints-area{margin-top:.9rem}
+.hint{
+  display:none;
+  background:var(--accent-bg);
+  border-left:2px solid var(--accent-2);
+  padding:.7rem 1rem;
+  margin-top:.5rem;
+  font-size:.88rem;
+  line-height:1.6;
+  color:var(--text);
+}
+.hint.shown{display:block}
+.hint strong{color:var(--accent);font-weight:600;letter-spacing:.02em}
+.hint-btn{
+  background:transparent;
+  color:var(--accent);
+  border:1px dashed var(--accent);
+  padding:.4rem 1rem;
+  font-size:.7rem;
+  font-family:inherit;
+  font-weight:500;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  cursor:pointer;
+  transition:background .15s, color .15s, border-style .15s;
+  margin-top:.6rem;
+}
+.hint-btn:hover{background:var(--accent);color:#fff;border-style:solid}
+.hint-btn[hidden]{display:none}
+
+/* Embedded figure inside a sub-move */
+.exercise .mf-figure{margin:1rem 0 1.2rem;border-color:var(--border)}
+
+/* ── Solution (hidden by default; matches lecture body style) ────────── */
+.solution-toggle-row{
+  margin-top:1.5rem;
+  padding-top:1.2rem;
+  border-top:1px dashed var(--border);
+  display:flex;
+  align-items:center;
+  gap:.9rem;
+}
+.solution-btn{
+  background:var(--accent);
+  color:#fff;
+  border:1px solid var(--accent);
+  padding:.55rem 1.3rem;
+  font-size:.78rem;
+  font-family:inherit;
+  font-weight:500;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  cursor:pointer;
+  transition:background .15s;
+}
+.solution-btn:hover{background:var(--accent-2);border-color:var(--accent-2)}
+.solution-hint-text{
+  font-size:.72rem;
+  color:var(--muted);
+  font-style:italic;
+  letter-spacing:.03em;
+}
+.solution{
+  display:none;
+  margin-top:1.25rem;
+  padding:1.5rem 1.75rem;
+  background:rgba(255,255,255,0.6);
+  border:1px solid var(--border);
+  font-size:.95rem;
+  line-height:1.75;
+}
+.solution.shown{display:block}
+.solution h3,.solution h4{
+  font-size:.78rem;
+  font-weight:600;
+  color:var(--accent);
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  margin-top:1.4rem;
+  margin-bottom:.6rem;
+  padding-bottom:.3rem;
+  border-bottom:1px solid var(--accent-bg);
+}
+.solution h3:first-child,.solution h4:first-child{margin-top:0}
+.solution p{margin-bottom:.85rem}
+.solution ol,.solution ul{margin:0 0 1rem 1.5rem}
+.solution li{margin-bottom:.45rem}
+.solution code{
+  background:var(--accent-bg);
+  color:var(--accent);
+  padding:.1rem .35rem;
+  border-radius:2px;
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+  font-size:.85em;
+}
+.solution .step{
+  margin-bottom:1rem;
+  padding-left:1rem;
+  border-left:2px solid var(--accent-bg);
+}
+.solution .step-label{
+  display:block;
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+  font-size:.72rem;
+  color:var(--accent-2);
+  font-weight:600;
+  letter-spacing:.06em;
+  margin-bottom:.3rem;
+}
+.solution .key-result{
+  background:var(--box-fill);
+  color:var(--box-text);
+  padding:.85rem 1.2rem;
+  margin:1rem 0;
+  outline:1px solid var(--box-line);
+  outline-offset:3px;
+}
+.solution .key-result .katex{color:var(--box-text)}
+.solution .key-result strong{color:var(--box-line);font-weight:600}
+.katex{font-size:1em}
+.katex-display{margin:1rem 0;overflow-x:auto;overflow-y:hidden}
+
+/* ── Show-all bottom button ──────────────────────────────────────────── */
+.show-all-row{
+  display:flex;justify-content:center;
+  margin:2.5rem 0 0;
+}
+.show-all-btn{
+  background:transparent;
+  color:var(--accent);
+  border:1px solid var(--accent);
+  padding:.6rem 1.5rem;
+  font-size:.75rem;
+  font-family:inherit;
+  font-weight:500;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+  cursor:pointer;
+  transition:background .15s, color .15s;
+}
+.show-all-btn:hover{background:var(--accent);color:#fff}
+
+
+@media(max-width:700px){
+  .container{padding:2rem 1rem 3rem}
+  .exercise{padding:1.25rem}
+  h1{font-size:1.8rem}
+}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Exercises: Modules 1 + 2 — Basic Solow, Open Economy, and Technological Progress</h1>
+<div class="meta">Macroeconomics III — Modules 1 + 2 (cross-module, M2-weighted) — 2026-05-27 — 5 exercises</div>
+<div class="coverage"><span class="coverage-label">Coverage</span><div class="coverage-scope"><strong>Scope:</strong> modules 1 (basic Solow) + 2 (open economy + general Solow with technological progress), cross-module, weighted toward M2 — exhaustive · mutually exclusive</div><ul class="coverage-list"><li><span class="cov-num">Ex 1</span><span>open-economy steady-state k* via MPK arbitrage · savings-rate independence puzzle · wealth vs capital decoupling (V_t vs K_t) · small-economy assumption (counterfactual)</span></li><li><span class="cov-num">Ex 2</span><span>general Solow transition equation in effective-labour units · steady-state k̃* derivation (two ways) · balanced growth path existence + uniqueness · BGP-as-fixed-point vs BGP-as-imposed methodology</span></li><li><span class="cov-num">Ex 3</span><span>convergence speed λ in basic Solow (linearization) · convergence speed λ in general Solow (with g) · empirical failure of Solow's convergence prediction (5% theory vs 1-2% data) · α-recovery as foreshadowing of MRW human-capital fix</span></li><li><span class="cov-num">Ex 4</span><span>opening theorem: y^{n*} >= y_c^* (formal proof) · Feldstein-Horioka regression as capital-mobility measure (numeric inversion) · wage caveat for strong-saver countries · political economy of capital-account liberalization</span></li><li><span class="cov-num">Ex 5</span><span>Golden Rule in basic Solow: s** = α (anchor) · Golden Rule in general Solow with technological progress: s** = α (consumption-maximization) · Modified Golden Rule via marginal-product condition · Breakdown of Golden Rule in the open economy (corner solutions)</span></li></ul><div class="coverage-excluded"><strong>Out of set</strong> (handled elsewhere or out of scope): Lorenz/Gini/stylized facts 1-7 prose (Module 1 descriptive — handled by /exam Q1 template); government crowding-out detailed mechanics (Module 1 — covered in /quiz); Bolboaca exercise-session-specific simulation numerics (handled by /exam Q2-style numerical simulation); interest-rate-shock matrix and creditor/debtor sign-table (Lecture 2a p29 — secondary, mechanical)</div></div>
+<div class="exercise" id="ex-1"><div class="exercise-header"><span class="exercise-number">Exercise 1</span><span class="exercise-title">Closed-economy $k^*$ vs open-economy $k^*$: the savings-rate disconnect</span></div><div class="exercise-scope"><strong>Scope:</strong> Module 1 Lecture 1c p10 (basic-Solow steady state); Module 2 Lecture 2a p15-16 (open-economy law of motion, immediate adjustment of $k$).</div><div class="sub-move" data-hints-total="2" data-hints-shown="0"><div class="sub-move-label">Anchor</div><div class="sub-move-prompt"><p>From the basic Solow model (Lecture 1c p10), write down $k^*$ explicitly in terms of $s, B, \alpha, n, \delta$. Then, in <em>one sentence</em>, explain the economic mechanism by which $s$ raises $k^*$ — what does saving more actually <em>do</em> in the closed economy?</p></div><div class="hints-area"><div class="hint" data-idx="1"><strong>Hint 1.</strong> The defining condition is $k_{t+1} = k_t$, i.e., savings per worker $sBk^\alpha$ exactly cover the replacement investment $(n+\delta)k$.</div><div class="hint" data-idx="2"><strong>Hint 2.</strong> Equate $sBk^\alpha = (n+\delta)k$ and solve for $k$.</div><button type="button" class="hint-btn" onclick="nextHint(this)">Hint 1 / 2</button></div></div><div class="sub-move" data-hints-total="3" data-hints-shown="0"><div class="sub-move-label">Main proof</div><div class="sub-move-prompt"><p>In the small open economy of Lecture 2a (with $\delta = 0$ for clarity), derive
+$$k^* = \left(\frac{\alpha B}{\bar{r}}\right)^{\!\!\frac{1}{1-\alpha}}$$
+from the perfect-capital-mobility condition that the domestic marginal product of capital equals the world real interest rate $\bar{r}$. Show every algebraic step.</p>
+<p>Then <strong>flag</strong> which parameters of the basic-Solow steady state do <em>not</em> appear in this expression, and explain why their absence is the central puzzle of opening the capital account.</p></div><div class="hints-area"><div class="hint" data-idx="1"><strong>Hint 1.</strong> Profit maximization of the representative firm gives $r_t = \alpha B k_t^{\alpha-1}$ (Lecture 2a p12). Under perfect capital mobility the no-arbitrage condition is $r_t = \bar{r}$ for every $t$, not just in the long run.</div><div class="hint" data-idx="2"><strong>Hint 2.</strong> So solve $\bar{r} = \alpha B k^{\alpha-1}$ for $k$. This is the <em>same</em> equation that determines $r^*$ in the closed economy, but read in the opposite direction: in the closed economy $k^*$ is pinned down by savings dynamics and $r^*$ is the residual; in the open economy $\bar{r}$ is pinned down by the world market and $k^*$ is the residual.</div><div class="hint" data-idx="3"><strong>Hint 3.</strong> After solving, ask: where are $s$ and $n$? Neither appears. The closed-economy steady state depended on $s/(n+\delta)$. The open-economy capital intensity depends on neither — it depends only on technology and the world rate.</div><button type="button" class="hint-btn" onclick="nextHint(this)">Hint 1 / 3</button></div></div><div class="sub-move" data-hints-total="2" data-hints-shown="0"><div class="sub-move-label">Method variation</div><div class="sub-move-prompt"><p>Derive the same expression for $k^*$ a <em>second</em> way, this time without invoking MPK-arbitrage directly. Use the wealth accumulation equation $V_{t+1} - V_t = S_t$ (Lecture 2a p11) together with $V_t = K_t + F_t$.</p>
+<p>Show that perfect capital mobility decouples the dynamics of $K_t$ from the dynamics of $V_t$ — that is, $K_t$ adjusts in <em>one</em> period to whatever level the arbitrage condition demands, regardless of what $S_t$ has done. Explain which variable absorbs the gap, and at what cost.</p></div><div class="hints-area"><div class="hint" data-idx="1"><strong>Hint 1.</strong> The wealth equation $V_{t+1} - V_t = S_t$ does not control $K_t$ directly — it controls $V_t = K_t + F_t$. The decoupling happens through $F_t$.</div><div class="hint" data-idx="2"><strong>Hint 2.</strong> Net foreign assets $F_t$ absorb the gap. If $V_t < K_t^*$ (national wealth hasn't yet accumulated to the level the world rate justifies), the country borrows from abroad and $F_t < 0$. If $V_t > K_t^*$, the surplus is invested abroad and $F_t > 0$. Either way the domestic stock $K_t$ jumps to its target in one period — but the country pays interest $\bar{r} F_t$ on the imbalance.</div><button type="button" class="hint-btn" onclick="nextHint(this)">Hint 1 / 2</button></div></div><div class="sub-move" data-hints-total="0" data-hints-shown="0"><div class="sub-move-label">Methodology reflection</div><div class="sub-move-prompt"><p>Each derivation hinges on one assumption that does not survive scrutiny in the real world. State that assumption precisely for each method, and identify <em>which</em> assumption is load-bearing for the savings-rate-independence result.</p>
+<ol>
+  <li>The MPK-arbitrage derivation assumes the world interest rate $\bar{r}$ is exogenous and constant. What does this rule out empirically?</li>
+  <li>The wealth-decoupling derivation assumes $F_t$ can take any value with no friction. What does <em>that</em> rule out empirically?</li>
+</ol></div></div><div class="sub-move" data-hints-total="0" data-hints-shown="0"><div class="sub-move-label">Counterfactual</div><div class="sub-move-prompt"><p>Drop the <em>small</em> economy assumption: the domestic economy is now large enough that its capital demand affects the world rate. Write $\bar{r} = R(K_\text{world})$ where $K_\text{world}$ now includes domestic $K$.</p>
+<p>Without re-doing the full derivation, argue which features of the open-economy result survive (instant $k$-adjustment? $s$-independence?) and which collapse. Two to three sentences is enough.</p></div></div><div class="solution-toggle-row"><button type="button" class="solution-btn" onclick="toggleSolution(this)">Show solution</button><span class="solution-hint-text">Solve on paper first.</span></div><div class="solution">
+<h3>Anchor</h3>
+<p>From $k_{t+1} = k_t$ the steady-state condition is</p>
+<div class="step"><span class="step-label">Step 1.</span> $sBk^{*\alpha} = (n+\delta)k^*$ — gross savings per worker $sBk^\alpha$ exactly cover the replacement investment $(n+\delta)k$ required to keep $k$ constant despite a growing labour force ($n$) and depreciation ($\delta$).</div>
+<div class="step"><span class="step-label">Step 2.</span> Divide both sides by $k^{*\alpha}$: $sB = (n+\delta)k^{*\,1-\alpha}$.</div>
+<div class="step"><span class="step-label">Step 3.</span> Solve for $k^*$: $k^{*\,1-\alpha} = sB/(n+\delta)$, hence $k^* = \left[sB/(n+\delta)\right]^{1/(1-\alpha)} = B^{1/(1-\alpha)}\left(s/(n+\delta)\right)^{1/(1-\alpha)}$.</div>
+<div class="key-result">$k^*_\text{basic} = B^{\frac{1}{1-\alpha}} \left(\dfrac{s}{n+\delta}\right)^{\!\!\frac{1}{1-\alpha}}.$</div>
+<p>Mechanism: a higher $s$ means more output is plowed back into capital each period. With $n+\delta$ fixed, the only way for replacement investment $(n+\delta)k$ to absorb the extra savings flow $sBk^\alpha$ is for $k$ itself to be larger — the steady-state balance is restored at a higher capital intensity. The closed economy must <em>build</em> its capital out of its own savings; there is no other source. Conversely, the elasticity $\partial \ln k^*/\partial \ln s = 1/(1-\alpha) \approx 1.5$ for $\alpha = 1/3$ — a 10% increase in $s$ raises long-run $k^*$ by about 15%.</p>
+
+<h3>Main proof</h3>
+<p>The firm maximizes $\Pi_t = BK_t^\alpha L_t^{1-\alpha} - r_t K_t - w_t L_t$ taking $r_t, w_t$ as given. The first-order condition with respect to $K_t$ gives</p>
+<div class="step"><span class="step-label">Step 1.</span> $\partial \Pi_t / \partial K_t = 0 \Rightarrow r_t = \alpha B K_t^{\alpha-1} L_t^{1-\alpha}$.</div>
+<div class="step"><span class="step-label">Step 2.</span> Factor out $L_t$ to express in per-worker terms: $r_t = \alpha B (K_t/L_t)^{\alpha-1} L_t^{\alpha-1} L_t^{1-\alpha} = \alpha B k_t^{\alpha-1}$ (the $L$-powers cancel).</div>
+<p>Under perfect capital mobility, capital flows in or out of the country until the domestic rental rate equals the world rate. This must hold <em>every period</em>, not just in steady state, because any wedge $r_t \neq \bar{r}$ would trigger an instantaneous arbitrage opportunity (borrow at the lower rate, lend at the higher rate, infinite size):</p>
+<div class="step"><span class="step-label">Step 3.</span> No-arbitrage condition: $r_t = \bar{r}$ for all $t$.</div>
+<div class="step"><span class="step-label">Step 4.</span> Substitute Step 2 into Step 3: $\bar{r} = \alpha B k_t^{\alpha-1}$.</div>
+<div class="step"><span class="step-label">Step 5.</span> Solve for $k_t$. Divide both sides by $\alpha B$: $\bar{r}/(\alpha B) = k_t^{\alpha-1}$. Raise both sides to the power $1/(\alpha-1)$. Since $\alpha-1 < 0$, this flips the fraction inside: $k_t = \left[\bar{r}/(\alpha B)\right]^{1/(\alpha-1)} = \left[\alpha B/\bar{r}\right]^{1/(1-\alpha)}$.</div>
+<div class="step"><span class="step-label">Step 6.</span> The right-hand side carries no $t$-subscript — it depends only on parameters $\alpha, B, \bar{r}$. Hence $k_t$ is the <em>same</em> constant in every period, so we can write $k_t = k^*$ for all $t$.</div>
+<div class="key-result">$k^*_\text{open} = \left(\dfrac{\alpha B}{\bar{r}}\right)^{\!\!\frac{1}{1-\alpha}}$ — independent of $s, n, \delta$.</div>
+<p><strong>Parameters that vanish:</strong> $s$, $n$, and (had we kept it) $\delta$. Their absence is the entire point of Chapter 4. In the closed economy, the savings rate was the primary lever a government could pull to raise long-run capital per worker — that's the whole argument behind the Golden Rule prescription of Lecture 1c p15 ("encourage savings"). In the open economy, the world rate $\bar{r}$ pins down $k^*$, and a domestic shift in $s$ has <em>zero</em> effect on the productive capital stock that operates inside the country. The reason this is a puzzle (and not just a trivial calculation): the policy advice for raising domestic productivity is now completely different. Trying to raise $k^*$ by raising $s$ is futile in the small open economy. What $s$ <em>does</em> control is national wealth $v^*$ — and through that, national income $y^{n*}$ — but not the capital that workers in the country actually use.</p>
+<p>To preview: this disconnect between $k^*$ (capital used domestically) and $v^*$ (wealth owned by domestic residents) is the engine of every result in Lecture 2a. It produces the two-speed dynamics (Method variation below), the wage caveat for strong savers (Ex 4), and the breakdown of the Golden Rule (Ex 5).</p>
+
+<h3>Method variation</h3>
+<p>Start from the wealth accumulation equation under $\delta = 0$:</p>
+<div class="step"><span class="step-label">Step 1.</span> $V_{t+1} - V_t = S_t = s Y_t^n$, where $Y_t^n = Y_t + \bar{r}F_t$ is GNP (Lecture 2a p11).</div>
+<p>Divide both sides by $L_{t+1} = (1+n)L_t$ to put the equation in per-worker form:</p>
+<div class="step"><span class="step-label">Step 2.</span> $V_{t+1}/L_{t+1} = (V_t + S_t)/L_{t+1} = (V_t + S_t)/[(1+n)L_t]$, hence $v_{t+1} = \frac{1}{1+n}(v_t + sy_t^n)$ (Lecture 2a p17).</div>
+<p>Crucially, this equation governs $v_t$, not $k_t$. The accounting identity $v_t = k_t + f_t$ has one variable on the left and two on the right — it leaves one degree of freedom. Given $v_t$, we can split it any way we like between $k_t$ and $f_t$:</p>
+<div class="step"><span class="step-label">Step 3.</span> Perfect capital mobility resolves the split. The arbitrage condition $\bar{r} = \alpha B k_t^{\alpha-1}$ pins $k_t = k^*$ in every period. Whatever wealth $v_t$ remains is held as net foreign assets: $f_t = v_t - k^*$.</div>
+<p>So $K_t$ and $V_t$ are <em>decoupled</em>. The wealth dynamics determine $v_t$ gradually (a slow-moving state evolving via the savings flow), while $k_t$ jumps instantly to its target whenever a parameter shifts. This is the famous "two-speed dynamics" of the small-open-economy Solow model — Lecture 2a uses the labels "immediate adjustment" (for $k_t$, Lecture 2a p16) and "gradual adjustment" (for $v_t$, p17).</p>
+<p>Worked example to fix intuition: suppose the country starts in autarky steady state with $v_0 = k_0^c$ where $k_0^c$ is the closed-economy $k^*$ given $s,n,B,\alpha$. Open the capital account in period 1. If $\bar{r} > r_c^*$ (world rate exceeds the country's autarky rate), then $k^*_\text{open} < k_0^c$: domestic capital is excessive and capital flows out, so $k$ drops instantly while $v$ remains at $v_0$. The gap is absorbed by $f_1 = v_0 - k^*_\text{open} > 0$ — the country becomes a net creditor on impact. Going forward, $v_t$ evolves slowly under the new transition equation, but $k_t$ stays parked at $k^*_\text{open}$ forever.</p>
+<p>The cost of the immediate $k$-adjustment is exactly the interest flow $\bar{r}f_t$ (positive if creditor, negative if debtor). Output $y^* = B k^{*\alpha}$ stays at the world-arbitrage level, but national income $y^{n*} = y^* + \bar{r}f^*$ can be either higher or lower than $y^*$, depending on the sign of $f^*$.</p>
+<div class="key-result">$k^* = \left(\dfrac{\alpha B}{\bar{r}}\right)^{\!\!\frac{1}{1-\alpha}}$ — same answer, but now visibly the result of $f_t$ absorbing the gap between actual wealth and the world-arbitrage capital stock.</div>
+
+<h3>Methodology reflection</h3>
+<p><strong>(1) The MPK-arbitrage derivation assumes $\bar{r}$ is exogenous.</strong> Empirically this is the "small economy" assumption: the country's capital demand is too small to move the global capital market. It rules out the U.S., China, the eurozone as a bloc, and any other case where the country's saving or investment behaviour materially shifts world interest rates. For Switzerland, Denmark, Singapore, it's a defensible approximation; for "the OECD as a whole" it is not. The conceptual cost of relaxing it: $\bar{r}$ becomes endogenous to the country's $s$ via global market clearing, and the savings-rate-independence result evaporates (see the Counterfactual).</p>
+<p><strong>(2) The wealth-decoupling derivation assumes $F_t$ can take any value with no friction.</strong> This rules out capital controls (in force across most of the developing world until the 1990s), illiquidity in international debt markets, sovereign-risk premia that increase nonlinearly with $F_t/Y_t$, and the various forms of "home bias" in portfolio allocation that empirical finance has been documenting since French and Poterba (1991). Feldstein and Horioka's classic 1980 finding (and Lecture 2a p6) — that the OLS slope $\alpha_1$ in $(I/Y) = \alpha_0 + \alpha_1 (S/Y)$ is empirically $\approx 0.89$ for 1960-74 OECD — is the standard empirical pushback: even rich-country savings are largely retained at home, suggesting $F$-adjustment is far from frictionless.</p>
+<p><strong>Load-bearing assumption for savings-rate independence: the first one.</strong> If $\bar{r}$ adjusts endogenously to global savings, then a domestic rise in $s$ feeds into the world capital supply, lowers $\bar{r}$ globally, and raises $k^*$ in every country including the original one — and the closed-economy elasticity of $k^*$ with respect to $s$ partially reappears. Capital mobility per se (the second assumption) is enough to deliver two-speed dynamics: $k$ jumps, $v$ crawls, $f$ absorbs the gap. But it is not enough to deliver savings-rate independence; that requires the marginal-buyer rate to be set somewhere outside the country's own savings supply.</p>
+
+<h3>Counterfactual</h3>
+<p>Drop the "small" assumption: now $\bar{r} = R(K_\text{world})$ where $K_\text{world}$ includes domestic $K$, and $R$ is a decreasing function (more global capital, lower MPK at the world level). What survives, what breaks?</p>
+<p><strong>Survives: instant $k$-adjustment.</strong> The arbitrage logic still applies in every period: capital flows wherever MPK is highest until rates are equalized. As long as capital can physically move within a period, $k_t$ still hits whatever target the (now endogenous) $\bar{r}$ demands. The fast/slow distinction between $k$ and $v$ is intact.</p>
+<p><strong>Breaks: savings-rate independence.</strong> A domestic shift in $s$ raises domestic $V$, which raises domestic $f$ (since $k$ is pinned by the rate), which contributes to $K_\text{world}$, which lowers $\bar{r}$, which raises $k^*$ in <em>every</em> country including the original. The country is now effectively a partial closed economy with respect to its own savings rate, with the closed-economy elasticity rescaled by the country's share of world capital. In the limit where the country <em>is</em> the world, you recover the closed-economy result exactly: $\partial k^*/\partial s$ converges to the closed-economy elasticity $k^*/[(1-\alpha)s]$.</p>
+</div></div>
+<div class="exercise" id="ex-2"><div class="exercise-header"><span class="exercise-number">Exercise 2</span><span class="exercise-title">Effective-labour units and the BGP: deriving $\tilde{k}^*$ from the ground up</span></div><div class="exercise-scope"><strong>Scope:</strong> Module 2 Lecture 2b p7-13 (effective-labour reformulation, transition equation, steady state); Module 1 Lecture 1c p10 (basic-Solow steady state, anchor contrast).</div><div class="sub-move" data-hints-total="0" data-hints-shown="0"><div class="sub-move-label">Anchor</div><div class="sub-move-prompt"><p>In the <em>basic</em> Solow model (no technological progress), $y$ converges to a constant $y^*$ and then sits there forever. In <em>one sentence</em>, state why this contradicts stylized fact #5 (Western per-worker GDP grows at $\approx 2\%$ per year sustainedly). In <em>one more sentence</em>, state what minimal change the general Solow model makes to fix it.</p></div></div><div class="sub-move" data-hints-total="3" data-hints-shown="0"><div class="sub-move-label">Main proof</div><div class="sub-move-prompt"><p>Starting from $Y_t = K_t^\alpha (A_t L_t)^{1-\alpha}$ with $A_{t+1} = (1+g)A_t$ and $L_{t+1} = (1+n)L_t$, derive the transition equation for $\tilde{k}_t \equiv K_t/(A_t L_t)$. From it, solve in closed form for the steady state $\tilde{k}^*$.</p>
+<p>Show <em>every</em> algebraic step: the division step that introduces $(1+g)(1+n)$ on the denominator, the appearance of the drag term $(n+g+\delta+ng)$, the steady-state condition, and the final inversion.</p></div><div class="hints-area"><div class="hint" data-idx="1"><strong>Hint 1.</strong> Start from the standard capital accumulation equation $K_{t+1} = sY_t + (1-\delta)K_t$. Divide both sides by $A_{t+1}L_{t+1} = (1+g)(1+n) A_t L_t$.</div><div class="hint" data-idx="2"><strong>Hint 2.</strong> On the right, use $Y_t/(A_tL_t) = \tilde{k}_t^\alpha = \tilde{y}_t$ and $K_t/(A_tL_t) = \tilde{k}_t$. The right-hand side becomes $[s\tilde{k}_t^\alpha + (1-\delta)\tilde{k}_t]\,/\,[(1+g)(1+n)]$.</div><div class="hint" data-idx="3"><strong>Hint 3.</strong> Subtract $\tilde{k}_t$ from both sides to get the Solow equation. The algebraic identity $1 - (1+g)(1+n) = -(n+g+ng)$ combines with $-\delta$ to produce the drag $(n+g+\delta+ng)\tilde{k}_t$. Then impose $\tilde{k}_{t+1} = \tilde{k}_t = \tilde{k}^*$ and solve.</div><button type="button" class="hint-btn" onclick="nextHint(this)">Hint 1 / 3</button></div></div><div class="sub-move" data-hints-total="2" data-hints-shown="0"><div class="sub-move-label">Method variation</div><div class="sub-move-prompt"><p>Derive $\tilde{k}^*$ a <em>second</em> way: assume from the outset that a balanced growth path exists. Use the Kaldor fact that $K/Y$ is constant along the BGP (the capital-output ratio doesn't trend) together with the production function in level form to derive a relationship for $\tilde{k}^*$. Then close the system using the steady-state savings-investment identity.</p>
+<p>Confirm you get the same closed-form expression.</p></div><div class="hints-area"><div class="hint" data-idx="1"><strong>Hint 1.</strong> $K/Y$ constant means $K_t/Y_t = \tilde{k}_t/\tilde{y}_t = \tilde{k}_t^{1-\alpha}$ is constant. So $\tilde{k}_t$ is pinned to a constant — call it $\tilde{k}^*$ — on the BGP.</div><div class="hint" data-idx="2"><strong>Hint 2.</strong> The savings-investment identity in steady state: gross savings $sY_t$ must equal the gross investment needed to keep $K$ growing at its BGP rate $n+g$ (plus replacement $\delta K$). Per unit of effective labour: $s\tilde{y}^* = (n+g+\delta+ng)\tilde{k}^*$. Solve.</div><button type="button" class="hint-btn" onclick="nextHint(this)">Hint 1 / 2</button></div></div><div class="sub-move" data-hints-total="0" data-hints-shown="0"><div class="sub-move-label">Methodology reflection</div><div class="sub-move-prompt"><p>The first derivation manipulates the law of motion and discovers the BGP as the fixed point. The second imposes the BGP from the start and reads off the level. Each treats $\tilde{k}^*$ as the answer to a different question.</p>
+<p>State precisely what question each method answers, and identify which method gives you the additional information that the BGP is <em>unique</em> and that the system <em>converges to it</em> from arbitrary initial conditions. Two or three sentences per method.</p></div></div><div class="solution-toggle-row"><button type="button" class="solution-btn" onclick="toggleSolution(this)">Show solution</button><span class="solution-hint-text">Solve on paper first.</span></div><div class="solution">
+<h3>Anchor</h3>
+<p>Stylized fact #5 (Lecture 1a, Ch 2): per-worker GDP in the Western world grows at roughly $2\%$ per year over long horizons with no sign of slowdown. The basic Solow model predicts $\dot{y} = 0$ in steady state — incompatible.</p>
+<p>The minimal fix: introduce an exogenously growing labour-augmenting productivity $A_t$ with $A_{t+1} = (1+g)A_t$, so the production function becomes $Y_t = K_t^\alpha(A_tL_t)^{1-\alpha}$. Long-run per-worker output then grows at the rate $g$, by construction. Everything else about the Solow model stays the same — same savings rate, same depreciation, same competitive markets. The general Solow model is "basic Solow + one exogenous trend in $A$," nothing more.</p>
+
+<h3>Main proof</h3>
+<p>Reformulating the model in <em>effective-labour units</em> $\tilde{k}_t = K_t/(A_tL_t)$ is the standard trick that makes the system stationary. Here is why it works and how the algebra unfolds:</p>
+<div class="step"><span class="step-label">Step 1.</span> Capital accumulation: $K_{t+1} = sY_t + (1-\delta)K_t$ (standard, unchanged from basic Solow).</div>
+<div class="step"><span class="step-label">Step 2.</span> Divide both sides by $A_{t+1}L_{t+1}$. The left side becomes $K_{t+1}/(A_{t+1}L_{t+1}) = \tilde{k}_{t+1}$ by definition.</div>
+<div class="step"><span class="step-label">Step 3.</span> Use $A_{t+1}L_{t+1} = (1+g)A_t \cdot (1+n)L_t = (1+g)(1+n) A_tL_t$. The right side becomes $\dfrac{sY_t + (1-\delta)K_t}{(1+g)(1+n)A_tL_t}$.</div>
+<div class="step"><span class="step-label">Step 4.</span> Distribute the denominator over the two terms in the numerator: $\dfrac{sY_t}{(1+g)(1+n)A_tL_t} + \dfrac{(1-\delta)K_t}{(1+g)(1+n)A_tL_t}$. Use $Y_t/(A_tL_t) = \tilde{y}_t$ and $K_t/(A_tL_t) = \tilde{k}_t$.</div>
+<div class="step"><span class="step-label">Step 5.</span> Result: $\tilde{k}_{t+1} = \dfrac{s\tilde{y}_t + (1-\delta)\tilde{k}_t}{(1+g)(1+n)}$.</div>
+<div class="step"><span class="step-label">Step 6.</span> From the production function $Y_t = K_t^\alpha (A_tL_t)^{1-\alpha}$, divide both sides by $A_tL_t$: $\tilde{y}_t = (K_t/A_tL_t)^\alpha = \tilde{k}_t^\alpha$.</div>
+<div class="step"><span class="step-label">Step 7.</span> Substitute $\tilde{y}_t = \tilde{k}_t^\alpha$ into Step 5: $\tilde{k}_{t+1} = \dfrac{s\tilde{k}_t^\alpha + (1-\delta)\tilde{k}_t}{(1+g)(1+n)}$. This is the <strong>transition equation</strong> in effective-labour units (Lecture 2b p10).</div>
+<p>To get the Solow equation, subtract $\tilde{k}_t$ from both sides:</p>
+<div class="step"><span class="step-label">Step 8.</span> $\tilde{k}_{t+1} - \tilde{k}_t = \dfrac{s\tilde{k}_t^\alpha + (1-\delta)\tilde{k}_t}{(1+g)(1+n)} - \tilde{k}_t = \dfrac{s\tilde{k}_t^\alpha + (1-\delta)\tilde{k}_t - (1+g)(1+n)\tilde{k}_t}{(1+g)(1+n)}$.</div>
+<div class="step"><span class="step-label">Step 9.</span> Combine the $\tilde{k}_t$-terms in the numerator: $(1-\delta) - (1+g)(1+n) = 1 - \delta - (1 + n + g + ng) = -(n+g+\delta+ng)$. So</div>
+<div class="step"><span class="step-label">Step 10.</span> $\tilde{k}_{t+1} - \tilde{k}_t = \dfrac{1}{(1+g)(1+n)}\left[s\tilde{k}_t^\alpha - (n+g+\delta+ng)\tilde{k}_t\right]$ — the Solow equation in effective-labour units (Lecture 2b screenshot of p13).</div>
+<p>Now impose the steady-state condition $\tilde{k}_{t+1} = \tilde{k}_t = \tilde{k}^*$, which sets the LHS to zero:</p>
+<div class="step"><span class="step-label">Step 11.</span> $0 = s\tilde{k}^{*\alpha} - (n+g+\delta+ng)\tilde{k}^*$, hence $s\tilde{k}^{*\alpha} = (n+g+\delta+ng)\tilde{k}^*$.</div>
+<div class="step"><span class="step-label">Step 12.</span> Divide both sides by $\tilde{k}^{*\alpha}$: $s = (n+g+\delta+ng)\,\tilde{k}^{*\,1-\alpha}$.</div>
+<div class="step"><span class="step-label">Step 13.</span> Rearrange: $\tilde{k}^{*\,1-\alpha} = s/(n+g+\delta+ng)$. Raise both sides to $1/(1-\alpha)$.</div>
+<div class="key-result">$\tilde{k}^* = \left(\dfrac{s}{n+g+\delta+ng}\right)^{\!\!\frac{1}{1-\alpha}}, \qquad \tilde{y}^* = \tilde{k}^{*\alpha} = \left(\dfrac{s}{n+g+\delta+ng}\right)^{\!\!\frac{\alpha}{1-\alpha}}.$</div>
+<p>Note the structural parallel to the basic-Solow expression: replace $(n+\delta)$ with $(n+g+\delta+ng)$ and you map one to the other. The drag is bigger by the contribution of $g$ (and the cross term $ng$, which is empirically tiny: $0.01 \times 0.02 = 0.0002$ vs the other drags on the order of $0.01-0.05$). For typical calibration $n=0.01$, $g=0.02$, $\delta=0.05$: the basic-Solow drag is $0.06$, the general-Solow drag is $0.0802$ — about 33% bigger, lowering $\tilde{k}^*$ relative to the basic-Solow analogue.</p>
+
+<h3>Method variation</h3>
+<p>Assume a BGP exists. The Kaldor stylized fact (constant $K/Y$) becomes the entry point:</p>
+<div class="step"><span class="step-label">Step 1.</span> $K_t/Y_t = \dfrac{K_t/(A_tL_t)}{Y_t/(A_tL_t)} = \dfrac{\tilde{k}_t}{\tilde{y}_t} = \dfrac{\tilde{k}_t}{\tilde{k}_t^\alpha} = \tilde{k}_t^{1-\alpha}$.</div>
+<div class="step"><span class="step-label">Step 2.</span> For $K_t/Y_t$ to be constant, $\tilde{k}_t^{1-\alpha}$ must be constant. Since $1-\alpha > 0$, this forces $\tilde{k}_t$ itself to be constant. Call its value $\tilde{k}^*$.</div>
+<div class="step"><span class="step-label">Step 3.</span> If $\tilde{k}_t$ is constant in time, then $K_t = \tilde{k}_t \cdot A_tL_t$ grows at the same rate as $A_tL_t$, i.e., $K_{t+1}/K_t = (1+g)(1+n)$. So gross investment to maintain the BGP is $K_{t+1} - K_t + \delta K_t = [(1+g)(1+n) - 1 + \delta]K_t$.</div>
+<div class="step"><span class="step-label">Step 4.</span> Expand $(1+g)(1+n) - 1 = n+g+ng$. So gross investment per period equals $(n+g+\delta+ng)K_t$.</div>
+<div class="step"><span class="step-label">Step 5.</span> Savings-investment identity in equilibrium: $sY_t = $ gross investment $= (n+g+\delta+ng)K_t$.</div>
+<div class="step"><span class="step-label">Step 6.</span> Divide both sides by $A_tL_t$: $s\tilde{y}^* = (n+g+\delta+ng)\tilde{k}^*$.</div>
+<div class="step"><span class="step-label">Step 7.</span> Substitute $\tilde{y}^* = \tilde{k}^{*\alpha}$ and solve: $s\tilde{k}^{*\alpha} = (n+g+\delta+ng)\tilde{k}^*$, hence $\tilde{k}^{*\,1-\alpha} = s/(n+g+\delta+ng)$, hence $\tilde{k}^* = (s/(n+g+\delta+ng))^{1/(1-\alpha)}$.</div>
+<div class="key-result">Identical $\tilde{k}^*$ — but derived by imposing the BGP and reading off the level, rather than searching for the fixed point of the law of motion.</div>
+
+<h3>Methodology reflection</h3>
+<p>The two derivations answer fundamentally different questions, even though they produce the same formula.</p>
+<p><strong>The first method ("law-of-motion-and-fixed-point")</strong> asks: "What is the fixed point of the recursive map $\tilde{k}_t \mapsto \tilde{k}_{t+1}$ in $\tilde{k}$-space, and does the system actually go there?" It begins with no assumption that a BGP exists; the BGP is <em>found</em> as the fixed point of the transition equation $\tilde{k}_{t+1} = \phi(\tilde{k}_t)$. Because $\phi$ is monotone increasing (the slope is $\phi'(\tilde{k}) = (1/[(1+g)(1+n)])(\alpha s \tilde{k}^{\alpha-1} + 1 - \delta)$, which is positive everywhere) with $\phi'(0) = \infty$ and $\phi'(\infty) < 1$ (under the plausible stability condition $n+g+\delta+ng > 0$, Lecture 2b p10), the fixed point is unique and globally stable. So this method delivers BGP existence, uniqueness, <em>and</em> convergence — three properties for the price of one.</p>
+<p><strong>The second method ("BGP-imposed-and-leveled")</strong> asks: "Conditional on a BGP existing, what level of $\tilde{k}$ is consistent with it?" It assumes BGP existence from the start and reads off the level via the accounting identity sY = gross investment. It does <em>not</em> tell you whether the BGP is the unique attractor of the dynamic system, nor whether an economy starting at arbitrary $\tilde{k}_0$ will converge to it. For policy applications where you care about transition paths — will the savings-rate hike actually deliver the predicted higher $\tilde{k}^*$, and how long will it take to get most of the way there? — only the first method is sufficient.</p>
+<p>Why both still matter pedagogically: the second derivation makes it transparent <em>why</em> the BGP has the form it does — savings have to fund the investment that maintains the capital-output ratio. The first derivation reveals the same form by mechanical fixed-point search but is less informative about the underlying economic accounting. The combination delivers more than either alone: existence and stability from one, structural intuition from the other.</p>
+<p><strong>Worked illustration of the transition.</strong> Suppose we calibrate $s = 0.22$, $\alpha = 1/3$, $n = 0.01$, $g = 0.02$, $\delta = 0.05$. Steady-state drag: $n+g+\delta+ng = 0.0802$. So $\tilde{k}^* = (0.22/0.0802)^{1/(2/3)} = 2.743^{1.5} \approx 4.54$, and $\tilde{y}^* = 4.54^{1/3} \approx 1.66$. Starting from $\tilde{k}_0 = 1$, the transition equation simulates $\tilde{k}_1 = (0.22 \cdot 1^{1/3} + 0.95 \cdot 1)/[(1.01)(1.02)] = (0.22 + 0.95)/1.0302 \approx 1.135$. After ten periods you are about a quarter of the way to $\tilde{k}^*$; after fifty periods, about $90\%$ of the way (consistent with convergence speed $\lambda \approx 5\%$ — see Ex 3). On the level scale, $k_t = A_t \tilde{k}_t$ continues to grow at $g$ along the BGP even when $\tilde{k}$ has stopped moving, which is what stylized fact #5 demanded. This is the cleanest illustration of why the effective-labour-unit trick is the right one: in physical units, capital grows forever, and there is no fixed point to compute; in effective-labour units, capital settles to a constant, and the entire growth-in-levels story emerges mechanically from the $A_t$-trend that multiplies through. Without the change of variable, the basic Solow toolkit (fixed-point analysis, linearization around steady state, comparative statics on $k^*$) would be inapplicable to a model with persistent growth.</p>
+</div></div>
+<div class="exercise" id="ex-3"><div class="exercise-header"><span class="exercise-number">Exercise 3</span><span class="exercise-title">Convergence speed: linearize, bridge, then break it</span></div><div class="exercise-scope"><strong>Scope:</strong> Module 1 Lecture 1c p17, p20 (basic-Solow transition, modified Solow equation); Module 2 Lecture 2b p23-26 (convergence regression, empirical overestimate).</div><div class="sub-move" data-hints-total="0" data-hints-shown="0"><div class="sub-move-label">Anchor</div><div class="sub-move-prompt"><p>Define the <em>convergence speed</em> $\lambda$ formally as the per-period rate at which the log-deviation $\ln \tilde{k}_t - \ln \tilde{k}^*$ contracts toward zero. In <em>one sentence</em>, state the economic mechanism inside the Solow model that <em>causes</em> this contraction — i.e., why the economy converges at all.</p></div></div><div class="sub-move" data-hints-total="3" data-hints-shown="0"><div class="sub-move-label">Main proof</div><div class="sub-move-prompt"><p>Linearize the basic-Solow growth-rate equation
+$$g_{k,t} \equiv \frac{k_{t+1} - k_t}{k_t} = \frac{1}{1+n}\left[sBk_t^{\alpha-1} - (n+\delta)\right]$$
+around the steady state $k^*$, and derive
+$$\lambda_\text{basic} = (1-\alpha)(n+\delta)$$
+to first order in $\hat{k}_t \equiv \ln k_t - \ln k^*$ (using $1/(1+n) \approx 1$). Show every step: the Taylor expansion, the simplification using the steady-state condition $sB(k^*)^{\alpha-1} = n+\delta$, and the identification of $\lambda$ as the absolute coefficient on $\hat{k}_t$.</p></div><div class="hints-area"><div class="hint" data-idx="1"><strong>Hint 1.</strong> Use $k_t = k^* e^{\hat{k}_t}$ so $k_t^{\alpha-1} = (k^*)^{\alpha-1} e^{(\alpha-1)\hat{k}_t}$. For small $\hat{k}_t$, $e^{(\alpha-1)\hat{k}_t} \approx 1 + (\alpha-1)\hat{k}_t$.</div><div class="hint" data-idx="2"><strong>Hint 2.</strong> Substitute: $sBk_t^{\alpha-1} \approx sB(k^*)^{\alpha-1}\left[1 + (\alpha-1)\hat{k}_t\right] = (n+\delta)\left[1 + (\alpha-1)\hat{k}_t\right]$ (using the steady-state condition).</div><div class="hint" data-idx="3"><strong>Hint 3.</strong> Now $g_{k,t} \approx \frac{1}{1+n}\left[(n+\delta)(1 + (\alpha-1)\hat{k}_t) - (n+\delta)\right] = \frac{1}{1+n}(n+\delta)(\alpha-1)\hat{k}_t$. The constant cancels. To first order, $g_{k,t} \approx -(1-\alpha)(n+\delta)\hat{k}_t$. The coefficient is $-\lambda$.</div><button type="button" class="hint-btn" onclick="nextHint(this)">Hint 1 / 3</button></div></div><div class="sub-move" data-hints-total="2" data-hints-shown="0"><div class="sub-move-label">Cross-module bridge</div><div class="sub-move-prompt"><p>Now redo the linearization for the <em>general</em> Solow model (Lecture 2b): use the Solow equation
+$$\tilde{k}_{t+1} - \tilde{k}_t = \frac{1}{(1+n)(1+g)}\left[s\tilde{k}_t^\alpha - (n+g+\delta+ng)\tilde{k}_t\right]$$
+to derive $\lambda_\text{general}$. State the exact expression and explain, in one sentence, why $g$ enters in the same way that $n$ did.</p></div><div class="hints-area"><div class="hint" data-idx="1"><strong>Hint 1.</strong> Same procedure as the Main proof. Divide the Solow equation by $\tilde{k}_t$ to get the growth rate, then expand around $\tilde{k}^*$ using the steady-state condition $s(\tilde{k}^*)^{\alpha-1} = n+g+\delta+ng$.</div><div class="hint" data-idx="2"><strong>Hint 2.</strong> You'll find $\lambda_\text{general} = (1-\alpha)(n+g+\delta+ng) \approx (1-\alpha)(n+g+\delta)$. Each new effective worker — whether literal (population growth $n$) or productivity-multiplier (technology growth $g$) — dilutes $\tilde{k}$ exactly the same way, because $\tilde{k}$ is normalised by $A_tL_t$.</div><button type="button" class="hint-btn" onclick="nextHint(this)">Hint 1 / 2</button></div></div><div class="sub-move" data-hints-total="1" data-hints-shown="0"><div class="sub-move-label">Falsification probe</div><div class="sub-move-prompt"><p>Plug standard calibration values $\alpha = 1/3$, $n = 0.01$, $g = 0.02$, $\delta = 0.05$ into your general-Solow $\lambda$. Compute the predicted convergence speed in percent per year.</p>
+<p>Then: Cozzi reports (Lecture 2b p26) that the model "substantially overestimates" the rate of convergence — empirically, cross-country growth regressions deliver convergence rates of roughly $1$–$2\%$ per year. The model is broken in this dimension.</p>
+<p>Now <strong>construct the smallest single-parameter modification</strong> that reconciles theory with the observed $\lambda \approx 2\%$. Explicitly: solve $(1-\alpha)(n+g+\delta) = 0.02$ for the $\alpha$ this implies, holding the other parameters at their calibrated values. State the recovered $\alpha$ and explain — in 2-3 sentences — what this implies about the empirical interpretation of "$K$" in the Solow model, and why your recovered $\alpha$ exactly foreshadows the MRW human-capital extension in Module 3.</p></div><div class="hints-area"><div class="hint" data-idx="1"><strong>Hint 1.</strong> $(1-\alpha) \cdot 0.08 = 0.02 \Rightarrow 1-\alpha = 0.25 \Rightarrow \alpha = 0.75$. But the labour share in national accounts is roughly $2/3$, so the income-share interpretation of $\alpha$ pins it at $\approx 1/3$. The two interpretations disagree by a factor of two. This is exactly the puzzle MRW (1992) resolve by reinterpreting $K$ to include human capital — then 'broad $\alpha$' rises naturally without violating the physical-capital share evidence.</div><button type="button" class="hint-btn" onclick="nextHint(this)">Hint 1 / 1</button></div></div><div class="solution-toggle-row"><button type="button" class="solution-btn" onclick="toggleSolution(this)">Show solution</button><span class="solution-hint-text">Solve on paper first.</span></div><div class="solution">
+<h3>Anchor</h3>
+<p>Convergence speed: $\lambda$ is defined so that, to first order, the log-deviation from steady state decays geometrically — in discrete time, $\hat{\tilde{k}}_{t+1} \approx (1 - \lambda)\hat{\tilde{k}}_t$ where $\hat{\tilde{k}}_t \equiv \ln \tilde{k}_t - \ln \tilde{k}^*$. Equivalently $\hat{\tilde{k}}_t \approx (1-\lambda)^t \hat{\tilde{k}}_0$, or in continuous-time approximation $\hat{\tilde{k}}(t) \approx e^{-\lambda t}\hat{\tilde{k}}(0)$. The "half-life" $t_{1/2} = \ln 2 / \lambda$ — for $\lambda = 0.05$, about 14 years; for $\lambda = 0.02$, about 35 years.</p>
+<p>Economic mechanism: diminishing marginal product of capital. When $\tilde{k}_t < \tilde{k}^*$, MPK is above the rate needed to fund replacement investment $(n+g+\delta+ng)$, so the savings flow $s\tilde{k}_t^\alpha$ outruns the depreciation-plus-dilution drag $(n+g+\delta+ng)\tilde{k}_t$ and $\tilde{k}$ rises. As $\tilde{k}$ rises, $\alpha\tilde{k}^{\alpha-1}$ (the MPK) falls, the wedge between savings and drag shrinks, and the rate of catch-up slows. The gap closes asymptotically rather than in finite time, and the speed of closure is exactly $\lambda$.</p>
+
+<h3>Main proof</h3>
+<div class="step"><span class="step-label">Step 1.</span> Start from the modified Solow equation (Lecture 1c p20): $g_{k,t} \equiv (k_{t+1}-k_t)/k_t = \frac{1}{1+n}\left[sBk_t^{\alpha-1} - (n+\delta)\right]$. This is just the Solow equation divided by $k_t$.</div>
+<div class="step"><span class="step-label">Step 2.</span> Linearize $sBk_t^{\alpha-1}$ around $k_t = k^*$ in log-deviation form. Write $k_t = k^* e^{\hat{k}_t}$ where $\hat{k}_t \equiv \ln k_t - \ln k^*$. Then $k_t^{\alpha-1} = (k^*)^{\alpha-1} e^{(\alpha-1)\hat{k}_t}$.</div>
+<div class="step"><span class="step-label">Step 3.</span> First-order Taylor expansion of $e^{(\alpha-1)\hat{k}_t}$ around $\hat{k}_t = 0$: $e^{(\alpha-1)\hat{k}_t} = 1 + (\alpha-1)\hat{k}_t + O(\hat{k}_t^2)$.</div>
+<div class="step"><span class="step-label">Step 4.</span> Substitute: $sBk_t^{\alpha-1} \approx sB(k^*)^{\alpha-1}\left[1 + (\alpha-1)\hat{k}_t\right]$.</div>
+<div class="step"><span class="step-label">Step 5.</span> Apply the steady-state condition. Setting $g_{k,t} = 0$ in Step 1 with $k_t = k^*$ gives $sB(k^*)^{\alpha-1} = n+\delta$. (This is just the standard relation $sBk^{*\alpha} = (n+\delta)k^*$ divided through by $k^*$.) Substitute this into the expansion of Step 4:</div>
+<div class="step"><span class="step-label">Step 6.</span> $sBk_t^{\alpha-1} \approx (n+\delta)\left[1 + (\alpha-1)\hat{k}_t\right]$.</div>
+<div class="step"><span class="step-label">Step 7.</span> Plug back into the growth rate from Step 1: $g_{k,t} \approx \frac{1}{1+n}\left[(n+\delta)(1 + (\alpha-1)\hat{k}_t) - (n+\delta)\right]$.</div>
+<div class="step"><span class="step-label">Step 8.</span> The constant terms inside the bracket cancel: $g_{k,t} \approx \frac{1}{1+n}(n+\delta)(\alpha-1)\hat{k}_t$.</div>
+<div class="step"><span class="step-label">Step 9.</span> Since $\alpha-1 = -(1-\alpha)$, and to first order $1/(1+n) \approx 1$ for small $n$, $g_{k,t} \approx -(1-\alpha)(n+\delta)\hat{k}_t$.</div>
+<div class="step"><span class="step-label">Step 10.</span> Identify the convergence speed. By definition the linearized law of motion is $g_{k,t} \approx -\lambda \hat{k}_t$, so the coefficient on $\hat{k}_t$ is $-\lambda$:</div>
+<div class="key-result">$\lambda_\text{basic} = (1-\alpha)(n+\delta).$</div>
+<p>Sign check: $\alpha < 1$ and $n+\delta > 0$ imply $\lambda > 0$, so $\hat{k}_t$ shrinks each period — convergence, as expected. For $\alpha = 1/3$, $n=0.01$, $\delta=0.05$: $\lambda_\text{basic} = (2/3)(0.06) = 0.04$, i.e., $4\%$ per year. Half-life $\approx 17$ years.</p>
+
+<h3>Cross-module bridge</h3>
+<p>Same procedure, applied to the general Solow equation in effective-labour units:</p>
+<div class="step"><span class="step-label">Step 1.</span> Divide the Solow equation $\tilde{k}_{t+1} - \tilde{k}_t = \frac{1}{(1+n)(1+g)}[s\tilde{k}_t^\alpha - (n+g+\delta+ng)\tilde{k}_t]$ by $\tilde{k}_t$: $g_{\tilde{k},t} = \frac{1}{(1+n)(1+g)}\left[s\tilde{k}_t^{\alpha-1} - (n+g+\delta+ng)\right]$.</div>
+<div class="step"><span class="step-label">Step 2.</span> Steady-state condition: $s(\tilde{k}^*)^{\alpha-1} = n+g+\delta+ng$ (from $0 = s\tilde{k}^{*\alpha} - (n+g+\delta+ng)\tilde{k}^*$ divided by $\tilde{k}^*$).</div>
+<div class="step"><span class="step-label">Step 3.</span> Write $\tilde{k}_t = \tilde{k}^* e^{\hat{\tilde{k}}_t}$ and expand $\tilde{k}_t^{\alpha-1}$ to first order: $\tilde{k}_t^{\alpha-1} \approx (\tilde{k}^*)^{\alpha-1}\left[1 + (\alpha-1)\hat{\tilde{k}}_t\right]$.</div>
+<div class="step"><span class="step-label">Step 4.</span> Substitute the steady-state condition: $s\tilde{k}_t^{\alpha-1} \approx (n+g+\delta+ng)\left[1 + (\alpha-1)\hat{\tilde{k}}_t\right]$.</div>
+<div class="step"><span class="step-label">Step 5.</span> Plug back into the growth-rate expression of Step 1, cancel the constants: $g_{\tilde{k},t} \approx \frac{1}{(1+n)(1+g)}(n+g+\delta+ng)(\alpha-1)\hat{\tilde{k}}_t$.</div>
+<div class="step"><span class="step-label">Step 6.</span> Use $\alpha-1 = -(1-\alpha)$ and the approximation $1/[(1+n)(1+g)] \approx 1$ for small $n, g$: $g_{\tilde{k},t} \approx -(1-\alpha)(n+g+\delta+ng)\hat{\tilde{k}}_t$.</div>
+<div class="key-result">$\lambda_\text{general} = (1-\alpha)(n+g+\delta+ng) \approx (1-\alpha)(n+g+\delta).$</div>
+<p>Why $g$ enters like $n$: $\tilde{k}_t = K_t/(A_tL_t)$ is normalised by the total <em>effective</em> labour force, which grows at $(1+n)(1+g)$. From $\tilde{k}$'s point of view, an extra unit of $A$ dilutes capital per effective worker exactly the same way an extra unit of $L$ does — both are "more workers to spread the capital across" in efficiency units, both impose the same drag. So $g$ adds to the dilution drag identically to $n$.</p>
+
+<h3>Falsification probe</h3>
+<p><strong>Predicted $\lambda$:</strong></p>
+<div class="step"><span class="step-label">Step 1.</span> Plug calibration into the general-Solow formula: $\lambda_\text{general} \approx (1-\alpha)(n+g+\delta) = (1 - 1/3)(0.01 + 0.02 + 0.05) = (2/3)(0.08) \approx 0.0533$, i.e., approximately $5.3\%$ per year. Implied half-life: $\ln 2/0.053 \approx 13$ years.</div>
+<p><strong>Empirical $\lambda$:</strong> roughly $1$–$2\%$ per year depending on the sample. MRW (1992) found $\approx 2\%$ for 98 countries. Cozzi reports the OLS cross-country regression coefficient (Lecture 2b p24) implies a comparable convergence rate, and his summary (p26) is that "the model substantially overestimates the rate of convergence." So the model predicts convergence roughly 2.5–5 times faster than data.</p>
+<p>If the data say $\lambda \approx 0.02$, what value of $\alpha$ does the Solow formula require, holding $n, g, \delta$ at their calibrated values?</p>
+<div class="step"><span class="step-label">Step 2.</span> Solve $(1-\alpha)(n+g+\delta) = 0.02$ for $\alpha$: $(1-\alpha)(0.08) = 0.02 \Rightarrow 1-\alpha = 0.25 \Rightarrow \alpha = 0.75$.</div>
+<div class="key-result">Recovered $\alpha = 0.75$ — more than twice the labour-share-based estimate of $\alpha \approx 1/3$.</div>
+<p><strong>Why this is a contradiction.</strong> The Solow model identifies $\alpha$ in two completely independent ways:</p>
+<ul>
+  <li><em>Income-share identification</em>: under perfect competition with Cobb-Douglas, $\alpha$ equals the share of national income paid to capital ($rK/Y$). Cross-country and time-series national accounts pin this at $\alpha \approx 1/3$ pretty robustly (Lecture 1a/c — capital share is consistently around $30$-$35\%$ in OECD data).</li>
+  <li><em>Convergence-speed identification</em>: $\alpha$ also controls how fast economies catch up, via $\lambda = (1-\alpha)(n+g+\delta)$. Cross-country growth regressions pin this at $\alpha \approx 0.75$.</li>
+</ul>
+<p>One $\alpha$ cannot be two numbers at once. So the basic / general Solow model is internally inconsistent with the joint empirical evidence on factor shares and convergence speeds. The discrepancy is too large to write off as measurement error.</p>
+<p><strong>The way out, foreshadowing Module 3.</strong> Reinterpret $K$ as a <em>broad</em> capital stock that includes human capital — schooling, on-the-job training, accumulated experience. Under this reinterpretation, the broad-capital elasticity in the production function is naturally much larger than the physical-capital income share, because human-capital returns are partly bundled inside the labour-share residual (wages already paid to skilled workers reflect their accumulated human capital). This is exactly the MRW (1992) move you'll see in Module 3: $Y = K^\alpha H^\phi (AL)^{1-\alpha-\phi}$, where the effective broad-capital elasticity is $\alpha + \phi \approx 0.7-0.8$. With that one structural change, the same Solow framework reconciles the convergence-rate puzzle <em>and</em> the cross-country GDP-per-worker variance puzzle (the OLS slope of $\ln y$ on $\ln(s/(n+g+\delta))$ that Lecture 2b p25 reports — and which the basic general Solow under-explains) <em>simultaneously</em>, without violating the income-share evidence on physical capital. The recovered $\alpha \approx 0.75$ from this exercise is precisely the broad-capital elasticity that MRW infers from their cross-country regression — the falsification probe here and the motivation for Module 3 are the same calculation.</p>
+<p>One more sanity check on the calibration: for the basic Solow ($g=0$), $\lambda_\text{basic} = (2/3)(0.06) = 0.04$, so the half-life is $\ln 2/0.04 \approx 17.3$ years. For the general Solow with $g=0.02$, half-life $\ln 2/0.053 \approx 13.1$ years. So adding technological progress to the basic Solow makes convergence <em>faster</em> (because the effective-labour dilution drag is larger), not slower — a useful counterintuitive fact when explaining the model verbally. Yet the data say convergence is slower than even the basic Solow predicts, so neither version of the model accounts for the empirical 35-year half-life that growth regressions imply. The fix has to come from inside the production function, not from the growth-rate environment. This locates the entire Module-3 research programme: don't change $n$, $g$, $\delta$ — change what's inside $K$ itself.</p>
+</div></div>
+<div class="exercise" id="ex-4"><div class="exercise-header"><span class="exercise-number">Exercise 4</span><span class="exercise-title">Opening always raises income — but Feldstein-Horioka says no one is open</span></div><div class="exercise-scope"><strong>Scope:</strong> Module 2 Lecture 2a p6 (Feldstein-Horioka regression, OECD subperiod estimates), p25-28 (opening theorem proof, wage caveat).</div><div class="sub-move" data-hints-total="3" data-hints-shown="0"><div class="sub-move-label">Main proof</div><div class="sub-move-prompt"><p>Prove $y^{n*} \geq y_c^*$ in the open economy of Lecture 2a (with $\delta = 0$). Use the explicit expressions (both from Lecture 2a p25):
+$$y^{n*} = (1-\alpha)B^{1/(1-\alpha)}\left(\frac{\alpha}{\bar{r}}\right)^{\!\!\frac{\alpha}{1-\alpha}} \cdot \frac{1}{1-s\bar{r}/n}, \qquad y_c^* = B^{1/(1-\alpha)}\left(\frac{s}{n}\right)^{\!\!\frac{\alpha}{1-\alpha}}.$$
+Form the ratio $x = y^{n*}/y_c^*$. Reparameterize in $\tilde{r} \equiv \bar{r}/r_c^*$ where $r_c^* = \alpha n/s$ is the closed-economy autarky rate. Show that $x(\tilde{r})$ has a unique minimum at $\tilde{r} = 1$, where $x = 1$. Hence $x \geq 1$ for all $\tilde{r}$: opening always (weakly) raises long-run national income.</p></div><div class="hints-area"><div class="hint" data-idx="1"><strong>Hint 1.</strong> Substitute $r_c^* = \alpha n/s$ to eliminate $s$ in favour of $r_c^*$ throughout: $s/n = \alpha/r_c^*$, hence $1 - s\bar{r}/n = 1 - \alpha \bar{r}/r_c^* = 1 - \alpha\tilde{r}$. Note: stability ($s\bar{r} < n$, Lecture 2a p19) is exactly $\alpha\tilde{r} < 1$.</div><div class="hint" data-idx="2"><strong>Hint 2.</strong> After simplification, $x(\tilde{r}) = (1-\alpha)\,\tilde{r}^{-\alpha/(1-\alpha)}\,(1 - \alpha\tilde{r})^{-1}$. Take logs and differentiate.</div><div class="hint" data-idx="3"><strong>Hint 3.</strong> $\dfrac{d\ln x}{d\tilde{r}} = -\dfrac{\alpha}{1-\alpha}\cdot\dfrac{1}{\tilde{r}} + \dfrac{\alpha}{1-\alpha\tilde{r}}$. Setting this to zero and solving: $\tilde{r}=1$. Second-order condition confirms minimum. Plug $\tilde{r}=1$ back into $x$ to verify $x(1) = (1-\alpha)\cdot 1 \cdot (1-\alpha)^{-1} = 1$.</div><button type="button" class="hint-btn" onclick="nextHint(this)">Hint 1 / 3</button></div></div><div class="sub-move" data-hints-total="1" data-hints-shown="0"><div class="sub-move-label">Numeric inversion</div><div class="sub-move-prompt"><p>Feldstein and Horioka (1980) regress
+$$\left(\frac{I_t}{Y_t}\right)^{\!i} = \alpha_0 + \alpha_1 \left(\frac{S_t}{Y_t}\right)^{\!i}$$
+across countries. The open-economy Solow model with perfect capital mobility predicts $\alpha_1 \to 0$ (national savings and national investment are decoupled — see Ex 1's wealth decomposition). Under closed-economy autarky, $\alpha_1 = 1$ identically (CA $= S - I = 0$ for every country every period). Cozzi reports (Lecture 2a p6-8): $\alpha_1 \approx 0.89$ for 1960–1974 and $\alpha_1 \approx 0.60$ for 1990–2004 across 16 OECD countries.</p>
+<p>Treat each subperiod's $\alpha_1$ as a convex combination $\alpha_1 = (1-\mu) \cdot 0 + \mu \cdot 1 = \mu$ where $\mu \in [0,1]$ is interpreted as an "effective degree of autarky" — the share of investment that has to be funded from <em>domestic</em> savings rather than imported capital. Report $\mu$ for both subperiods, and then — in <em>one sentence</em> — flag what the linear-mixture interpretation implicitly assumes about the cross-country distribution of capital frictions that may not be defensible.</p></div><div class="hints-area"><div class="hint" data-idx="1"><strong>Hint 1.</strong> Algebraically $\mu_{1960-74} = 0.89$, $\mu_{1990-2004} = 0.60$. The interesting move isn't arithmetic — it's that this mixture assumes country-level frictions are the same magnitude everywhere within a subperiod, when in reality countries with reserve currencies, capital controls, or strong sovereign-risk premia face very different effective frictions. A high cross-country regression slope mixes 'medium friction everywhere' and 'low friction in some, very high in others' indistinguishably.</div><button type="button" class="hint-btn" onclick="nextHint(this)">Hint 1 / 1</button></div></div><div class="sub-move" data-hints-total="0" data-hints-shown="0"><div class="sub-move-label">Counterfactual</div><div class="sub-move-prompt"><p>Opening always raises national income, but it sometimes lowers the real wage. From Lecture 2a p27-28, the wage ratio is
+$$\frac{w^*}{w_c^*} = \left(\frac{r_c^*}{\bar{r}}\right)^{\!\!\frac{\alpha}{1-\alpha}}.$$
+State the condition on $s/n$ (domestic) vs $\bar{s}/\bar{n}$ (rest of world) under which opening <em>lowers</em> real wages. Then explain in 2-3 sentences which type of country is hurt by opening, which factor of production wins politically, and what this implies about the political economy of capital-account liberalization.</p></div></div><div class="solution-toggle-row"><button type="button" class="solution-btn" onclick="toggleSolution(this)">Show solution</button><span class="solution-hint-text">Solve on paper first.</span></div><div class="solution">
+<h3>Main proof</h3>
+<div class="step"><span class="step-label">Step 1.</span> Form the ratio: $$x = \frac{y^{n*}}{y_c^*} = \frac{(1-\alpha)B^{1/(1-\alpha)}\left(\frac{\alpha}{\bar{r}}\right)^{\alpha/(1-\alpha)} \cdot (1-s\bar{r}/n)^{-1}}{B^{1/(1-\alpha)}(s/n)^{\alpha/(1-\alpha)}}.$$ The $B^{1/(1-\alpha)}$ factors cancel between numerator and denominator.</div>
+<div class="step"><span class="step-label">Step 2.</span> Combine the two $\alpha/(1-\alpha)$-power factors: $\dfrac{(\alpha/\bar{r})^{\alpha/(1-\alpha)}}{(s/n)^{\alpha/(1-\alpha)}} = \left(\dfrac{\alpha/\bar{r}}{s/n}\right)^{\alpha/(1-\alpha)} = \left(\dfrac{\alpha n}{s\bar{r}}\right)^{\alpha/(1-\alpha)}$.</div>
+<div class="step"><span class="step-label">Step 3.</span> So $x = (1-\alpha)\left(\dfrac{\alpha n}{s\bar{r}}\right)^{\!\alpha/(1-\alpha)} \dfrac{1}{1-s\bar{r}/n}$.</div>
+<div class="step"><span class="step-label">Step 4.</span> Substitute $r_c^* = \alpha n/s$ (the closed-economy autarky rate, valid because in the closed economy $r^* = \alpha B(k^*)^{\alpha-1} = \alpha \cdot (n+\delta)/s$, which with $\delta = 0$ gives $\alpha n/s$). Then $\alpha n/s = r_c^*$ and $s/n = \alpha/r_c^*$, so $s\bar{r}/n = \alpha \bar{r}/r_c^* = \alpha\tilde{r}$ where $\tilde{r} = \bar{r}/r_c^*$.</div>
+<div class="step"><span class="step-label">Step 5.</span> Substitute back into Step 3: $\dfrac{\alpha n}{s\bar{r}} = \dfrac{r_c^*}{\bar{r}} = \dfrac{1}{\tilde{r}}$. So $$x(\tilde{r}) = (1-\alpha)\,\tilde{r}^{-\alpha/(1-\alpha)}\,\dfrac{1}{1-\alpha\tilde{r}}.$$ This is the formula given on Lecture 2a p26.</div>
+<p>Now show $x(\tilde{r}) \geq 1$ with equality only at $\tilde{r} = 1$. Take logs and differentiate:</p>
+<div class="step"><span class="step-label">Step 6.</span> $\ln x(\tilde{r}) = \ln(1-\alpha) - \dfrac{\alpha}{1-\alpha}\ln\tilde{r} - \ln(1-\alpha\tilde{r})$.</div>
+<div class="step"><span class="step-label">Step 7.</span> Differentiate w.r.t. $\tilde{r}$: $\dfrac{d \ln x}{d\tilde{r}} = -\dfrac{\alpha}{1-\alpha}\cdot\dfrac{1}{\tilde{r}} + \dfrac{\alpha}{1-\alpha\tilde{r}}$. (Note: $-\ln(1-\alpha\tilde{r})$ differentiates to $-\dfrac{-\alpha}{1-\alpha\tilde{r}} = \dfrac{\alpha}{1-\alpha\tilde{r}}$.)</div>
+<div class="step"><span class="step-label">Step 8.</span> Set to zero: $\dfrac{\alpha}{1-\alpha\tilde{r}} = \dfrac{\alpha}{(1-\alpha)\tilde{r}}$. Cancel the $\alpha$ on both sides (it's nonzero), then cross-multiply: $(1-\alpha)\tilde{r} = 1 - \alpha\tilde{r}$, hence $\tilde{r} - \alpha\tilde{r} = 1 - \alpha\tilde{r}$, hence $\tilde{r} = 1$.</div>
+<div class="step"><span class="step-label">Step 9.</span> Verify this is a minimum (not a maximum). Differentiate Step 7 again: $\dfrac{d^2 \ln x}{d\tilde{r}^2} = \dfrac{\alpha}{1-\alpha}\cdot\dfrac{1}{\tilde{r}^2} + \dfrac{\alpha^2}{(1-\alpha\tilde{r})^2}$. Both terms are strictly positive for any admissible $\tilde{r}$, so $\ln x$ is strictly convex everywhere — and the critical point at $\tilde{r}=1$ is the unique minimum.</div>
+<div class="step"><span class="step-label">Step 10.</span> Evaluate at $\tilde{r}=1$: $x(1) = (1-\alpha) \cdot 1^{-\alpha/(1-\alpha)} \cdot \dfrac{1}{1-\alpha\cdot 1} = (1-\alpha)\cdot\dfrac{1}{1-\alpha} = 1$.</div>
+<div class="key-result">$x(\tilde{r}) \geq 1$ for all admissible $\tilde{r}$, with equality if and only if $\tilde{r} = 1$ — i.e., the world rate happens to equal the closed-economy autarky rate. Opening therefore <em>always</em> weakly raises long-run national income per capita.</div>
+<p>Economic intuition: $\tilde{r} > 1$ (world rate above autarky) means the domestic economy was over-accumulating capital — it gains by exporting capital to where the marginal product is higher. $\tilde{r} < 1$ (world rate below autarky) means it was under-accumulating — it gains by borrowing from abroad and investing in domestic capital where MPK is higher than $\bar{r}$. Either way, arbitrage is a positive-sum reallocation. The minimum at $\tilde{r}=1$ is the degenerate case where the domestic autarky rate already equals the world rate — there is no arbitrage to exploit, and opening yields zero gain (but cannot lose).</p>
+<p>This is a robust theorem and a strong policy claim: regardless of whether your country saves a lot or a little, opening the capital account is good for long-run national income. This is the headline result of Chapter 4 and one of the cleanest arguments-for-globalization in growth theory.</p>
+
+<h3>Numeric inversion</h3>
+<div class="step"><span class="step-label">Step 1.</span> By the convex-combination map $\alpha_1 = (1-\mu)\cdot 0 + \mu\cdot 1$, $\mu = \alpha_1$. For 1960-1974: $\mu_1 = 0.89$. For 1990-2004: $\mu_2 = 0.60$.</div>
+<div class="key-result">Effective autarky degree fell from $89\%$ (1960-74) to $60\%$ (1990-2004) — a decline of 29 percentage points across the 16-OECD sample, consistent with the conventional narrative that capital-account liberalization accelerated through the 1980s and 1990s following dollar non-convertibility (1971), the second oil shock, and the dismantling of capital controls across Europe ahead of Maastricht.</div>
+<p><strong>One-sentence caveat on the linear-mixture interpretation:</strong> The convex-combination reading treats $\mu$ as a uniform "autarky weight" applied identically to every country in the sample, when in reality OECD countries face wildly heterogeneous frictions — reserve-currency status (the dollar gives the US near-frictionless borrowing), residual capital controls (France and Italy maintained them well into the 1980s), sovereign-risk premia (Greece, Portugal, Spain), and home bias in pension portfolios (Japan); the regression slope $\alpha_1$ is therefore a weighted average over a heterogeneous distribution of frictions, and a slope of $0.60$ is consistent both with "all countries face moderate friction" and with "some are nearly frictionless while others are nearly autarkic," which have very different policy implications.</p>
+<p>A deeper concern that goes beyond one-sentence: the Feldstein-Horioka regression is silent on the <em>direction</em> of the friction. If $\alpha_1 = 0.85$ because savings are stuck inside borders, the policy fix is to liberalize capital outflows. If $\alpha_1 = 0.85$ because investment opportunities are correlated with the savings supply (countries with high saving propensities also have high investment opportunities — productivity, demography, institutions), then $\alpha_1$ is a spurious correlation and the "openness" interpretation is misleading. The original FH paper sparked a 40-year debate precisely because the regression cannot distinguish these stories.</p>
+
+<h3>Counterfactual</h3>
+<p>From $w^*/w_c^* = (r_c^*/\bar{r})^{\alpha/(1-\alpha)}$, this ratio is below one iff $\bar{r} > r_c^*$, i.e., iff $\tilde{r} > 1$. Using $r_c^* = \alpha n/s$ for the domestic country and the analogous world relation $\bar{r} = \alpha \bar{n}/\bar{s}$ (the world is itself a closed system, since aggregate $F_t = 0$ across all countries — Lecture 2a p19), the inequality $\bar{r} > r_c^*$ becomes $\alpha\bar{n}/\bar{s} > \alpha n/s$, i.e., $\bar{n}/\bar{s} > n/s$, i.e.:</p>
+<div class="key-result">Opening lowers domestic real wages iff $\dfrac{s}{n} > \dfrac{\bar{s}}{\bar{n}}$ — the domestic economy has a higher savings rate per unit of population growth than the world average. Cozzi calls this a "relatively strong propensity to save" (Lecture 2a p23).</div>
+<p>Intuition: a strong-saver country had over-accumulated capital relative to the world average under autarky, driving its closed-economy MPK $r_c^*$ <em>below</em> the world rate $\bar{r}$. Opening lets that excess capital flow out to chase higher returns abroad. Lower domestic $k$ raises domestic MPK back toward $\bar{r}$ (good for capital owners) but, by Cobb-Douglas, also lowers $w = (1-\alpha)Bk^\alpha$. The wage falls in absolute terms.</p>
+<p><strong>Political economy.</strong> In strong-saver economies, opening creates a clean Stolper-Samuelson-style distributional conflict: capital owners gain (their portfolio earns the higher $\bar{r}$), workers lose (real wages fall). The bourgeois-internationalist alliance "capital is mobile, labour is not" follows directly from the algebra. In weak-saver countries, the conflict flips: opening pulls in foreign capital, raises domestic $k$, raises wages, but lowers the rate of return capital owners earn at home — capital owners would prefer autarky, workers would prefer opening.</p>
+<p>The political coalition supporting capital-account liberalization is therefore predictable from current-account position. In surplus countries that are net capital exporters (Germany, Japan, China, the Gulf, Switzerland) — strong savers in the model's sense — the elite-financier alliance pushes opening. In deficit countries that have been net importers (US over most of its postwar history, much of Latin America historically, Southern Europe in the 2000s) — weak savers — labour interests align with opening; the political resistance often comes from rentier or domestic-industrial coalitions worried about return-erosion or import competition. This is a regularity that the Solow model picks up via a single inequality on $s/n$ vs $\bar{s}/\bar{n}$ — one of the rare cases in growth theory where the math directly anticipates an observed political pattern.</p>
+<p>One numerical illustration: Switzerland's gross savings rate is around $30\%$ and population growth near $0.7\%$, so $s/n \approx 43$. The OECD average is roughly $s/n \approx 20$. The model predicts Swiss real wages fall on opening — and historically Switzerland's wage premium relative to its high productivity has indeed compressed as the Swiss franc became a global vehicle currency and Swiss capital flooded out. The wage caveat is, in this small-economy sense, observable.</p>
+</div></div>
+<div class="exercise" id="ex-5"><div class="exercise-header"><span class="exercise-number">Exercise 5</span><span class="exercise-title">Golden Rule across regimes: closed, with technology, and in the open economy</span></div><div class="exercise-scope"><strong>Scope:</strong> Module 1 Lecture 1c p15 (basic Golden Rule, $s^{**} = \alpha$); Module 2 Lecture 2b p15 (Golden Rule under technological progress); Module 2 Lecture 2a p20-22 (open-economy structural policy).</div><div class="sub-move" data-hints-total="0" data-hints-shown="0"><div class="sub-move-label">Anchor</div><div class="sub-move-prompt"><p>State the Golden Rule savings rate for the basic Solow model: $s^{**} = \alpha$ (Lecture 1c p15). In one sentence, state what $s^{**}$ maximizes — and emphasise that it does NOT maximize the level of $y^*$ (it maximizes something quite different).</p></div></div><div class="sub-move" data-hints-total="3" data-hints-shown="0"><div class="sub-move-label">Main proof</div><div class="sub-move-prompt"><p>Derive $s^{**} = \alpha$ for the <em>general</em> Solow model with technological progress (Lecture 2b p15). Per effective worker, consumption in steady state is
+$$\tilde{c}^* = (1-s)\,\tilde{y}^* = (1-s)\left(\frac{s}{n+g+\delta+ng}\right)^{\!\!\frac{\alpha}{1-\alpha}}.$$
+Take $\partial \tilde{c}^*/\partial s = 0$ via logarithmic differentiation and solve for $s^{**}$. Show every step.</p>
+<p>State explicitly: the answer is the same $s^{**} = \alpha$ as in the basic model. Why doesn't the presence of $g$ shift the Golden Rule?</p></div><div class="hints-area"><div class="hint" data-idx="1"><strong>Hint 1.</strong> Take logs: $\ln \tilde{c}^* = \ln(1-s) + \dfrac{\alpha}{1-\alpha}\ln s - \dfrac{\alpha}{1-\alpha}\ln(n+g+\delta+ng)$. Only the first two terms depend on $s$.</div><div class="hint" data-idx="2"><strong>Hint 2.</strong> Differentiate w.r.t. $s$: $\dfrac{1}{\tilde{c}^*}\dfrac{d\tilde{c}^*}{ds} = -\dfrac{1}{1-s} + \dfrac{\alpha}{1-\alpha}\cdot\dfrac{1}{s} = 0$. Multiply through by $s(1-s)(1-\alpha)$ to clear denominators.</div><div class="hint" data-idx="3"><strong>Hint 3.</strong> Result: $-s(1-\alpha) + \alpha(1-s) = 0 \Rightarrow -s + \alpha s + \alpha - \alpha s = 0 \Rightarrow s = \alpha$. So $s^{**} = \alpha$, same as basic Solow. $g$ enters only through the $\ln(n+g+\delta+ng)$ term that is $s$-independent — it shifts the <em>level</em> of $\tilde{c}^*$ but not the maximizer.</div><button type="button" class="hint-btn" onclick="nextHint(this)">Hint 1 / 3</button></div></div><div class="sub-move" data-hints-total="2" data-hints-shown="0"><div class="sub-move-label">Method variation</div><div class="sub-move-prompt"><p>Derive the same $s^{**} = \alpha$ a <em>second</em> way using the <em>modified Golden Rule</em> condition: along the BGP, the marginal product of capital net of depreciation equals the effective growth rate of the labour-augmented workforce,
+$$r^* - \delta = n + g + ng.$$
+Starting from $r^* = \alpha (\tilde{k}^*)^{\alpha-1}$ (the marginal product), use the steady-state condition to solve for the implied savings rate. Show that this reproduces $s^{**} = \alpha$.</p></div><div class="hints-area"><div class="hint" data-idx="1"><strong>Hint 1.</strong> From the production function, $r_t = \partial Y/\partial K = \alpha \tilde{y}_t/\tilde{k}_t = \alpha \tilde{k}_t^{\alpha-1}$. At steady state $r^* = \alpha (\tilde{k}^*)^{\alpha-1}$.</div><div class="hint" data-idx="2"><strong>Hint 2.</strong> From the steady-state condition $s(\tilde{k}^*)^{\alpha-1} = n+g+\delta+ng$, we get $(\tilde{k}^*)^{\alpha-1} = (n+g+\delta+ng)/s$. Substitute: $r^* = \alpha(n+g+\delta+ng)/s$. The modified Golden Rule $r^* - \delta = n+g+ng$ becomes $\alpha(n+g+\delta+ng)/s - \delta = n+g+ng$, hence $\alpha(n+g+\delta+ng) = s(n+g+\delta+ng)$, hence $s = \alpha$.</div><button type="button" class="hint-btn" onclick="nextHint(this)">Hint 1 / 2</button></div></div><div class="sub-move" data-hints-total="0" data-hints-shown="0"><div class="sub-move-label">Counterfactual</div><div class="sub-move-prompt"><p>In the <em>open</em> economy of Lecture 2a (with $\delta = 0$), the savings rate no longer determines $k^*$ — the world rate $\bar{r}$ does, as you proved in Exercise 1. So what does $s$ control in the open economy, and what would a "Golden Rule for the open economy" even mean?</p>
+<p>Sketch the argument: identify the steady-state object that $s$ <em>does</em> control, write $c^{n*}$ (national consumption per capita) as a function of $s$ using the open-economy steady-state formulas of Lecture 2a p20-22, and either (a) derive an open-economy $s^{**}$, or (b) argue that the concept either breaks down or coincides with a corner solution. 2-3 paragraphs.</p></div></div><div class="solution-toggle-row"><button type="button" class="solution-btn" onclick="toggleSolution(this)">Show solution</button><span class="solution-hint-text">Solve on paper first.</span></div><div class="solution">
+<h3>Anchor</h3>
+<p>$s^{**} = \alpha$ maximizes <em>steady-state consumption per capita</em> $c^*$, not steady-state output $y^*$. The distinction matters: raising $s$ beyond $s^{**}$ does raise $y^*$ (the elasticity of $y^*$ with respect to $s$ is $\alpha/(1-\alpha) > 0$ throughout), but it raises required investment $(n+\delta)k^*$ even faster — so the remaining "consumable" share $(1-s)y^*$ falls. The Golden Rule trades off level-of-output against the share-consumed. At $s = \alpha$, the marginal output gain exactly equals the marginal investment cost. Above $\alpha$, the economy is "over-saving" — accumulating capital that costs more in foregone consumption than it generates in extra steady-state output.</p>
+
+<h3>Main proof</h3>
+<p>Start from $\tilde{c}^* = (1-s)\tilde{y}^*$ in effective-labour units, with $\tilde{y}^* = (s/(n+g+\delta+ng))^{\alpha/(1-\alpha)}$ (from Ex 2):</p>
+<div class="step"><span class="step-label">Step 1.</span> $\tilde{c}^*(s) = (1-s)\left(\dfrac{s}{n+g+\delta+ng}\right)^{\!\!\alpha/(1-\alpha)}$. Take logs to make the differentiation transparent.</div>
+<div class="step"><span class="step-label">Step 2.</span> $\ln \tilde{c}^*(s) = \ln(1-s) + \dfrac{\alpha}{1-\alpha}\ln s - \dfrac{\alpha}{1-\alpha}\ln(n+g+\delta+ng)$.</div>
+<div class="step"><span class="step-label">Step 3.</span> Only the first two terms depend on $s$. The third term is an $s$-independent additive constant. So maximizing $\tilde{c}^*$ is equivalent to maximizing $F(s) \equiv \ln(1-s) + \dfrac{\alpha}{1-\alpha}\ln s$.</div>
+<div class="step"><span class="step-label">Step 4.</span> Differentiate: $F'(s) = -\dfrac{1}{1-s} + \dfrac{\alpha}{1-\alpha}\cdot\dfrac{1}{s}$.</div>
+<div class="step"><span class="step-label">Step 5.</span> First-order condition $F'(s^{**}) = 0$: $\dfrac{\alpha}{(1-\alpha)s^{**}} = \dfrac{1}{1-s^{**}}$.</div>
+<div class="step"><span class="step-label">Step 6.</span> Cross-multiply: $\alpha(1-s^{**}) = (1-\alpha)s^{**}$.</div>
+<div class="step"><span class="step-label">Step 7.</span> Expand: $\alpha - \alpha s^{**} = s^{**} - \alpha s^{**}$. The $\alpha s^{**}$ terms cancel.</div>
+<div class="step"><span class="step-label">Step 8.</span> So $\alpha = s^{**}$. Second-order check: $F''(s) = -1/(1-s)^2 - \alpha/[(1-\alpha)s^2]$, which is negative for any admissible $s \in (0,1)$, so $F$ is concave everywhere and $s^{**}$ is the unique interior maximum.</div>
+<div class="key-result">$s^{**}_\text{general} = \alpha$ — identical to the basic-Solow Golden Rule, despite the presence of technological progress.</div>
+<p><strong>Why $g$ doesn't shift the result.</strong> $g$ enters $\tilde{c}^*$ only through the factor $(n+g+\delta+ng)^{-\alpha/(1-\alpha)}$, which is multiplicative in $s$. In logs, this becomes an additive $s$-independent constant. Constants do not move the maximizer of a smooth function. So $g$ lowers the <em>level</em> of $\tilde{c}^*$ that the Golden Rule achieves (technology growth raises required investment to maintain effective-labour-unit capital), but it does not change the optimal share of output to save. The Golden Rule formula is purely structural: it pins $s^{**}$ to $\alpha$ regardless of the discounting environment, the rate of technological progress, or the depreciation rate. The only thing it depends on is the elasticity of output with respect to capital — a feature of the production technology alone, not of any preference or growth parameter.</p>
+<p>Calibration: with $\alpha \approx 1/3$, the Golden Rule prescribes saving roughly $33\%$ of output. Empirical OECD savings rates are around $20$-$25\%$, so most countries are <em>under</em>-saving relative to the Golden Rule — the model's policy prescription is to encourage savings. This is the conclusion Cozzi flags in Lecture 1c p15 and reiterates in Lecture 2b p15.</p>
+
+<h3>Method variation</h3>
+<p>The same answer falls out of the marginal-product condition without ever writing $c$ as a function of $s$. Start from the production function:</p>
+<div class="step"><span class="step-label">Step 1.</span> $Y_t = K_t^\alpha (A_tL_t)^{1-\alpha}$. The marginal product of capital is $r_t = \partial Y_t/\partial K_t = \alpha K_t^{\alpha-1}(A_tL_t)^{1-\alpha}$.</div>
+<div class="step"><span class="step-label">Step 2.</span> Factor: $r_t = \alpha [K_t/(A_tL_t)]^{\alpha-1} = \alpha \tilde{k}_t^{\alpha-1}$. In steady state $r^* = \alpha (\tilde{k}^*)^{\alpha-1}$.</div>
+<div class="step"><span class="step-label">Step 3.</span> Steady-state condition (Ex 2): $s(\tilde{k}^*)^{\alpha-1} = n+g+\delta+ng$, which rearranges to $(\tilde{k}^*)^{\alpha-1} = (n+g+\delta+ng)/s$.</div>
+<div class="step"><span class="step-label">Step 4.</span> Substitute Step 3 into Step 2: $r^* = \alpha(n+g+\delta+ng)/s$.</div>
+<div class="step"><span class="step-label">Step 5.</span> The modified Golden Rule condition (the Ramsey-style intuition: MPK net of depreciation should equal the effective growth rate of effective labour in steady state, otherwise capital is either too abundant or too scarce to maximize $c$): $r^* - \delta = n + g + ng$, i.e., $r^* = n + g + \delta + ng$.</div>
+<div class="step"><span class="step-label">Step 6.</span> Substitute Step 4 into Step 5: $\dfrac{\alpha(n+g+\delta+ng)}{s} = n+g+\delta+ng$.</div>
+<div class="step"><span class="step-label">Step 7.</span> The factor $(n+g+\delta+ng)$ is strictly positive (it's the steady-state drag, which must be positive for stability) and so can be cancelled from both sides: $\alpha/s = 1$, hence $s = \alpha$.</div>
+<div class="key-result">$s^{**} = \alpha$ — identical result via the marginal-product route, confirming the two derivations agree.</div>
+<p><strong>Equivalence of the methods.</strong> The consumption-maximization approach explicitly writes $\tilde{c}^*$ as a function of $s$ and finds the interior maximum by differentiation. The marginal-product approach imposes the first-order condition for an interior maximum directly — at the optimum, the social return on the marginal unit of savings (which is invested in capital and earns net MPK = $r^* - \delta$) must equal the effective rate at which the next generation's needs are growing ($n+g+ng \approx n+g$). Both are consequences of the same FOC; they just parameterize it differently. The marginal-product framing has the pedagogical advantage of foreshadowing the Ramsey model's "modified Golden Rule" (where the rate $n+g$ gets replaced by $n+g+\rho$ for time discount $\rho$ — but the structure is the same).</p>
+
+<h3>Counterfactual</h3>
+<p>In the open economy of Lecture 2a, $\bar{r}$ pins $k^* = (\alpha B/\bar{r})^{1/(1-\alpha)}$ independently of $s$ (Ex 1). So $s$ no longer affects domestic capital at all. What $s$ <em>does</em> affect is national <em>wealth</em>: $v^* = \dfrac{s}{n - s\bar{r}}w^*$ (Lecture 2a p20). Through $v^*$, $s$ shifts national income $y^{n*} = w^* + \bar{r}v^* = w^*/(1-s\bar{r}/n)$ and hence national consumption $c^{n*} = (1-s)y^{n*}$.</p>
+<p>So we ask: what $s$ maximizes $c^{n*}$? Write $c^{n*}(s) = (1-s)\dfrac{w^*}{1-s\bar{r}/n}$ where $w^*$ is $s$-independent (since $k^*$ is). Log-differentiate:</p>
+<div class="step"><span class="step-label">Step 1.</span> $\ln c^{n*}(s) = \ln(1-s) - \ln(1-s\bar{r}/n) + \ln w^*$ (last term constant in $s$).</div>
+<div class="step"><span class="step-label">Step 2.</span> $\dfrac{d\ln c^{n*}}{ds} = -\dfrac{1}{1-s} + \dfrac{\bar{r}/n}{1-s\bar{r}/n}$ (chain rule on $-\ln(1-s\bar{r}/n)$ gives $-(-\bar{r}/n)/(1-s\bar{r}/n) = (\bar{r}/n)/(1-s\bar{r}/n)$).</div>
+<div class="step"><span class="step-label">Step 3.</span> Set to zero: $\dfrac{\bar{r}/n}{1-s\bar{r}/n} = \dfrac{1}{1-s}$, i.e., $(\bar{r}/n)(1-s) = 1 - s\bar{r}/n$.</div>
+<div class="step"><span class="step-label">Step 4.</span> Expand: $\bar{r}/n - s\bar{r}/n = 1 - s\bar{r}/n$. The $s\bar{r}/n$ terms cancel from both sides.</div>
+<div class="step"><span class="step-label">Step 5.</span> Result: $\bar{r}/n = 1$, i.e., $\bar{r} = n$. This is a condition on parameters, not on $s$ — so the FOC has <em>no $s$ to solve for</em>.</div>
+<div class="key-result">There is no interior Golden-Rule savings rate in the small open economy. The FOC reduces to a knife-edge condition on the exogenous world rate, $\bar{r} = n$, which is generically false. The optimum is at a corner.</div>
+<p><strong>Two corner cases.</strong> If $\bar{r} > n$ (the world rate exceeds domestic population growth — the empirically typical case), then $d\ln c^{n*}/ds > 0$ throughout the admissible range $s\bar{r}/n < 1$, so $c^{n*}$ is maximized at the boundary $s \to n/\bar{r}$ — i.e., save as much as the stability condition allows. Going beyond would generate explosive wealth accumulation, but right at the boundary, $v^* \to \infty$ and $c^{n*} \to \infty$ (a degenerate but mathematically clean limit). If $\bar{r} < n$, the inequality flips: $d\ln c^{n*}/ds < 0$ everywhere and the optimum is $s = 0$ — never save at all, because marginal saving cannot keep up with the dilution from population growth.</p>
+<p><strong>The deep reason.</strong> The open-economy savings decision is no longer about building productive capital — that role has been delegated to the world capital market via $\bar{r}$. Savings are now pure asset accumulation: they fund foreign holdings $f^*$, which earn interest $\bar{r}f^*$. The closed-economy Golden Rule trade-off was "save more raises $y^*$ but also raises required investment, and the two effects cancel exactly at $s = \alpha$." In the open economy that internal trade-off doesn't exist, because saving doesn't drive domestic investment. The remaining trade-off is between consuming now versus consuming the compounded interest later, and that comparison is monotone in $s$ (either always positive or always negative depending on whether $\bar{r}$ beats $n$). The Golden Rule, as a concept, requires that savings actually drive capital accumulation; in the small open economy that link is severed, and the concept collapses.</p>
+<p>(Note: in the large-economy counterfactual of Ex 1, $\bar{r}$ becomes endogenous in $s$ and an interior Golden Rule re-emerges, smoothly interpolating between the closed-economy $s^{**} = \alpha$ and this open-economy corner solution.)</p>
+</div></div>
+<div class="show-all-row">
+<button class="show-all-btn" type="button" onclick="revealAllSolutions()">Reveal all solutions</button>
+</div>
+</div>
+
+<script>
+function nextHint(btn){
+  const move=btn.closest('.sub-move');
+  const total=parseInt(move.dataset.hintsTotal);
+  let shown=parseInt(move.dataset.hintsShown||'0');
+  const next=shown+1;
+  const hint=move.querySelector('.hint[data-idx="'+next+'"]');
+  if(hint){
+    hint.classList.add('shown');
+    move.dataset.hintsShown=next;
+  }
+  if(next>=total){
+    btn.hidden=true;
+  }else{
+    btn.textContent='Hint '+(next+1)+' / '+total;
+  }
+}
+function toggleSolution(btn){
+  const card=btn.closest('.exercise');
+  const sol=card.querySelector('.solution');
+  const shown=sol.classList.toggle('shown');
+  btn.textContent=shown?'Hide solution':'Show solution';
+}
+function revealAllSolutions(){
+  document.querySelectorAll('.solution').forEach(s=>s.classList.add('shown'));
+  document.querySelectorAll('.solution-btn').forEach(b=>b.textContent='Hide solution');
+}
+document.addEventListener('DOMContentLoaded',()=>{
+  renderMathInElement(document.body,{delimiters:[
+    {left:"$$",right:"$$",display:true},
+    {left:"$",right:"$",display:false},
+    {left:"\\(",right:"\\)",display:false},
+    {left:"\\[",right:"\\]",display:true}
+  ]});
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lecture: Open-Economy Solow and Technological Progress</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script>
+window.MacroFigures = window.MacroFigures || (function() {
+
+  function linspace(a, b, n) {
+    const out = [];
+    for (let i = 0; i < n; i++) out.push(a + (b - a) * i / (n - 1));
+    return out;
+  }
+
+  function compileExpr(expr, paramNames) {
+    return new Function('k', 'p',
+      'const {' + paramNames.join(',') + '} = p; return ' + expr + ';');
+  }
+
+  function compileScalarExpr(expr, paramNames) {
+    if (typeof expr === 'number') return () => expr;
+    if (typeof expr === 'string') {
+      return new Function('p',
+        'const {' + paramNames.join(',') + '} = p; return ' + expr + ';');
+    }
+    return () => null;
+  }
+
+  function findIntersection(xs, y1s, y2s) {
+    for (let i = 1; i < xs.length; i++) {
+      const d0 = y1s[i-1] - y2s[i-1];
+      const d1 = y1s[i] - y2s[i];
+      if (d0 === 0) return { x: xs[i-1], y: y1s[i-1] };
+      if (d0 * d1 < 0) {
+        const t = d0 / (d0 - d1);
+        return {
+          x: xs[i-1] + t * (xs[i] - xs[i-1]),
+          y: y1s[i-1] + t * (y1s[i] - y1s[i-1])
+        };
+      }
+    }
+    return null;
+  }
+
+  function findExtremum(xs, ys, kind) {
+    let idx = 0;
+    for (let i = 1; i < ys.length; i++) {
+      if (kind === 'max' ? ys[i] > ys[idx] : ys[i] < ys[idx]) idx = i;
+    }
+    return { x: xs[idx], y: ys[idx] };
+  }
+
+  function buildCurveData(curve, xs, params, paramNames) {
+    if (curve.type === 'time_series') {
+      // Discrete recursion: k_{t+1} = recursion(k_t, p), starting from initial.
+      const T = (curve.t_range && curve.t_range[1]) || 50;
+      const t0 = (curve.t_range && curve.t_range[0]) || 0;
+      const initFn = compileScalarExpr(curve.initial, paramNames);
+      const recFn = new Function('k', 'p',
+        'const {' + paramNames.join(',') + '} = p; return ' + curve.recursion + ';');
+      const ts = [t0], ks = [initFn(params)];
+      for (let t = t0 + 1; t <= T; t++) {
+        ks.push(recFn(ks[ks.length - 1], params));
+        ts.push(t);
+      }
+      return { x: ts, y: ks };
+    }
+    if (curve.type === 'piecewise') {
+      // [{when: "k < 10", expr: "..."}], else expr at end
+      const fns = curve.pieces.map(p => ({
+        when: p.when ? new Function('k', 'p',
+          'const {' + paramNames.join(',') + '} = p; return ' + p.when + ';') : null,
+        fn: compileExpr(p.expr, paramNames)
+      }));
+      return {
+        x: xs,
+        y: xs.map(k => {
+          for (const piece of fns) {
+            if (!piece.when || piece.when(k, params)) return piece.fn(k, params);
+          }
+          return null;
+        })
+      };
+    }
+    // default: type === 'expr'
+    const fn = compileExpr(curve.expr, paramNames);
+    return { x: xs, y: xs.map(k => fn(k, params)) };
+  }
+
+  function buildPanel(panel, params, paramNames, panelHostId) {
+    let xs;
+    // For panels containing only time_series curves, x_range may be omitted.
+    if (panel.x_range) {
+      xs = linspace(panel.x_range[0], panel.x_range[1], panel.n_points || 200);
+    } else {
+      xs = [];
+    }
+
+    const curveData = panel.curves.map(c => buildCurveData(c, xs, params, paramNames));
+
+    const traces = panel.curves.map((c, i) => ({
+      x: curveData[i].x, y: curveData[i].y,
+      name: c.name, mode: c.mode || 'lines',
+      line: { color: c.color, width: c.width || 1.6, dash: c.dash || 'solid' },
+      marker: { size: c.marker_size || 5, color: c.color, line: { color: 'white', width: 1 } }
+    }));
+
+    const shapes = [];
+    const annotations = [];
+    const readoutParts = [];
+
+    for (const m of (panel.markers || [])) {
+      let pt = null;
+      let line = null;
+
+      if (m.type === 'intersection') {
+        pt = findIntersection(curveData[m.curves[0]].x, curveData[m.curves[0]].y, curveData[m.curves[1]].y);
+      } else if (m.type === 'maximum' || m.type === 'minimum') {
+        const kind = m.type === 'maximum' ? 'max' : 'min';
+        pt = findExtremum(curveData[m.curve].x, curveData[m.curve].y, kind);
+      } else if (m.type === 'vertical_line') {
+        const x = compileScalarExpr(m.at, paramNames)(params);
+        line = { type: 'line', x0: x, x1: x, yref: 'paper', y0: 0, y1: 1,
+                 line: { color: m.color || '#5a7378', dash: m.dash || 'dash', width: 1 } };
+        if (m.label) annotations.push({
+          x: x, y: 0, xref: 'x', yref: 'paper', text: m.label,
+          showarrow: false, yshift: -18, font: { size: 11, color: '#111' }
+        });
+      } else if (m.type === 'horizontal_line') {
+        const y = compileScalarExpr(m.at, paramNames)(params);
+        line = { type: 'line', y0: y, y1: y, xref: 'paper', x0: 0, x1: 1,
+                 line: { color: m.color || '#5a7378', dash: m.dash || 'dash', width: 1 } };
+        if (m.label) annotations.push({
+          x: 1, y: y, xref: 'paper', yref: 'y', text: m.label,
+          showarrow: false, xshift: -8, yshift: -8, font: { size: 11, color: '#111' }
+        });
+      } else if (m.type === 'tangent_line') {
+        const x0 = compileScalarExpr(m.at, paramNames)(params);
+        const fn = compileExpr(panel.curves[m.curve].expr, paramNames);
+        const h = Math.max(0.001, Math.abs(x0) * 0.001);
+        const slope = (fn(x0 + h, params) - fn(x0 - h, params)) / (2 * h);
+        const y0v = fn(x0, params);
+        const xMin = panel.x_range[0], xMax = panel.x_range[1];
+        traces.push({
+          x: [xMin, xMax],
+          y: [y0v + slope * (xMin - x0), y0v + slope * (xMax - x0)],
+          mode: 'lines', name: m.label || 'tangent',
+          line: { color: m.color || '#16a34a', dash: 'dot', width: 2 }, showlegend: !!m.label
+        });
+        pt = { x: x0, y: y0v };
+      } else if (m.type === 'asymptote') {
+        const fn = compileExpr(panel.curves[m.curve].expr, paramNames);
+        const yInf = fn(1e9, params);
+        line = { type: 'line', y0: yInf, y1: yInf, xref: 'paper', x0: 0, x1: 1,
+                 line: { color: m.color || '#94a3b8', dash: 'dot', width: 1 } };
+        if (m.label) annotations.push({
+          x: 0.98, y: yInf, xref: 'paper', yref: 'y', text: m.label,
+          showarrow: false, xanchor: 'right', yshift: -8, font: { size: 11, color: '#666' }
+        });
+      } else if (m.type === 'area') {
+        // Shaded region between curves[0] and curves[1]
+        const ys1 = curveData[m.curves[0]].y;
+        const ys2 = curveData[m.curves[1]].y;
+        traces.push({
+          x: [...curveData[m.curves[0]].x, ...curveData[m.curves[0]].x.slice().reverse()],
+          y: [...ys1, ...ys2.slice().reverse()],
+          fill: 'toself', fillcolor: m.color || 'rgba(37,99,235,0.15)',
+          line: { width: 0 }, name: m.label || 'area', hoverinfo: 'skip',
+          showlegend: !!m.label
+        });
+      } else if (m.type === 'label_point') {
+        const x = compileScalarExpr(m.x, paramNames)(params);
+        const y = compileScalarExpr(m.y, paramNames)(params);
+        pt = { x, y };
+      }
+
+      if (pt) {
+        const pointTrace = {
+          x: [pt.x], y: [pt.y], mode: 'markers',
+          marker: { size: 8, color: m.color || '#003135', line: { color: 'white', width: 1.5 } },
+          name: m.label, showlegend: false,
+          hovertemplate: (m.label ? m.label + ' = ' : '') + '(%{x:.3f}, %{y:.3f})<extra></extra>'
+        };
+        // label_point markers render the label TEXT next to the dot; other marker
+        // types (intersection, max/min) write their label via annotations / guides.
+        if (m.type === 'label_point' && m.label) {
+          pointTrace.mode = 'markers+text';
+          pointTrace.text = [m.label];
+          pointTrace.textposition = m.textposition || 'top right';
+          pointTrace.textfont = {
+            size: 13, color: m.color || '#003135',
+            family: 'JetBrains Mono, ui-monospace, monospace', weight: 700
+          };
+        }
+        traces.push(pointTrace);
+        if (m.guide === 'vertical') {
+          shapes.push({ type: 'line', x0: pt.x, x1: pt.x, y0: 0, y1: pt.y,
+                        line: { color: '#5a7378', dash: 'dash', width: 1 } });
+        } else if (m.guide === 'horizontal') {
+          shapes.push({ type: 'line', xref: 'paper', x0: 0, x1: 1, y0: pt.y, y1: pt.y,
+                        line: { color: '#5a7378', dash: 'dash', width: 1 } });
+        } else if (m.guide === 'both') {
+          shapes.push({ type: 'line', x0: pt.x, x1: pt.x, y0: 0, y1: pt.y,
+                        line: { color: '#5a7378', dash: 'dash', width: 1 } });
+          shapes.push({ type: 'line', xref: 'paper', x0: 0, x1: 1, y0: pt.y, y1: pt.y,
+                        line: { color: '#5a7378', dash: 'dash', width: 1 } });
+        }
+        if (m.label && m.guide === 'vertical') annotations.push({
+          x: pt.x, y: 0, xref: 'x', yref: 'y', text: m.label + ' = ' + pt.x.toFixed(2),
+          showarrow: false, yshift: -18, font: { size: 11, color: '#111' }
+        });
+        readoutParts.push(panel.id + ': ' + (m.label || '?') +
+                          ' = ' + pt.x.toFixed(3) + ', y = ' + pt.y.toFixed(3));
+      }
+      if (line) shapes.push(line);
+    }
+
+    const layout = {
+      font: { family: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+              color: '#003135', size: 12 },
+      xaxis: { title: { text: panel.x_label, font: { size: 12, color: '#5a7378' } },
+               gridcolor: '#e6eef0', zerolinecolor: '#d4e1e4', linecolor: '#d4e1e4',
+               tickfont: { color: '#5a7378', size: 11 } },
+      yaxis: { title: { text: panel.y_label, font: { size: 12, color: '#5a7378' } },
+               gridcolor: '#e6eef0', zerolinecolor: '#d4e1e4', linecolor: '#d4e1e4',
+               tickfont: { color: '#5a7378', size: 11 } },
+      shapes: shapes, annotations: annotations,
+      margin: { t: 28, r: 20, b: 50, l: 60 },
+      title: panel.title ? { text: panel.title, font: { size: 13, color: '#024950' } } : undefined,
+      legend: { x: 0.02, y: 0.98, bgcolor: 'rgba(255,255,255,0.9)',
+                bordercolor: '#d4e1e4', borderwidth: 1, font: { size: 11, color: '#003135' } },
+      plot_bgcolor: '#ffffff', paper_bgcolor: '#ffffff'
+    };
+
+    Plotly.react(panelHostId, traces, layout, { responsive: true, displayModeBar: false });
+    return readoutParts;
+  }
+
+  function renderFigure(spec, hostId) {
+    const root = document.getElementById(hostId);
+    if (!root) { console.warn('Figure host not found:', hostId); return; }
+    const paramNames = Object.keys(spec.params);
+    const defaults = JSON.parse(JSON.stringify(spec.params));
+    const params = JSON.parse(JSON.stringify(spec.params));
+
+    const panels = spec.panels || [{
+      id: 'main', x_range: spec.x_range, n_points: spec.n_points,
+      x_label: spec.x_label, y_label: spec.y_label,
+      curves: spec.curves, markers: spec.markers
+    }];
+
+    function renderAll() {
+      const readoutLines = [];
+      panels.forEach((p, i) => {
+        const lines = buildPanel(p, params, paramNames, hostId + '-panel-' + i);
+        readoutLines.push(...lines);
+      });
+      const readoutEl = root.querySelector('.mf-readout');
+      if (readoutEl) readoutEl.textContent = readoutLines.join('   |   ');
+    }
+
+    // Wire sliders
+    (spec.sliders || []).forEach(s => {
+      const sl = root.querySelector('[data-slider="' + s.param + '"]');
+      const vsp = root.querySelector('[data-value="' + s.param + '"]');
+      if (sl) sl.addEventListener('input', e => {
+        params[s.param] = parseFloat(e.target.value);
+        if (vsp) vsp.textContent = params[s.param].toFixed(s.decimals || 2);
+        renderAll();
+      });
+    });
+
+    // Reset button
+    const resetBtn = root.querySelector('.mf-reset');
+    if (resetBtn) resetBtn.addEventListener('click', () => {
+      Object.assign(params, JSON.parse(JSON.stringify(defaults)));
+      (spec.sliders || []).forEach(s => {
+        const sl = root.querySelector('[data-slider="' + s.param + '"]');
+        const vsp = root.querySelector('[data-value="' + s.param + '"]');
+        if (sl) sl.value = defaults[s.param];
+        if (vsp) vsp.textContent = defaults[s.param].toFixed(s.decimals || 2);
+      });
+      renderAll();
+    });
+
+    renderAll();
+  }
+
+  return { renderFigure };
+})();
+</script>
+<style>
+:root{
+  --bg:#fdf6e3;
+  --card:#ffffff;
+  --border:#e6dcc4;
+  --text:#003135;
+  --muted:#5a7378;
+  --accent:#024950;
+  --accent-2:#0FA4AF;
+  --accent-bg:rgba(15,164,175,0.10);
+  --key:#964734;
+  --key-bg:rgba(150,71,52,0.07);
+  --box-fill:#003135;
+  --box-text:#e6f4f5;
+  --box-line:#0FA4AF;
+  --nav-w:220px;
+  --col-w:760px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background-color:var(--bg)}
+body{
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  color:var(--text);
+  line-height:1.7;
+  font-weight:400;
+  font-feature-settings:"cv11","ss01","ss03";
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+  /* Subtle paper grain: fractal noise tinted warm brown at low alpha */
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.45  0 0 0 0 0.35  0 0 0 0 0.20  0 0 0 0.06 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  background-repeat:repeat;
+  background-attachment:fixed;
+}
+.layout{display:block;min-height:100vh}
+nav{
+  width:var(--nav-w);
+  position:fixed;top:0;left:0;height:100vh;overflow-y:auto;
+  background:transparent;
+  border-right:1px solid var(--border);
+  padding:2.5rem 1.25rem;
+}
+nav h2{
+  font-size:.72rem;
+  text-transform:uppercase;
+  color:var(--muted);
+  margin-bottom:1.25rem;
+  letter-spacing:.12em;
+  font-weight:600;
+}
+nav a{
+  display:block;
+  padding:.45rem .6rem;
+  font-size:.84rem;
+  color:var(--muted);
+  text-decoration:none;
+  border-radius:5px;
+  margin-bottom:1px;
+  font-weight:400;
+  transition:color .15s, background .15s;
+}
+nav a:hover{color:var(--text);background:rgba(2,73,80,0.04)}
+nav a.active{color:var(--accent);background:var(--accent-bg);font-weight:500}
+main{
+  margin-left:var(--nav-w);
+  padding:4rem max(2rem, calc((100vw - var(--nav-w) - var(--col-w)) / 2)) 5rem;
+}
+h1{
+  font-size:2.5rem;
+  font-weight:300;
+  letter-spacing:-0.03em;
+  line-height:1.15;
+  margin-bottom:.6rem;
+  color:var(--text);
+}
+.meta{
+  color:var(--muted);
+  font-size:.85rem;
+  font-weight:400;
+  letter-spacing:.01em;
+  margin-bottom:3rem;
+  padding-bottom:1.25rem;
+  border-bottom:1px solid var(--border);
+}
+.section{margin-bottom:3.5rem}
+.section h2{
+  font-size:1.55rem;
+  font-weight:400;
+  letter-spacing:-0.02em;
+  color:var(--accent);
+  margin-bottom:1.25rem;
+  padding-bottom:.7rem;
+  border-bottom:1px solid var(--border);
+}
+.section h3{
+  font-size:1.05rem;
+  font-weight:500;
+  letter-spacing:-0.01em;
+  margin:1.75rem 0 .8rem;
+  color:var(--text);
+}
+.section p{margin-bottom:1.1rem;font-weight:400}
+.section ol,.section ul{margin:0 0 1.1rem 1.5rem}
+.section li{margin-bottom:.4rem}
+a{color:var(--accent-2);text-decoration:none;border-bottom:1px solid transparent;transition:border-color .15s}
+a:hover{border-bottom-color:var(--accent-2)}
+strong{font-weight:600;color:var(--text)}
+em{font-style:italic}
+/* HUD-style callouts: dark fill, light text, cyan tracer outline,
+   extension line out of one corner ending in a small square endpoint */
+.key-concept,.example{
+  position:relative;
+  background:var(--box-fill);
+  color:var(--box-text);
+  padding:1.4rem 1.65rem;
+  margin:2.25rem 0;
+  border-radius:0;
+  outline:1px solid var(--box-line);
+  outline-offset:4px;
+  font-weight:400;
+}
+.key-concept p,.example p{margin-bottom:.8rem}
+.key-concept p:last-child,.example p:last-child{margin-bottom:0}
+.key-concept strong{color:#e8826a;font-weight:600;letter-spacing:.02em}
+.example strong{color:var(--box-line);font-weight:600;letter-spacing:.02em}
+.key-concept code,.example code{
+  background:rgba(255,255,255,0.08);
+  color:var(--box-line);
+}
+.key-concept .katex,.example .katex{color:var(--box-text)}
+/* HUD tracer: 3 staggered bold strokes + an open square endpoint.
+   Uses mask-image so the stroke color = var(--box-line) and the rect
+   interior is genuinely transparent (page bg + texture show through). */
+.key-concept::before,.example::before{
+  content:'';
+  position:absolute;
+  width:74px;
+  height:60px;
+  pointer-events:none;
+  background-color:var(--box-line);
+  -webkit-mask-repeat:no-repeat;
+          mask-repeat:no-repeat;
+  -webkit-mask-position:center;
+          mask-position:center;
+}
+/* key-concept: tracer in the RIGHT gutter, lines extend rightward */
+.key-concept::before{
+  top:14px;
+  right:-82px;
+  -webkit-mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 74 60'><line x1='0' y1='9' x2='48' y2='9' stroke='black' stroke-width='3'/><line x1='0' y1='28' x2='22' y2='28' stroke='black' stroke-width='3'/><line x1='0' y1='47' x2='34' y2='47' stroke='black' stroke-width='3'/><rect x='56' y='4' width='10' height='10' fill='none' stroke='black' stroke-width='1.6'/></svg>");
+          mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 74 60'><line x1='0' y1='9' x2='48' y2='9' stroke='black' stroke-width='3'/><line x1='0' y1='28' x2='22' y2='28' stroke='black' stroke-width='3'/><line x1='0' y1='47' x2='34' y2='47' stroke='black' stroke-width='3'/><rect x='56' y='4' width='10' height='10' fill='none' stroke='black' stroke-width='1.6'/></svg>");
+}
+/* example: tracer in the LEFT gutter, lines extend leftward (mirrored) */
+.example::before{
+  bottom:14px;
+  left:-82px;
+  -webkit-mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 74 60'><line x1='26' y1='9' x2='74' y2='9' stroke='black' stroke-width='3'/><line x1='52' y1='28' x2='74' y2='28' stroke='black' stroke-width='3'/><line x1='40' y1='47' x2='74' y2='47' stroke='black' stroke-width='3'/><rect x='8' y='4' width='10' height='10' fill='none' stroke='black' stroke-width='1.6'/></svg>");
+          mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 74 60'><line x1='26' y1='9' x2='74' y2='9' stroke='black' stroke-width='3'/><line x1='52' y1='28' x2='74' y2='28' stroke='black' stroke-width='3'/><line x1='40' y1='47' x2='74' y2='47' stroke='black' stroke-width='3'/><rect x='8' y='4' width='10' height='10' fill='none' stroke='black' stroke-width='1.6'/></svg>");
+}
+.key-concept::after,.example::after{display:none}
+@media(max-width:1100px){
+  .key-concept::before,.example::before{display:none}
+}
+.graph-container{
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:8px;
+  padding:1.5rem;
+  margin:1.5rem 0;
+  text-align:center;
+}
+.graph-container svg{max-width:100%}
+table{
+  width:100%;
+  border-collapse:collapse;
+  margin:1.5rem 0;
+  background:var(--card);
+  border-radius:6px;
+  overflow:hidden;
+  border:1px solid var(--border);
+  font-size:.9rem;
+}
+th,td{padding:.7rem .9rem;border-bottom:1px solid var(--border);text-align:left}
+tr:last-child td{border-bottom:none}
+th{
+  background:var(--accent-bg);
+  font-weight:600;
+  color:var(--accent);
+  letter-spacing:.01em;
+}
+code{
+  background:#e6eef0;
+  color:var(--accent);
+  padding:.12rem .42rem;
+  border-radius:3px;
+  font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:.85em;
+  font-weight:500;
+}
+pre{
+  background:#003135;
+  color:#dceef0;
+  padding:1.25rem;
+  border-radius:8px;
+  overflow-x:auto;
+  margin:1.5rem 0;
+  font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:.82rem;
+  line-height:1.6;
+  font-weight:400;
+}
+pre code{background:none;color:inherit;padding:0;font-weight:400}
+.figure{
+  margin:1.75rem 0;
+  padding:1.25rem;
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:8px;
+  text-align:center;
+}
+.figure svg{max-width:100%}
+.figure figcaption{
+  margin-top:.75rem;
+  font-size:.85rem;
+  color:var(--muted);
+  line-height:1.6;
+  text-align:left;
+}
+.figure figcaption strong{color:var(--accent)}
+.katex{font-size:1.02em}
+.katex-display{margin:1.25rem 0;overflow-x:auto;overflow-y:hidden}
+
+.mf-figure { margin: 1.75rem 0; padding: 1.25rem; background: #ffffff;
+             border: 1px solid #b8dcd9; border-radius: 0; }
+.mf-figure h4 { margin: 0 0 0.8rem 0; font-size: 1rem; font-weight: 600;
+                color: #024950; letter-spacing: -0.01em; }
+.mf-panels { display: grid; gap: 1rem; }
+.mf-panels.cols-2 { grid-template-columns: 1fr 1fr; }
+@media (max-width: 720px) { .mf-panels.cols-2 { grid-template-columns: 1fr; } }
+.mf-panel { min-height: 380px; }
+.mf-sliders { display: grid; gap: 0.35rem; margin-top: 1.25rem; padding: 0;
+              background: transparent; border: none; }
+.mf-slider-row { display: grid; grid-template-columns: 160px 1fr 70px;
+                 align-items: center; gap: 0.9rem; }
+.mf-slider-row label { font-size: 0.76rem; color: #5a7378; font-weight: 400;
+                       letter-spacing: 0.01em; }
+.mf-slider-row input[type=range] {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 16px; background: transparent; margin: 0; padding: 0;
+  cursor: pointer;
+}
+.mf-slider-row input[type=range]::-webkit-slider-runnable-track {
+  height: 1px; background: #b8dcd9; border: none;
+}
+.mf-slider-row input[type=range]::-moz-range-track {
+  height: 1px; background: #b8dcd9; border: none;
+}
+.mf-slider-row input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  height: 9px; width: 9px; border-radius: 50%;
+  background: #0FA4AF; border: none; margin-top: -4px;
+  cursor: pointer; transition: transform .12s, background .12s;
+}
+.mf-slider-row input[type=range]::-moz-range-thumb {
+  height: 9px; width: 9px; border-radius: 50%;
+  background: #0FA4AF; border: none;
+  cursor: pointer; transition: transform .12s, background .12s;
+}
+.mf-slider-row input[type=range]:hover::-webkit-slider-thumb {
+  background: #024950; transform: scale(1.25);
+}
+.mf-slider-row input[type=range]:hover::-moz-range-thumb {
+  background: #024950; transform: scale(1.25);
+}
+.mf-slider-row .mf-value { font-family: 'JetBrains Mono', ui-monospace, monospace;
+                           text-align: right; color: #024950; font-weight: 400;
+                           font-size: 0.76rem; }
+.mf-slider-row .mf-value::before { content: ''; }
+.mf-reset { background: transparent; border: none;
+            padding: 0.35rem 0; margin-top: 0.4rem; cursor: pointer; font-size: 0.72rem;
+            color: #5a7378; justify-self: start; letter-spacing: 0.05em;
+            text-transform: uppercase; font-family: inherit;
+            border-bottom: 1px solid transparent; transition: color .15s, border-color .15s; }
+.mf-reset:hover { color: #024950; border-bottom-color: #0FA4AF; }
+.mf-readout { font-family: 'JetBrains Mono', ui-monospace, monospace;
+              font-size: 0.74rem; color: #964734; font-weight: 400;
+              margin-top: 0.6rem; padding: 0.4rem 0;
+              border-top: 1px dashed #b8dcd9; min-height: 1rem;
+              letter-spacing: 0.01em; }
+.mf-caption { font-size: 0.84rem; color: #5a7378; line-height: 1.6;
+              margin-top: 1rem; padding: 0.75rem 0 0;
+              border-top: 1px solid #b8dcd9; }
+.mf-caption strong { color: #024950; font-weight: 600; letter-spacing: 0.01em; }
+
+@media(max-width:900px){
+  nav{display:none}
+  main{margin-left:0;padding:2rem 1.25rem 3rem}
+  h1{font-size:1.7rem}
+}
+</style>
+</head>
+<body>
+<div class="layout">
+<nav>
+<h2>Contents</h2>
+<a href="#sec-big-picture">1. The Big Picture</a><a href="#sec-objects">2. Object Definitions</a><a href="#sec-mechanics">3. Core Mechanics</a><a href="#sec-properties">4. Properties & Proofs</a><a href="#sec-examples">5. Worked Examples</a><a href="#sec-traps">6. Connections & Common Traps</a><a href="#sec-summary">7. Summary</a>
+</nav>
+<main>
+<h1>Lecture: Open-Economy Solow and Technological Progress</h1>
+<div class="meta">Macroeconomics III — Module 2 — 2026-05-26</div>
+<div class="section" id="sec-big-picture"><h2>1. The Big Picture</h2><p>So far we have spent a lot of effort on a single object: a closed economy where every dollar saved at home is invested at home. That model gave us the basic Solow story — diminishing returns, a finite steady state $k^*$, conditional convergence. But it leaves two big things unexplained.</p><p>The first thing it leaves out is the rest of the world. Look at any small European economy: Denmark, Switzerland, Ireland. A firm in Zurich does not borrow only from Swiss savers, and a Swiss saver does not have to invest only in Swiss capital. Capital flows across borders, and the Swiss real interest rate is tied — more or less mechanically — to the world rate. If we are going to take the Solow model seriously for any country smaller than China, we have to let capital move.</p><p>The second thing it leaves out is sustained growth in income per worker. The basic Solow model, in steady state, has $\dot y / y = 0$. But the most basic empirical fact about advanced economies — what Cozzi calls stylized fact #5 — is that GDP per person has been growing at roughly 1.5-2% per year for two centuries. Zero is wrong. We need a model whose steady state has positive growth in $y$.</p><p>Module 2 takes both extensions seriously. Lecture 2a opens up the capital account and asks: what does free international capital mobility do to long-run national income, wealth, factor prices, and welfare? Lecture 2b reintroduces a closed economy but lets total factor productivity grow exogenously at rate $g$ — and shows that the resulting <em>general Solow model</em> has a steady state with balanced growth and a positive per-worker growth rate equal to $g$.</p><p>These look like two unrelated extensions, but they share a structural lesson: <strong>the Solow framework is flexible enough that we can swap in a different binding constraint — the exogenous world rate $\bar r$ in 2a, the exogenous growth rate $g$ in 2b — and re-derive the model's steady state from the same set of building blocks (capital accumulation, profit-maximizing factor prices, a constant savings rate, a Cobb-Douglas production function).</strong> The mathematical machinery is the same; what changes is which variable is endogenous and which is exogenous.</p><p>The exam payoff is concrete. The mock exam's Question 2 asks you to <em>explain</em> the Solow model with land and natural resources (Module 3) and to <em>sketch a numerical simulation</em> — and the simulation skill is taught here, in Bolboaca's exercise session 2. Question 3 asks you to <em>derive</em> Cozzi's hybrid model (Module 5) and <em>discuss policy implications</em> — the derive-and-discuss style is exactly what 2a does for the open-economy welfare result. If you can write down the wealth transition equation, derive the open-economy steady state, and explain in plain language why opening the capital account raises average income but can hurt domestic workers, you have rehearsed the exact moves an exam answer requires.</p></div><div class="section" id="sec-objects"><h2>2. Object Definitions</h2><p>Before we can run the model, we need to be precise about which symbols mean what — especially because some of them (like $Y$ vs $Y^n$, or $k$ vs $\tilde k$) look almost identical but track different real-world objects. Let's introduce them in the order we'll need them.</p><h3>Capital, wealth, and net foreign assets</h3><p>In a closed economy there was one variable that captured both <em>stuff installed in factories</em> and <em>stuff owned by the country's citizens</em> — these were the same thing, because foreigners couldn't own domestic capital and domestic citizens couldn't own foreign capital. Once the borders open, we have to split them apart.</p><p><strong>Domestic capital</strong> $K_t$ is the capital stock physically located inside the country and used for domestic production. It enters the production function. <strong>National wealth</strong> $V_t$ is the total value of capital <em>owned</em> by the country's residents — wherever in the world it sits. The difference is <strong>net foreign assets</strong> $F_t$:</p><div class='key-concept'>$$V_t = K_t + F_t.$$</div><p>Reading this: $V_t$ is what the citizens of the country own, $K_t$ is the share of $V_t$ that happens to be invested at home, and $F_t$ is the share invested abroad. $F_t$ can be negative — that just means foreigners own more domestic capital than domestic residents own foreign capital, so the country is a net debtor.</p><p>What about the current account? Start from the open-economy intertemporal budget constraint. Setting depreciation to zero for now (we'll relax this in §3.2), national wealth next period equals current wealth plus saving:</p><p>$$V_{t+1} - V_t = S_t.$$</p><p>But $V = K + F$, and gross domestic investment is $I_t = K_{t+1} - K_t$ (still with $\delta = 0$). Subtracting:</p><p>$$F_{t+1} - F_t = (V_{t+1} - V_t) - (K_{t+1} - K_t) = S_t - I_t.$$</p><div class='key-concept'><strong>Current account identity:</strong> $$CA_t \;\equiv\; F_{t+1} - F_t \;=\; S_t - I_t.$$ The current account balance is just the savings-investment gap. A country that saves more than it invests at home is exporting capital ($CA > 0$) and building up claims on the rest of the world.</div><p>Figure 1 visualizes the flow. In the closed economy, all saving must equal all investment — the only downstream use of $S$ is $I$. In the open economy, the same $S$ splits into two streams: some goes into domestic capital $I$, and the rest goes abroad as net foreign asset accumulation $CA$.</p><div class='figure' id='fig-ca-flow'><svg viewBox='0 0 460 280' xmlns='http://www.w3.org/2000/svg' font-family='sans-serif' font-size='12'><text x='80' y='22' font-weight='bold' fill='#111'>Closed economy</text><rect x='20' y='40' width='140' height='40' rx='4' fill='#dbeafe' stroke='#2563eb' stroke-width='1.5'/><text x='90' y='65' text-anchor='middle'>Saving S</text><line x1='90' y1='80' x2='90' y2='120' stroke='#333' stroke-width='1.5' marker-end='url(#arrow1)'/><rect x='20' y='130' width='140' height='40' rx='4' fill='#dbeafe' stroke='#2563eb' stroke-width='1.5'/><text x='90' y='155' text-anchor='middle'>Investment I</text><text x='90' y='200' text-anchor='middle' fill='#666' font-style='italic'>S = I, CA = 0</text><text x='90' y='220' text-anchor='middle' fill='#666' font-style='italic'>(no foreign asset</text><text x='90' y='235' text-anchor='middle' fill='#666' font-style='italic'>accumulation)</text><text x='330' y='22' font-weight='bold' fill='#111'>Open economy</text><rect x='270' y='40' width='140' height='40' rx='4' fill='#dbeafe' stroke='#2563eb' stroke-width='1.5'/><text x='340' y='65' text-anchor='middle'>Saving S</text><line x1='305' y1='80' x2='280' y2='120' stroke='#333' stroke-width='1.5' marker-end='url(#arrow1)'/><line x1='375' y1='80' x2='400' y2='120' stroke='#333' stroke-width='1.5' marker-end='url(#arrow1)'/><rect x='220' y='130' width='120' height='40' rx='4' fill='#dbeafe' stroke='#2563eb' stroke-width='1.5'/><text x='280' y='155' text-anchor='middle'>Investment I</text><rect x='350' y='130' width='100' height='40' rx='4' fill='#fee2e2' stroke='#dc2626' stroke-width='1.5'/><text x='400' y='149' text-anchor='middle'>Capital export</text><text x='400' y='163' text-anchor='middle' font-size='10'>CA = F_{t+1} − F_t</text><text x='340' y='200' text-anchor='middle' fill='#666' font-style='italic'>S = I + CA</text><text x='340' y='220' text-anchor='middle' fill='#666' font-style='italic'>CA can be positive (creditor)</text><text x='340' y='235' text-anchor='middle' fill='#666' font-style='italic'>or negative (debtor)</text><defs><marker id='arrow1' viewBox='0 0 10 10' refX='8' refY='5' markerWidth='8' markerHeight='8' orient='auto'><path d='M 0 0 L 10 5 L 0 10 z' fill='#333'/></marker></defs></svg><figcaption><strong>Figure 1.</strong> National saving disposed of two different ways. In a closed economy (left), every unit of $S$ must be invested at home — the current account is identically zero. In an open economy (right), $S$ can split between domestic investment and capital export. The capital export <em>is</em> the current account balance, which is the same number as the change in net foreign assets $F_{t+1} - F_t$. So <em>any</em> mismatch between national saving and national investment shows up as an external imbalance.</figcaption></div><h3>Two interest rates, two income measures</h3><p>In the closed economy the real interest rate $r$ was determined endogenously — it adjusted so that the marginal product of capital cleared the domestic capital market. In the small open economy the country is a price-taker on the world capital market. We write $\bar r$ for the <strong>world real interest rate</strong>, and we treat it as exogenously given. The bar reminds us: this is set by the rest of the world; the small economy cannot move it.</p><p>This single change — making $r$ exogenous instead of endogenous — is the entire structural difference between the closed and open Solow models. Capital still earns its marginal product, but now the marginal product is pinned down by an outside number.</p><p>Because residents can earn $\bar r$ on whatever foreign assets they hold, the country's total income is no longer just GDP. <strong>Gross domestic product (GDP)</strong> $Y_t$ is what is produced inside the country: $Y_t = B K_t^{\alpha} L_t^{1-\alpha}$. <strong>Gross national product (GNP), or national income</strong> $Y^n_t$ is what the country's residents earn — production at home plus interest on their net foreign assets:</p><div class='key-concept'>$$Y^n_t = Y_t + \bar r \, F_t.$$</div><p>If the country is a net creditor, $F_t > 0$, so $Y^n_t > Y_t$. If it is a net debtor, $F_t < 0$, so $Y^n_t < Y_t$ — part of domestic production is being shipped abroad to service the foreign-owned capital. Saving is now defined as a constant fraction of national income (not GDP): $S_t = s\, Y^n_t$. Residents save out of total income, including what their foreign assets pay them.</p><h3>Labour-augmenting technology</h3><p>For the second half of the module we'll close the borders again and turn on the engine the basic Solow model was missing: exogenous technical progress. The cleanest way to write this with a Cobb-Douglas production function is to multiply the labour input by a productivity coefficient $A_t$:</p><p>$$Y_t = K_t^{\alpha}\,(A_t L_t)^{1-\alpha},$$</p><p>where $A_t$ — <strong>labour-augmenting technology</strong> — grows at a constant exogenous rate $g$, so $A_{t+1} = (1+g) A_t$. The product $A_t L_t$ is called <strong>effective labour</strong> and is denoted $\tilde L_t = A_t L_t$. The idea is that a unit of raw labour in 2020 is more productive than a unit in 1900 by a factor of $A_{2020}/A_{1900}$ — so what matters for production is not the raw headcount $L_t$ but the technology-weighted headcount $A_t L_t$.</p><p><strong>Hicks-neutral vs labour-augmenting.</strong> An alternative way to write technical progress is to put it out front as a TFP coefficient, $Y_t = B_t K_t^{\alpha} L_t^{1-\alpha}$, which is called <em>Hicks-neutral</em>. With Cobb-Douglas, the two formulations are equivalent: if $B_t = A_t^{1-\alpha}$, the two production functions are identical (raise the labour-augmenting form to the appropriate power and you get the Hicks form). So when Lecture 2a writes $Y = B K^{\alpha} L^{1-\alpha}$ with constant $B$, and Lecture 2b writes $Y = K^{\alpha}(A_t L)^{1-\alpha}$ with growing $A_t$, the connection is $B_t = A_t^{1-\alpha}$. We use the labour-augmenting form because it makes the algebra of effective workers cleaner.</p><p><em>Beyond exam scope, but useful:</em> for non-Cobb-Douglas production functions, Hicks-neutral, labour-augmenting (Harrod-neutral), and capital-augmenting (Solow-neutral) progress are genuinely distinct ways of modelling technology. Only with Cobb-Douglas does the form not matter.</p><p>To analyse the model we'll use <strong>per-effective-worker</strong> variables:</p><p>$$\tilde k_t \;\equiv\; \frac{K_t}{A_t L_t}, \qquad \tilde y_t \;\equiv\; \frac{Y_t}{A_t L_t}.$$</p><p>Suppose we double both $K$ and $L$ in the production function $Y = K^{\alpha}(A L)^{1-\alpha}$. Try it: $(2K)^{\alpha}(A \cdot 2L)^{1-\alpha} = 2^{\alpha}\cdot 2^{1-\alpha}\cdot K^{\alpha}(AL)^{1-\alpha} = 2 Y$. So $Y$ is homogeneous of degree 1 in $(K, L)$ at any fixed $A_t$ — and that's what lets us collapse to per-effective-worker form. Dividing $Y = K^{\alpha}(A L)^{1-\alpha}$ on both sides by $A_t L_t$:</p><p>$$\tilde y_t \;=\; \frac{Y_t}{A_t L_t} \;=\; \frac{K_t^{\alpha}(A_t L_t)^{1-\alpha}}{A_t L_t} \;=\; \left(\frac{K_t}{A_t L_t}\right)^{\!\alpha} \;=\; \tilde k_t^{\alpha}.$$</p><p>So in per-effective-worker form the production function is exactly the same Cobb-Douglas relationship $\tilde y = \tilde k^{\alpha}$ that we had in the basic Solow model — only now the $y$ and $k$ are divided by $A_t L_t$ rather than $L_t$. This is the move that makes the general Solow model tractable: in tilde-units, everything looks like the basic Solow model again, and we can re-use machinery we already know.</p><h3>Notation summary</h3><table><thead><tr><th>Symbol</th><th>Meaning</th><th>Convention note</th></tr></thead><tbody><tr><td>$Y, K, L$</td><td>aggregate output, capital, labour</td><td>upper case</td></tr><tr><td>$y = Y/L, \; k = K/L$</td><td>per worker output, capital</td><td>lower case</td></tr><tr><td>$\tilde y = Y/(AL), \; \tilde k = K/(AL)$</td><td>per effective worker</td><td>tilde = per effective worker</td></tr><tr><td>$\alpha$</td><td>Cobb-Douglas capital exponent</td><td>$\approx 1/3$; capital income share</td></tr><tr><td>$s$</td><td>saving rate (of $Y^n$ in open econ, of $Y$ in closed)</td><td>constant in $(0,1)$</td></tr><tr><td>$n$</td><td>population growth rate</td><td>discrete: $L_{t+1} = (1+n)L_t$</td></tr><tr><td>$g$</td><td>labour-augmenting tech growth rate</td><td>discrete: $A_{t+1} = (1+g)A_t$</td></tr><tr><td>$\delta$</td><td>depreciation rate</td><td>$\delta = 0$ in §3.1 open-econ half; $\delta > 0$ in general Solow</td></tr><tr><td>$\bar r$</td><td>world real interest rate (exogenous)</td><td>bar = world average / exogenous</td></tr><tr><td>$r^*_c$</td><td>closed-economy autarky interest rate</td><td>subscript $c$ = closed</td></tr><tr><td>$B$</td><td>Hicks-neutral TFP</td><td>used in 2a (constant)</td></tr><tr><td>$A_t$</td><td>labour-augmenting tech</td><td>$A_t = B_t^{1/(1-\alpha)}$ for Cobb-Douglas</td></tr><tr><td>$F_t$, $V_t$</td><td>net foreign assets, national wealth</td><td>$V = K + F$</td></tr><tr><td>$Y^n_t$</td><td>national income (GNP) $= Y_t + \bar r F_t$</td><td>n superscript = national</td></tr><tr><td>$CA_t$</td><td>current account balance $= S_t - I_t$</td><td></td></tr><tr><td>$X^*$</td><td>steady-state value of $X$</td><td>star = steady state</td></tr><tr><td>$X^{**}$</td><td>Golden-Rule value of $X$</td><td>double star = Golden Rule</td></tr><tr><td>$\Delta X_t = X_{t+1} - X_t$</td><td>discrete-time change</td><td>we use discrete time throughout</td></tr></tbody></table><p>One non-canonical choice to flag: Cozzi's lecture writes $B$ for Hicks-neutral TFP in 2a and switches to labour-augmenting $A_t$ in 2b. We follow that, and just declare the switch when it happens at §3.2.</p></div><div class="section" id="sec-mechanics"><h2>3. Core Mechanics</h2><p>We have all the objects. Now: how does the model actually evolve? The two halves of the module have different state variables (wealth $v$ in 2a, technology-adjusted capital $\tilde k$ in 2b), so we'll do them in sequence, with an explicit transition between them.</p><h3>§3.1 Switching to the open-economy variant</h3><p>We now move to the open-economy variant of the Solow model. The key difference vs the closed economy: $\bar r$ is set by world capital markets, not by domestic MPK. So instead of $r$ adjusting to clear the domestic capital market, the capital stock $K$ adjusts to satisfy the profit-maximization condition at the given $\bar r$. Throughout §3.1 we assume $\delta = 0$ (a simplification that drops out of all qualitative results — it just keeps algebra cleaner), and capital is perfectly mobile across borders. The country is small, so its own choices don't move $\bar r$.</p><p>The complete model has seven equations. Most are familiar from Module 1:</p><div class='key-concept'><p><strong>Open-economy Solow model</strong> (Lecture 2a, with $\delta = 0$):</p><p>$$V_t = K_t + F_t, \qquad V_{t+1} - V_t = S_t,$$</p><p>$$Y^n_t = Y_t + \bar r F_t, \qquad Y_t = B K_t^{\alpha} L_t^{1-\alpha},$$</p><p>$$L_{t+1} = (1+n) L_t, \qquad S_t = s Y^n_t,$$</p><p>$$\bar r = \alpha B \left(\tfrac{K_t}{L_t}\right)^{\!\alpha-1}, \qquad w_t = (1-\alpha) B \left(\tfrac{K_t}{L_t}\right)^{\!\alpha}.$$</p></div><p>The last two equations are the factor-price equations from profit maximization. We've seen them before in Module 1 for the closed-economy case, but they deserve a re-derivation because the way we <em>read</em> them changes.</p><p><strong>Derivation of factor prices.</strong> The representative firm solves $\max_{K, L} \; B K^{\alpha} L^{1-\alpha} - r K - w L$. First-order conditions: differentiate with respect to $K$ and $L$:</p><p>$$\frac{\partial}{\partial K}\bigl[B K^{\alpha} L^{1-\alpha}\bigr] = \alpha B K^{\alpha-1} L^{1-\alpha} = r,$$</p><p>$$\frac{\partial}{\partial L}\bigl[B K^{\alpha} L^{1-\alpha}\bigr] = (1-\alpha) B K^{\alpha} L^{-\alpha} = w.$$</p><p>To write these in per-worker form, notice that $K^{\alpha-1} L^{1-\alpha} = K^{\alpha-1} L^{-(\alpha-1)} = (K/L)^{\alpha-1}$, and likewise $K^{\alpha} L^{-\alpha} = (K/L)^{\alpha}$. So:</p><p>$$r = \alpha B (K/L)^{\alpha-1}, \qquad w = (1-\alpha) B (K/L)^{\alpha}.$$</p><p>In the closed economy these two equations <em>determined $r$ and $w$</em> from the predetermined value of $K/L$. In the open economy, the first equation is read differently: $r = \bar r$ is given exogenously, so the equation now <em>determines $K/L$</em>. Algebraically we solve for $k_t = K_t/L_t$:</p><p>$$\bar r = \alpha B \, k_t^{\alpha-1} \;\;\Longleftrightarrow\;\; k_t^{\,1-\alpha} = \frac{\alpha B}{\bar r} \;\;\Longleftrightarrow\;\; k_t = \left(\frac{\alpha B}{\bar r}\right)^{\!1/(1-\alpha)}.$$</p><p>This is striking: $k_t$ is <em>not</em> a predetermined state variable any more. It has no time subscript in the answer — it's the same in every period. The economic story is that capital flows freely across borders, so if domestic MPK were below $\bar r$, capital would leave instantly until MPK rose back to $\bar r$; if domestic MPK were above $\bar r$, capital would pour in instantly until MPK fell back. So:</p><div class='key-concept'><strong>Immediate adjustment of $k$:</strong> in every period, $$k_t = k^* = \left(\frac{\alpha B}{\bar r}\right)^{\!1/(1-\alpha)}.$$</div><p>Domestic GDP per worker and the wage rate inherit the same jump-to-steady-state property. Substituting $k^*$ into $y_t = B k_t^{\alpha}$ and $w_t = (1-\alpha) B k_t^{\alpha}$:</p><p>$$y^* = B^{\,1/(1-\alpha)} \left(\tfrac{\alpha}{\bar r}\right)^{\!\alpha/(1-\alpha)}, \qquad w^* = (1-\alpha)\, B^{\,1/(1-\alpha)} \left(\tfrac{\alpha}{\bar r}\right)^{\!\alpha/(1-\alpha)}.$$</p><p>These are constants — they depend on parameters $B, \alpha, \bar r$, but not on time, not on the savings rate, not on population growth. They jump to their steady-state levels in period zero and stay there. The savings rate matters for <em>wealth</em>, not for capital, output, or wages.</p><h3>The wealth law of motion</h3><p>So what <em>does</em> evolve over time in this model? National wealth $V_t$. Citizens save out of national income, and savings accumulate as wealth. Recall the intertemporal budget constraint, $V_{t+1} - V_t = S_t$, equivalently $V_{t+1} = V_t + S_t$. Using $S_t = s Y^n_t$:</p><p>$$V_{t+1} = V_t + s Y^n_t.$$</p><p>Now we need an expression for $Y^n_t$ in terms of $V_t$. Start from $Y^n_t = Y_t + \bar r F_t$ and substitute $F_t = V_t - K_t$:</p><p>$$Y^n_t = Y_t + \bar r (V_t - K_t) = (Y_t - \bar r K_t) + \bar r V_t.$$</p><p>And $Y_t - \bar r K_t = w_t L_t$: the production function exhausts its output in factor payments, $Y = rK + wL$ with $r = \bar r$. So $y^n_t = w_t + \bar r v_t = w^* + \bar r v_t$, since $w_t$ has already jumped to $w^*$. Substituting back into the wealth recursion:</p><p>$$V_{t+1} = V_t + s L_t (w^* + \bar r v_t).$$</p><p>Divide both sides by $L_{t+1} = (1+n) L_t$ to get per-worker wealth next period:</p><p>$$v_{t+1} = \frac{V_{t+1}}{L_{t+1}} = \frac{V_t + s L_t(w^* + \bar r v_t)}{(1+n) L_t} = \frac{v_t + s w^* + s \bar r v_t}{1+n}.$$</p><p>Collecting terms in $v_t$:</p><div class='key-concept'><strong>Wealth transition equation (open economy):</strong> $$v_{t+1} = \frac{1 + s\bar r}{1 + n}\, v_t + \frac{s w^*}{1 + n}.$$</div><p>This is a first-order linear difference equation in $v_t$ — exactly the kind whose stability we can read off the slope. Two pieces. The first, $\frac{1+s\bar r}{1+n} v_t$, is <strong>inherited-wealth growth</strong>: existing wealth $v_t$ earns the interest rate $\bar r$ (so per unit of wealth, total resources become $1 + s\bar r$ after saving fraction $s$ of interest income), then everything gets diluted by population growth $1+n$. The second, $\frac{s w^*}{1+n}$, is the <strong>contribution from wage savings</strong>: each worker earns $w^*$, saves $sw^*$ of it, and that gets diluted across $1+n$ workers next period.</p><p>Figure 2 shows the transition diagram — a straight line in $v_{t+1}$ vs $v_t$ space, intersecting the $45°$ line at the steady state $v^*$. Convergence happens staircase-style exactly when the transition line is flatter than the $45°$ line.</p><div class="mf-figure" id="fig-open-econ-transition"><div class="mf-panels "><div id="fig-open-econ-transition-panel-0" class="mf-panel"></div></div><div class="mf-readout"></div><div class="mf-sliders"><div class="mf-slider-row"><label>saving rate s</label><input type="range" data-slider="s" min="0.05" max="0.5" step="0.01" value="0.15"><span class="mf-value">= <span data-value="s">0.15</span></span></div><div class="mf-slider-row"><label>world interest rate r̄</label><input type="range" data-slider="rbar" min="0.005" max="0.08" step="0.005" value="0.03"><span class="mf-value">= <span data-value="rbar">0.030</span></span></div><div class="mf-slider-row"><label>population growth n</label><input type="range" data-slider="n" min="0.005" max="0.05" step="0.005" value="0.03"><span class="mf-value">= <span data-value="n">0.030</span></span></div><div class="mf-slider-row"><label>capital share α</label><input type="range" data-slider="alpha" min="0.2" max="0.5" step="0.01" value="0.3"><span class="mf-value">= <span data-value="alpha">0.30</span></span></div><button type="button" class="mf-reset">Reset to defaults</button></div><p class="mf-caption"><strong>Figure 2. Open-economy wealth transition diagram.</strong> Drag s, r̄, or n and watch the staircase converge to a different v*. Notice: the transition curve is a STRAIGHT LINE (not concave as in basic Solow) — because the marginal product of an extra unit of wealth is the world rate r̄, which is exogenously fixed. Convergence happens only when the slope (1+sr̄)/(1+n) is less than 1, i.e. the stability condition sr̄ < n.</p><script>(function(){var spec={"id": "fig-open-econ-transition", "title": "Figure 2. Open-economy wealth transition diagram", "caption": "Drag s, r\u0304, or n and watch the staircase converge to a different v*. Notice: the transition curve is a STRAIGHT LINE (not concave as in basic Solow) \u2014 because the marginal product of an extra unit of wealth is the world rate r\u0304, which is exogenously fixed. Convergence happens only when the slope (1+sr\u0304)/(1+n) is less than 1, i.e. the stability condition sr\u0304 < n.", "params": {"s": 0.15, "rbar": 0.03, "n": 0.03, "alpha": 0.3, "B": 1.0}, "panels": [{"id": "wealth-transition", "x_range": [0, 60], "n_points": 200, "x_label": "wealth per worker today, v_t", "y_label": "wealth per worker next period, v_{t+1}", "curves": [{"type": "expr", "name": "transition", "expr": "((1 + s*rbar)/(1+n))*k + s*(1-alpha)*Math.pow(B, 1/(1-alpha))*Math.pow(alpha/rbar, alpha/(1-alpha))/(1+n)", "color": "#2563eb", "width": 3}, {"type": "expr", "name": "45\u00b0", "expr": "k", "color": "#16a34a", "width": 2, "dash": "dash"}], "markers": [{"type": "intersection", "label": "v*", "curves": [0, 1], "color": "#111", "guide": "vertical"}]}], "sliders": [{"param": "s", "min": 0.05, "max": 0.5, "step": 0.01, "label": "saving rate s", "decimals": 2}, {"param": "rbar", "min": 0.005, "max": 0.08, "step": 0.005, "label": "world interest rate r\u0304", "decimals": 3}, {"param": "n", "min": 0.005, "max": 0.05, "step": 0.005, "label": "population growth n", "decimals": 3}, {"param": "alpha", "min": 0.2, "max": 0.5, "step": 0.01, "label": "capital share \u03b1", "decimals": 2}]};var hostId="fig-open-econ-transition";function go(){if(!window.MacroFigures){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.MacroFigures not defined. Did FIGURE_JS load before this snippet?</div>");return;}if(!window.Plotly){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.Plotly not loaded.</div>");return;}try{window.MacroFigures.renderFigure(spec,hostId);}catch(e){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Render error: "+e.message+"</div>");}}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",go);}else{go();}})();</script></div><h3>The stability condition $s\bar r < n$</h3><p>The transition line has slope $(1 + s\bar r)/(1 + n)$. For convergence, we need this slope below 1, which simplifies to:</p><p>$$\frac{1 + s\bar r}{1 + n} < 1 \;\;\Longleftrightarrow\;\; s \bar r < n.$$</p><p>Is this reasonable? Plug in numbers. Saving rate around 0.2, world real rate around 0.03, so $s\bar r \approx 0.006$. Population growth in OECD countries is often 0.01 or below — so naively, the condition seems tight. But there's a clever sanity check using the closed-economy result.</p><p>From Module 1, the basic Solow steady-state interest rate in the closed economy is $r^*_c = \alpha n / s$. Quick re-derivation in this notation: in the closed economy with $\delta = 0$, the steady-state condition is $s B k^{*\,\alpha} = n k^*$, giving $k^* = (sB/n)^{1/(1-\alpha)}$; then $r^*_c = \alpha B (k^*)^{\alpha-1} = \alpha B \cdot (sB/n)^{(\alpha-1)/(1-\alpha)} = \alpha B \cdot (n/(sB)) = \alpha n / s$ after simplifying.</p><p>Now the world as a whole is closed, so the world interest rate must satisfy $\bar r = \alpha \bar n / \bar s$, where $\bar n, \bar s$ are world averages. Substituting into the stability condition:</p><p>$$s \bar r < n \;\;\Longleftrightarrow\;\; s \cdot \frac{\alpha \bar n}{\bar s} < n \;\;\Longleftrightarrow\;\; \alpha \cdot \frac{s}{n} < \frac{\bar s}{\bar n}.$$</p><p>With $\alpha \approx 1/3$ and $s/n$ comparable to the world average $\bar s / \bar n$, this becomes $\tfrac{1}{3} \cdot 1 < 1$, which is comfortably satisfied. So $s\bar r < n$ is benign as long as the small economy isn't structurally bizarre relative to the world average.</p><h3>§3.2 Switching to the closed economy with technological progress</h3><p>We now move to the general Solow model. The key difference vs the open-economy variant we just finished: we close the borders again (so $\bar r$ becomes irrelevant) and instead introduce exogenous labour-augmenting technological progress at rate $g$. Throughout §3.2 we assume the country is closed (so all of national wealth is invested at home, $V = K$, $F = 0$); depreciation is $\delta > 0$; technology follows $A_{t+1} = (1+g)A_t$. Production is $Y_t = K_t^{\alpha}(A_t L_t)^{1-\alpha}$.</p><p>The complete model:</p><div class='key-concept'><p><strong>General Solow model</strong> (Lecture 2b):</p><p>$$Y_t = K_t^{\alpha}(A_t L_t)^{1-\alpha}, \qquad K_{t+1} = (1-\delta)K_t + s Y_t,$$</p><p>$$L_{t+1} = (1+n) L_t, \qquad A_{t+1} = (1+g) A_t,$$</p><p>$$r_t = \alpha A_t^{\,1-\alpha}(K_t/L_t)^{\alpha-1}, \qquad w_t = (1-\alpha) A_t^{\,1-\alpha}(K_t/L_t)^{\alpha}.$$</p></div><p>The whole point of the per-effective-worker change of variables is that the law of motion becomes formally identical to the basic Solow model. Starting from $K_{t+1} = (1-\delta)K_t + s Y_t$, divide both sides by $A_{t+1} L_{t+1} = (1+g)(1+n) A_t L_t$ to convert into $\tilde k$:</p><p>$$\tilde k_{t+1} = \frac{K_{t+1}}{A_{t+1} L_{t+1}} = \frac{(1-\delta)K_t + s Y_t}{(1+g)(1+n) A_t L_t} = \frac{(1-\delta)\, \tilde k_t + s\, \tilde y_t}{(1+g)(1+n)}.$$</p><p>Now substitute $\tilde y_t = \tilde k_t^{\alpha}$:</p><div class='key-concept'><strong>General Solow transition equation:</strong> $$\tilde k_{t+1} = \frac{s\, \tilde k_t^{\alpha} + (1-\delta)\, \tilde k_t}{(1+n)(1+g)}.$$</div><p>Subtracting $\tilde k_t$ from both sides gives the <strong>Solow equation</strong> in efficiency units:</p><p>$$\tilde k_{t+1} - \tilde k_t = \frac{s\, \tilde k_t^{\alpha} - (n + g + \delta + ng)\, \tilde k_t}{(1+n)(1+g)}.$$</p><p>The right-hand side is positive (so $\tilde k$ is rising) whenever $s\, \tilde k^{\alpha} > (n + g + \delta + ng)\, \tilde k$. This is exactly the geometry of the Solow diagram — saving curve above break-even, capital rises; below, capital falls. The extra $ng$ term (product of two small rates) is negligible in practice and is sometimes dropped to write $n + g + \delta$.</p><p>Figure 3 shows the diagram with adjustable parameters.</p><div class="mf-figure" id="fig-general-solow-diagram"><div class="mf-panels "><div id="fig-general-solow-diagram-panel-0" class="mf-panel"></div></div><div class="mf-readout"></div><div class="mf-sliders"><div class="mf-slider-row"><label>saving rate s</label><input type="range" data-slider="s" min="0.05" max="0.5" step="0.01" value="0.2"><span class="mf-value">= <span data-value="s">0.20</span></span></div><div class="mf-slider-row"><label>population growth n</label><input type="range" data-slider="n" min="0.0" max="0.04" step="0.005" value="0.01"><span class="mf-value">= <span data-value="n">0.010</span></span></div><div class="mf-slider-row"><label>tech growth g</label><input type="range" data-slider="g" min="0.0" max="0.05" step="0.005" value="0.02"><span class="mf-value">= <span data-value="g">0.020</span></span></div><div class="mf-slider-row"><label>depreciation δ</label><input type="range" data-slider="delta" min="0.02" max="0.12" step="0.005" value="0.05"><span class="mf-value">= <span data-value="delta">0.050</span></span></div><div class="mf-slider-row"><label>capital share α</label><input type="range" data-slider="alpha" min="0.1" max="0.6" step="0.01" value="0.33"><span class="mf-value">= <span data-value="alpha">0.33</span></span></div><button type="button" class="mf-reset">Reset to defaults</button></div><p class="mf-caption"><strong>Figure 3. General Solow diagram (per effective worker).</strong> The same Solow logic as basic Solow, but in tilde-units. The blue saving curve is s·k̃^α (concave from diminishing returns). The red break-even line is (n+g+δ+ng)·k̃ — notice the extra n+g terms vs basic Solow's n+δ: technology growth dilutes effective capital just like population growth does. Steady state is where they cross. Drag g and see how k̃* shrinks — faster tech growth means more capital is needed each period just to keep up.</p><script>(function(){var spec={"id": "fig-general-solow-diagram", "title": "Figure 3. General Solow diagram (per effective worker)", "caption": "The same Solow logic as basic Solow, but in tilde-units. The blue saving curve is s\u00b7k\u0303^\u03b1 (concave from diminishing returns). The red break-even line is (n+g+\u03b4+ng)\u00b7k\u0303 \u2014 notice the extra n+g terms vs basic Solow's n+\u03b4: technology growth dilutes effective capital just like population growth does. Steady state is where they cross. Drag g and see how k\u0303* shrinks \u2014 faster tech growth means more capital is needed each period just to keep up.", "params": {"alpha": 0.33, "s": 0.2, "n": 0.01, "g": 0.02, "delta": 0.05}, "panels": [{"id": "general-solow", "x_range": [0.1, 80], "n_points": 200, "x_label": "capital per effective worker, k\u0303", "y_label": "per effective worker", "curves": [{"type": "expr", "name": "s\u00b7k\u0303^\u03b1", "expr": "s * Math.pow(k, alpha)", "color": "#2563eb", "width": 3}, {"type": "expr", "name": "(n+g+\u03b4+ng)\u00b7k\u0303", "expr": "(n + g + delta + n*g) * k", "color": "#dc2626", "width": 3}], "markers": [{"type": "intersection", "label": "k\u0303*", "curves": [0, 1], "color": "#111", "guide": "vertical"}]}], "sliders": [{"param": "s", "min": 0.05, "max": 0.5, "step": 0.01, "label": "saving rate s", "decimals": 2}, {"param": "n", "min": 0.0, "max": 0.04, "step": 0.005, "label": "population growth n", "decimals": 3}, {"param": "g", "min": 0.0, "max": 0.05, "step": 0.005, "label": "tech growth g", "decimals": 3}, {"param": "delta", "min": 0.02, "max": 0.12, "step": 0.005, "label": "depreciation \u03b4", "decimals": 3}, {"param": "alpha", "min": 0.1, "max": 0.6, "step": 0.01, "label": "capital share \u03b1", "decimals": 2}]};var hostId="fig-general-solow-diagram";function go(){if(!window.MacroFigures){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.MacroFigures not defined. Did FIGURE_JS load before this snippet?</div>");return;}if(!window.Plotly){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.Plotly not loaded.</div>");return;}try{window.MacroFigures.renderFigure(spec,hostId);}catch(e){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Render error: "+e.message+"</div>");}}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",go);}else{go();}})();</script></div><p>The <strong>stability condition</strong> here is just that the break-even slope eventually exceeds the saving slope, which requires:</p><p>$$n + g + \delta + ng > 0,$$</p><p>plainly satisfied for any economy with positive population growth, technology growth, or depreciation. Once stability holds, $\tilde k_t$ converges monotonically to a unique steady-state value $\tilde k^*$ — which we compute next.</p></div><div class="section" id="sec-properties"><h2>4. Properties & Proofs</h2><p>With the laws of motion in hand, we can extract the long-run behavior of both variants. Two questions structure §4: (a) what does the steady state actually look like, and (b) does opening the capital account — or turning on technology — make residents better off in the long run?</p><h3>§4.1 Steady state of the open economy</h3><p>Set $v_{t+1} = v_t = v^*$ in the wealth transition equation $v_{t+1} = \frac{1 + s\bar r}{1 + n}\, v_t + \frac{s w^*}{1 + n}$. Multiply both sides by $1 + n$ to clear the denominator:</p><p>$$(1 + n) v^* = (1 + s\bar r) v^* + s w^*.$$</p><p>Subtract $(1 + s\bar r) v^*$ from both sides:</p><p>$$(n - s\bar r) v^* = s w^* \;\;\Longleftrightarrow\;\; v^* = \frac{s w^*}{n - s \bar r} = \frac{s/n}{1 - s\bar r/n}\, w^*.$$</p><p>This is positive precisely because the stability condition $s\bar r < n$ holds. Higher $s/n$ → higher long-run wealth (more saving and less population dilution), exactly as in the closed economy.</p><p>What about the net foreign asset position $f^* = v^* - k^*$? We have $v^*$ above and $k^* = (\alpha B / \bar r)^{1/(1-\alpha)}$. A useful intermediate relation comes from rewriting $w^* = (1-\alpha) B (k^*)^{\alpha}$: dividing $k^*$ by $w^*$,</p><p>$$\frac{k^*}{w^*} = \frac{k^*}{(1-\alpha) B (k^*)^{\alpha}} = \frac{(k^*)^{1-\alpha}}{(1-\alpha) B} = \frac{1}{(1-\alpha) B} \cdot \frac{\alpha B}{\bar r} = \frac{\alpha}{(1-\alpha)\bar r}.$$</p><p>So $k^* = \frac{\alpha}{(1-\alpha)\bar r}\, w^*$. Now:</p><p>$$f^* = v^* - k^* = \frac{s w^*}{n - s\bar r} - \frac{\alpha w^*}{(1-\alpha)\bar r}.$$</p><p>The sign of $f^*$ depends entirely on whether $\bar r$ sits above or below the closed-economy autarky rate $r^*_c = \alpha n / s$ (which we re-derived in §3.1). After algebra (the textbook does the rearrangement; the key step is collecting over a common denominator and using $r^*_c = \alpha n/s$), the sign reduces to:</p><div class='key-concept'><strong>Net creditor condition:</strong> $$f^* > 0 \;\;\Longleftrightarrow\;\; \bar r > r^*_c \;\;\Longleftrightarrow\;\; \frac{s}{n} > \frac{\bar s}{\bar n}.$$ A country becomes a net creditor abroad ($f^* > 0$) if and only if its closed-economy interest rate would have been below the world rate — i.e., it would have saved too much relative to the world's needs in autarky.</div><p>The intuition is exactly the Feldstein-Horioka one. A country with a relatively strong propensity to save ($s/n > \bar s / \bar n$) would, in autarky, drive its domestic rate of return down ($r^*_c < \bar r$). Opening the borders lets it earn the higher world rate on its excess saving — and so it accumulates foreign assets.</p><p>Figure 4 collects the three cases (strong saver, balanced, weak saver) and shows what happens to each variable when the capital account opens.</p><div class='figure' id='fig-creditor-debtor'><svg viewBox='0 0 700 360' xmlns='http://www.w3.org/2000/svg' font-family='sans-serif' font-size='12'><rect x='20' y='20' width='200' height='320' rx='6' fill='#fef3c7' stroke='#b45309' stroke-width='1.5'/><rect x='250' y='20' width='200' height='320' rx='6' fill='#f5f5f4' stroke='#666' stroke-width='1.5'/><rect x='480' y='20' width='200' height='320' rx='6' fill='#dbeafe' stroke='#2563eb' stroke-width='1.5'/><text x='120' y='45' text-anchor='middle' font-weight='bold' fill='#92400e'>Strong saver</text><text x='350' y='45' text-anchor='middle' font-weight='bold' fill='#444'>Knife-edge</text><text x='580' y='45' text-anchor='middle' font-weight='bold' fill='#1e40af'>Weak saver</text><text x='120' y='75' text-anchor='middle' font-style='italic'>s/n &gt; s̄/n̄</text><text x='350' y='75' text-anchor='middle' font-style='italic'>s/n = s̄/n̄</text><text x='580' y='75' text-anchor='middle' font-style='italic'>s/n &lt; s̄/n̄</text><text x='120' y='100' text-anchor='middle'>r*_c &lt; r̄</text><text x='350' y='100' text-anchor='middle'>r*_c = r̄</text><text x='580' y='100' text-anchor='middle'>r*_c &gt; r̄</text><line x1='40' y1='115' x2='200' y2='115' stroke='#b45309' stroke-width='1'/><line x1='270' y1='115' x2='430' y2='115' stroke='#666' stroke-width='1'/><line x1='500' y1='115' x2='660' y2='115' stroke='#2563eb' stroke-width='1'/><text x='40' y='140'>On opening:</text><text x='270' y='140'>On opening:</text><text x='500' y='140'>On opening:</text><text x='40' y='162'>capital flows OUT</text><text x='270' y='162'>no capital flows</text><text x='500' y='162'>capital flows IN</text><text x='40' y='190' font-weight='bold'>Effects:</text><text x='270' y='190' font-weight='bold'>Effects:</text><text x='500' y='190' font-weight='bold'>Effects:</text><text x='40' y='212'>k ↓ (less here)</text><text x='270' y='212'>k unchanged</text><text x='500' y='212'>k ↑ (more here)</text><text x='40' y='232'>w ↓ (workers lose)</text><text x='270' y='232'>w unchanged</text><text x='500' y='232'>w ↑ (workers gain)</text><text x='40' y='252'>f* &gt; 0 (creditor)</text><text x='270' y='252'>f* = 0</text><text x='500' y='252'>f* &lt; 0 (debtor)</text><text x='40' y='272'>r ↑ (cap. owners win)</text><text x='270' y='272'>r unchanged</text><text x='500' y='272'>r ↓ (cap. owners lose)</text><text x='40' y='300' fill='#15803d' font-weight='bold'>y^{n*} &gt; y*_c ✓</text><text x='270' y='300' fill='#444' font-weight='bold'>y^{n*} = y*_c</text><text x='500' y='300' fill='#15803d' font-weight='bold'>y^{n*} &gt; y*_c ✓</text><text x='40' y='322' font-style='italic' fill='#666' font-size='11'>(gain via foreign returns)</text><text x='500' y='322' font-style='italic' fill='#666' font-size='11'>(gain via arbitrage)</text></svg><figcaption><strong>Figure 4.</strong> Three regimes by autarky-vs-world rate. Notice the symmetry: capital flows toward where the marginal return is higher, and that direction determines who in the domestic economy wins or loses. In both non-knife-edge cases <em>national income rises</em> — but workers gain only in the weak-saver case, and lose in the strong-saver case. This asymmetry drives the politics of capital-account liberalization.</figcaption></div><h3>The welfare gain from opening</h3><p>Now the most important comparative-statics question of Lecture 2a: does opening the capital account leave national income higher than under autarky? Denote steady-state national income per worker under free capital mobility as $y^{n*}$ and under autarky (closed) as $y^*_c$. Define the ratio</p><p>$$x \;\equiv\; \frac{y^{n*}}{y^*_c}.$$</p><p>If $x > 1$, opening helps; if $x < 1$, opening hurts; if $x = 1$, opening is neutral. From our formulas (using $y^{n*} = w^* + \bar r v^*$ and substituting our expression for $v^*$):</p><p>$$y^{n*} = w^* \cdot \frac{1}{1 - s\bar r/n} = (1 - \alpha)\, B^{\,1/(1-\alpha)} \!\left(\tfrac{\alpha}{\bar r}\right)^{\!\alpha/(1-\alpha)} \!\cdot \frac{1}{1 - s\bar r/n}, \qquad y^*_c = B^{\,1/(1-\alpha)} \!\left(\tfrac{s}{n}\right)^{\!\alpha/(1-\alpha)}.$$</p><p>Taking the ratio and using $s/n = \alpha / r^*_c$ (from $r^*_c = \alpha n / s$):</p><p>$$x = (1-\alpha) \left(\frac{r^*_c}{\bar r}\right)^{\!\alpha/(1-\alpha)} \!\cdot \frac{1}{1 - \alpha\, \bar r / r^*_c}.$$</p><p>Define $\tilde r \equiv \bar r / r^*_c$ — the world rate <em>relative to the autarky rate</em>. Then:</p><p>$$x(\tilde r) = (1-\alpha) \left(\frac{1}{\tilde r}\right)^{\!\alpha/(1-\alpha)} \!\cdot \frac{1}{1 - \alpha \tilde r}.$$</p><p>Three properties of this function settle the welfare question:</p><ol><li><strong>At $\tilde r = 1$ (knife-edge where opening would change nothing):</strong> $x = (1-\alpha) \cdot 1 \cdot \frac{1}{1-\alpha} = 1$. National income is exactly the same.</li><li><strong>The derivative of $\ln x$ with respect to $\tilde r$ is zero at $\tilde r = 1$:</strong> differentiating, $\frac{d \ln x}{d \tilde r} = -\frac{\alpha}{1-\alpha} \cdot \frac{1}{\tilde r} + \frac{\alpha}{1 - \alpha \tilde r}$. At $\tilde r = 1$, this is $-\frac{\alpha}{1-\alpha} + \frac{\alpha}{1-\alpha} = 0$.</li><li><strong>The same derivative is strictly increasing in $\tilde r$</strong> (the second derivative of $\ln x$ is positive on the admissible range $\alpha \tilde r < 1$). So $\tilde r = 1$ is a global minimum of $x$.</li></ol><p>Conclusion: $x(\tilde r) \geq 1$ for every admissible $\tilde r$, with equality only at $\tilde r = 1$. Algebraically — and unconditionally — opening the capital account weakly raises long-run national income, strictly if $\bar r \neq r^*_c$. Figure 5 plots $x(\tilde r)$ so you can see the minimum-at-one structure directly.</p><div class="mf-figure" id="fig-welfare-x-of-r"><div class="mf-panels "><div id="fig-welfare-x-of-r-panel-0" class="mf-panel"></div></div><div class="mf-readout"></div><div class="mf-sliders"><div class="mf-slider-row"><label>capital share α</label><input type="range" data-slider="alpha" min="0.2" max="0.5" step="0.01" value="0.33"><span class="mf-value">= <span data-value="alpha">0.33</span></span></div><button type="button" class="mf-reset">Reset to defaults</button></div><p class="mf-caption"><strong>Figure 5. The welfare-gain ratio x(r̃) = y^{n*}/y*_c.</strong> x-axis is r̃ = r̄/r*_c, the world rate relative to the autarky rate. At r̃ = 1 (the knife-edge case) opening changes nothing and x = 1. Everywhere else x > 1: opening strictly raises national income. Notice the minimum is FLAT at r̃ = 1 (zero derivative) — meaning small openings around the knife-edge case give second-order welfare gains, but large rate gaps give first-order gains. Drag α and watch the curve flatten or sharpen.</p><script>(function(){var spec={"id": "fig-welfare-x-of-r", "title": "Figure 5. The welfare-gain ratio x(r\u0303) = y^{n*}/y*_c", "caption": "x-axis is r\u0303 = r\u0304/r*_c, the world rate relative to the autarky rate. At r\u0303 = 1 (the knife-edge case) opening changes nothing and x = 1. Everywhere else x > 1: opening strictly raises national income. Notice the minimum is FLAT at r\u0303 = 1 (zero derivative) \u2014 meaning small openings around the knife-edge case give second-order welfare gains, but large rate gaps give first-order gains. Drag \u03b1 and watch the curve flatten or sharpen.", "params": {"alpha": 0.33}, "panels": [{"id": "welfare", "x_range": [0.5, 2.5], "n_points": 300, "x_label": "relative interest rate, r\u0303 = r\u0304 / r*_c", "y_label": "x(r\u0303) = y^{n*} / y*_c", "curves": [{"type": "expr", "name": "x(r\u0303)", "expr": "(1 - alpha) * Math.pow(1/k, alpha/(1-alpha)) / (1 - alpha * k)", "color": "#2563eb", "width": 3}, {"type": "expr", "name": "x = 1", "expr": "1", "color": "#16a34a", "width": 2, "dash": "dash"}], "markers": [{"type": "minimum", "label": "min at r\u0303 = 1, x = 1", "curve": 0, "color": "#111", "guide": "vertical"}]}], "sliders": [{"param": "alpha", "min": 0.2, "max": 0.5, "step": 0.01, "label": "capital share \u03b1", "decimals": 2}]};var hostId="fig-welfare-x-of-r";function go(){if(!window.MacroFigures){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.MacroFigures not defined. Did FIGURE_JS load before this snippet?</div>");return;}if(!window.Plotly){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.Plotly not loaded.</div>");return;}try{window.MacroFigures.renderFigure(spec,hostId);}catch(e){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Render error: "+e.message+"</div>");}}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",go);}else{go();}})();</script></div><p>Notice how strong this result is: it's an always-good claim about a structural reform, and the proof is just calculus on a single function. That said, the result is about <em>average</em> income — the next subsection shows that domestic workers can lose even as the average gains.</p><h3>What happens to the wage?</h3><p>From $w^* = (1-\alpha) B^{1/(1-\alpha)} (\alpha/\bar r)^{\alpha/(1-\alpha)}$ and the closed-economy autarky wage $w^*_c = (1-\alpha) B^{1/(1-\alpha)} (s/n)^{\alpha/(1-\alpha)}$:</p><p>$$\frac{w^*}{w^*_c} = \left(\frac{\alpha n / s}{\bar r}\right)^{\!\alpha/(1-\alpha)} = \left(\frac{r^*_c}{\bar r}\right)^{\!\alpha/(1-\alpha)}.$$</p><p>So $w^* > w^*_c$ if and only if $r^*_c > \bar r$ — i.e., the country had a <em>higher</em> autarky rate than the world. That means it was capital-scarce, a relatively weak saver. In that case, opening pours capital in, raises $k$, raises MPL, raises wages. The converse: a strong-saver country has $r^*_c < \bar r$, so opening sends capital <em>out</em>, which lowers $k$, lowers MPL, lowers domestic wages — and this can be a meaningful drop (textbook calibration: a 10-20% wage cut is plausible for a rich, high-saving economy).</p><p>Either way, average income $y^{n*}$ rises — but the rise comes from capital-income gains in the strong-saver case, and from labour-income gains in the weak-saver case. The distributional politics around capital-account liberalization fall right out of this asymmetry: workers in a high-saving developed economy may rationally oppose opening even as the country's average income goes up.</p><h3>§4.2 Steady state of the general Solow model</h3><p>Back to the closed economy with technology growing at rate $g$. Set $\tilde k_{t+1} = \tilde k_t = \tilde k^*$ in the transition equation. Multiplying both sides by $(1+n)(1+g)$:</p><p>$$(1+n)(1+g)\, \tilde k^* = s (\tilde k^*)^{\alpha} + (1-\delta)\, \tilde k^*.$$</p><p>Bringing $\tilde k^*$ terms to one side: $\bigl[(1+n)(1+g) - (1-\delta)\bigr]\, \tilde k^* = s (\tilde k^*)^{\alpha}$. And $(1+n)(1+g) - (1-\delta) = n + g + ng + \delta$, so:</p><p>$$(n + g + \delta + ng)\, \tilde k^* = s (\tilde k^*)^{\alpha} \;\;\Longleftrightarrow\;\; (\tilde k^*)^{1-\alpha} = \frac{s}{n + g + \delta + ng}.$$</p><p>Raising both sides to power $1/(1-\alpha)$:</p><div class='key-concept'><strong>General Solow steady states:</strong> $$\tilde k^* = \left(\frac{s}{n + g + \delta + ng}\right)^{\!1/(1-\alpha)}, \qquad \tilde y^* = (\tilde k^*)^{\alpha} = \left(\frac{s}{n + g + \delta + ng}\right)^{\!\alpha/(1-\alpha)}.$$</div><p>These look exactly like the basic Solow steady states — only with $n + g + \delta + ng$ in the denominator instead of $n + \delta$. The extra $g + ng$ is the tech-dilution term: technology growth means we need more capital just to keep capital per <em>effective</em> worker constant, the same way population growth does.</p><p>Now translate back to per-worker (un-tilded) variables. Since $\tilde k = k/A$ and $\tilde k^*$ is constant in steady state, $k^*_t = A_t \tilde k^*$ — capital per worker grows at the same rate as $A_t$, namely $g$. Similarly $y^*_t = A_t \tilde y^*$ grows at $g$. Consumption per worker $c^*_t = (1-s) y^*_t$ also grows at $g$. The real interest rate, plugging $\tilde k^*$ into the FOC, simplifies to:</p><p>$$r^* = \alpha (\tilde k^*)^{\alpha-1} = \alpha \cdot \frac{n + g + \delta + ng}{s},$$</p><p>a <em>constant</em> — and the real wage $w_t = (1-\alpha) A_t \tilde y^*$ grows at rate $g$.</p><p>This is balanced growth in all the respects we'd want it: per-worker quantities ($y, k, w, c$) all grow at the same constant rate $g$, factor prices ($r$ constant, $w$ growing) match this, and the capital-output ratio $k/y = \tilde k^* / \tilde y^* = (\tilde k^*)^{1-\alpha}$ is constant. Stylized fact #5 — sustained positive per-worker growth — is reproduced, and the source is the exogenous $g$.</p><h3>Golden rule and comparative statics</h3><p>Per-worker consumption in steady state is $c^*_t = (1-s) A_t \tilde y^* = (1-s) A_t \bigl(\frac{s}{n+g+\delta+ng}\bigr)^{\alpha/(1-\alpha)}$. To find the saving rate that maximizes long-run consumption (the Golden Rule), the $A_t$ factor doesn't matter — it just shifts the whole consumption path up by the same multiplicative factor. So we maximize the $s$-dependent part. Taking logs:</p><p>$$\ln c^* = \ln(1-s) + \tfrac{\alpha}{1-\alpha}\, \ln s + \text{(terms not in }s).$$</p><p>$\frac{d \ln c^*}{ds} = -\frac{1}{1-s} + \frac{\alpha}{(1-\alpha) s} = 0$ gives $\frac{\alpha}{(1-\alpha) s} = \frac{1}{1-s}$, i.e. $\alpha(1-s) = (1-\alpha)s$, hence $\alpha - \alpha s = s - \alpha s$, so $\alpha = s$. Therefore:</p><p>$$s^{**} = \alpha,$$</p><p>the same answer as in basic Solow. Technology shows up nowhere in the optimal savings rate, because it just shifts the whole consumption path up by the same factor regardless of $s$.</p><p>Figure 6 shows the comparative-static experiment of raising the savings rate from a low value to a higher one in the general Solow diagram. Drag the slider and watch the saving curve shift up, $\tilde k^*$ migrate right, and $\tilde y^*$ migrate up.</p><div class="mf-figure" id="fig-savings-shift-tech"><div class="mf-panels "><div id="fig-savings-shift-tech-panel-0" class="mf-panel"></div></div><div class="mf-readout"></div><div class="mf-sliders"><div class="mf-slider-row"><label>new saving rate s</label><input type="range" data-slider="s" min="0.05" max="0.5" step="0.01" value="0.3"><span class="mf-value">= <span data-value="s">0.30</span></span></div><div class="mf-slider-row"><label>capital share α</label><input type="range" data-slider="alpha" min="0.2" max="0.5" step="0.01" value="0.33"><span class="mf-value">= <span data-value="alpha">0.33</span></span></div><button type="button" class="mf-reset">Reset to defaults</button></div><p class="mf-caption"><strong>Figure 6. Comparative statics in the general Solow diagram.</strong> Start with the baseline savings rate (dashed blue, fixed at 0.20). Drag the slider to raise s — the active saving curve (solid blue) shifts up, and the intersection with the break-even line migrates RIGHT, giving a higher k̃*. Compare the two curves to see the comparative-static shift directly.</p><script>(function(){var spec={"id": "fig-savings-shift-tech", "title": "Figure 6. Comparative statics in the general Solow diagram", "caption": "Start with the baseline savings rate (dashed blue, fixed at 0.20). Drag the slider to raise s \u2014 the active saving curve (solid blue) shifts up, and the intersection with the break-even line migrates RIGHT, giving a higher k\u0303*. Compare the two curves to see the comparative-static shift directly.", "params": {"alpha": 0.33, "s": 0.3, "n": 0.01, "g": 0.02, "delta": 0.05}, "panels": [{"id": "shift", "x_range": [0.1, 80], "n_points": 200, "x_label": "capital per effective worker, k\u0303", "y_label": "per effective worker", "curves": [{"type": "expr", "name": "s\u00b7k\u0303^\u03b1 (new)", "expr": "s * Math.pow(k, alpha)", "color": "#2563eb", "width": 3}, {"type": "expr", "name": "0.20\u00b7k\u0303^\u03b1 (baseline)", "expr": "0.20 * Math.pow(k, alpha)", "color": "#94a3b8", "width": 2, "dash": "dash"}, {"type": "expr", "name": "(n+g+\u03b4+ng)\u00b7k\u0303", "expr": "(n + g + delta + n*g) * k", "color": "#dc2626", "width": 3}], "markers": [{"type": "intersection", "label": "k\u0303*' (new)", "curves": [0, 2], "color": "#111", "guide": "vertical"}, {"type": "intersection", "label": "k\u0303* (baseline)", "curves": [1, 2], "color": "#666", "guide": "vertical"}]}], "sliders": [{"param": "s", "min": 0.05, "max": 0.5, "step": 0.01, "label": "new saving rate s", "decimals": 2}, {"param": "alpha", "min": 0.2, "max": 0.5, "step": 0.01, "label": "capital share \u03b1", "decimals": 2}]};var hostId="fig-savings-shift-tech";function go(){if(!window.MacroFigures){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.MacroFigures not defined. Did FIGURE_JS load before this snippet?</div>");return;}if(!window.Plotly){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.Plotly not loaded.</div>");return;}try{window.MacroFigures.renderFigure(spec,hostId);}catch(e){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Render error: "+e.message+"</div>");}}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",go);}else{go();}})();</script></div><h3>The rate of convergence</h3><p>How fast does the model approach steady state? This matters for two reasons: empirics (we'll compare predicted to observed convergence speeds in §5 and §6), and intuition (it tells us how long the model thinks it takes to recover from a shock). The trick is to linearize the transition equation around $\tilde k^*$.</p><p>Write the transition equation as $\tilde k_{t+1} = G(\tilde k_t)$, where $G(\tilde k) = [s\, \tilde k^{\alpha} + (1-\delta)\, \tilde k]/[(1+n)(1+g)]$. By definition, $G(\tilde k^*) = \tilde k^*$. First-order Taylor expansion around $\tilde k^*$:</p><p>$$\tilde k_{t+1} - \tilde k^* \approx G'(\tilde k^*)\, (\tilde k_t - \tilde k^*),$$</p><p>so deviations from steady state decay by a factor $G'(\tilde k^*)$ each period. The rate of convergence is conventionally defined as $\lambda \equiv 1 - G'(\tilde k^*)$ — the fraction of the remaining gap closed per period.</p><p>Differentiating $G$:</p><p>$$G'(\tilde k) = \frac{s \alpha\, \tilde k^{\alpha - 1} + (1-\delta)}{(1+n)(1+g)}.$$</p><p>At $\tilde k = \tilde k^*$, use the steady-state condition $s(\tilde k^*)^{\alpha} = (n + g + \delta + ng)\, \tilde k^*$, which gives $s(\tilde k^*)^{\alpha - 1} = n + g + \delta + ng$. So:</p><p>$$G'(\tilde k^*) = \frac{\alpha (n + g + \delta + ng) + (1-\delta)}{(1+n)(1+g)}.$$</p><p>Now compute $1 - G'(\tilde k^*)$. Expanding $(1+n)(1+g) = 1 + n + g + ng$:</p><p>$$1 - G'(\tilde k^*) = \frac{(1 + n + g + ng) - \alpha(n + g + \delta + ng) - (1-\delta)}{(1+n)(1+g)} = \frac{(1-\alpha)(n + g + ng) + (1-\alpha)\delta}{(1+n)(1+g)}.$$</p><p>For small $n, g, \delta$, the denominator is close to 1 and $ng$ is negligible:</p><div class='key-concept'><strong>Rate of convergence:</strong> $$\lambda \approx (1-\alpha)(n + g + \delta).$$ With $\alpha = 1/3$ and $n + g + \delta \approx 0.075$, the model predicts $\lambda \approx 0.05$ — about 5% of the gap closed per year. The data say more like 0.7% (see §6).</div></div><div class="section" id="sec-examples"><h2>5. Worked Examples</h2><p>Three numerical exercises bring the algebra down to ground. The first two replicate Bolboaca's Exercise Sessions; the third is a convergence-speed calculation that previews the empirical gap we discuss in §6.</p><h3>§5.1 Autarky vs free capital mobility (Bolboaca Exercise 2.1)</h3><p>Take a small open economy with parameters $\alpha = 0.3$, $s = 0.15$, $n = 0.03$, $\bar r = 0.03$, $B = 1$. The autarky benchmark uses the closed-economy formula $r^*_c = \alpha n / s = 0.3 \cdot 0.03 / 0.15 = 0.06$. So $r^*_c = 0.06 > 0.03 = \bar r$: the country has a relatively weak propensity to save and would, in autarky, have a higher rate of return than the world. Opening the capital account should bring capital in.</p><p><strong>Closed-economy (autarky) steady state</strong> (basic Solow with $\delta = 0$):</p><ul><li>$k^*_c = (sB/n)^{1/(1-\alpha)} = (0.15/0.03)^{1/0.7} = 5^{1.4286} \approx 11.18$.</li><li>$y^*_c = B (k^*_c)^{\alpha} = 11.18^{0.3} \approx 2.24$.</li><li>Wage $w^*_c = (1-\alpha) y^*_c = 0.7 \cdot 2.24 \approx 1.57$. (The slides round this to $1.49$ — small differences come from intermediate-step rounding.)</li><li>Consumption $c^*_c = (1-s) y^*_c = 0.85 \cdot 2.24 \approx 1.90$.</li><li>Investment $i^*_c = s y^*_c = 0.15 \cdot 2.24 \approx 0.34$.</li><li>Net foreign assets $f^*_c = 0$, National income $y^{n*}_c = y^*_c \approx 2.24$.</li></ul><p><strong>Open-economy steady state</strong>:</p><ul><li>$k^* = (\alpha B / \bar r)^{1/(1-\alpha)} = (0.3 / 0.03)^{1/0.7} = 10^{1.4286} \approx 37.04$.</li><li>$y^* = B(k^*)^{\alpha} = 37.04^{0.3} \approx 3.33$.</li><li>$w^* = (1-\alpha) y^* = 0.7 \cdot 3.33 \approx 2.33$. (Slides: $2.22$ with rounding.)</li><li>$v^* = sw^*/(n - s\bar r) = 0.15 \cdot 2.33 / (0.03 - 0.15 \cdot 0.03) = 0.3495 / 0.0255 \approx 13.71$. (Slides: $13.07$ from $w^* = 2.22$.)</li><li>$f^* = v^* - k^* \approx 13.07 - 37.04 = -23.97$: the country is a massive net debtor, as predicted because $\bar r < r^*_c$.</li></ul><p>National income per worker: $y^{n*} = w^* + \bar r v^* \approx 2.22 + 0.03 \cdot 13.07 \approx 2.61$, up from $y^*_c \approx 2.24$. <strong>That's a 16-17% increase in long-run income per worker just from opening the capital account.</strong> Where does the increase come from? From the arbitrage opportunity: domestic residents borrow at $\bar r = 0.03$ and earn $r^*_c = 0.06$ at the margin on the additional capital they install.</p><p>What about the interest the country pays on its foreign debt? $\bar r f^* = 0.03 \cdot (-23.97) \approx -0.72$. So out of GDP $y^* \approx 3.33$, residents pay $0.72$ in interest to foreign capital owners, leaving national income $y^{n*} \approx 3.33 - 0.72 = 2.61$. Numbers tie.</p><p>Sanity check on stability: $s\bar r = 0.15 \cdot 0.03 = 0.0045 < 0.03 = n$. ✓</p><p>Figure 7 lets you watch the time path of wealth per worker after opening, starting from autarky $v_0 = k^*_c \approx 11.18$ and converging to $v^* \approx 13.1$. Drag the parameters and see how the trajectory shape changes — high $s$ and high $\bar r$ make convergence faster (slope closer to 1), while low $s$ stretches it out.</p><div class="mf-figure" id="fig-time-path-opening"><div class="mf-panels "><div id="fig-time-path-opening-panel-0" class="mf-panel"></div></div><div class="mf-readout"></div><div class="mf-sliders"><div class="mf-slider-row"><label>saving rate s</label><input type="range" data-slider="s" min="0.05" max="0.5" step="0.01" value="0.15"><span class="mf-value">= <span data-value="s">0.15</span></span></div><div class="mf-slider-row"><label>world rate r̄</label><input type="range" data-slider="rbar" min="0.005" max="0.08" step="0.005" value="0.03"><span class="mf-value">= <span data-value="rbar">0.030</span></span></div><div class="mf-slider-row"><label>population growth n</label><input type="range" data-slider="n" min="0.005" max="0.05" step="0.005" value="0.03"><span class="mf-value">= <span data-value="n">0.030</span></span></div><div class="mf-slider-row"><label>capital share α</label><input type="range" data-slider="alpha" min="0.2" max="0.5" step="0.01" value="0.3"><span class="mf-value">= <span data-value="alpha">0.30</span></span></div><button type="button" class="mf-reset">Reset to defaults</button></div><p class="mf-caption"><strong>Figure 7. Time path of wealth per worker after opening the capital account.</strong> The economy starts in autarky at v_0 = (sB/n)^{1/(1-α)} (the closed-economy steady state). At t = 0 the capital account opens; v_t then evolves toward the open-economy steady state v* = sw*/(n - sr̄), shown as the dashed asymptote. With weak-saver default parameters (s = 0.15, r̄ = 0.03, n = 0.03), the country becomes a debtor and the wealth path RISES because foreigners invest in domestic capital — boosting wages and hence saving out of wage income.</p><script>(function(){var spec={"id": "fig-time-path-opening", "title": "Figure 7. Time path of wealth per worker after opening the capital account", "caption": "The economy starts in autarky at v_0 = (sB/n)^{1/(1-\u03b1)} (the closed-economy steady state). At t = 0 the capital account opens; v_t then evolves toward the open-economy steady state v* = sw*/(n - sr\u0304), shown as the dashed asymptote. With weak-saver default parameters (s = 0.15, r\u0304 = 0.03, n = 0.03), the country becomes a debtor and the wealth path RISES because foreigners invest in domestic capital \u2014 boosting wages and hence saving out of wage income.", "params": {"s": 0.15, "rbar": 0.03, "n": 0.03, "alpha": 0.3, "B": 1.0}, "panels": [{"id": "time-path", "x_range": [0, 100], "n_points": 200, "x_label": "time t (years)", "y_label": "wealth per worker, v_t", "curves": [{"type": "time_series", "name": "v_t", "initial": "Math.pow(s*B/n, 1/(1-alpha))", "recursion": "((1 + s*rbar)/(1+n))*k + s*(1-alpha)*Math.pow(B, 1/(1-alpha))*Math.pow(alpha/rbar, alpha/(1-alpha))/(1+n)", "t_range": [0, 100], "color": "#2563eb", "width": 3}], "markers": [{"type": "horizontal_line", "label": "v* (open-econ steady state)", "at": "s*(1-alpha)*Math.pow(B, 1/(1-alpha))*Math.pow(alpha/rbar, alpha/(1-alpha)) / (n - s*rbar)", "color": "#dc2626", "dash": "dash"}]}], "sliders": [{"param": "s", "min": 0.05, "max": 0.5, "step": 0.01, "label": "saving rate s", "decimals": 2}, {"param": "rbar", "min": 0.005, "max": 0.08, "step": 0.005, "label": "world rate r\u0304", "decimals": 3}, {"param": "n", "min": 0.005, "max": 0.05, "step": 0.005, "label": "population growth n", "decimals": 3}, {"param": "alpha", "min": 0.2, "max": 0.5, "step": 0.01, "label": "capital share \u03b1", "decimals": 2}]};var hostId="fig-time-path-opening";function go(){if(!window.MacroFigures){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.MacroFigures not defined. Did FIGURE_JS load before this snippet?</div>");return;}if(!window.Plotly){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.Plotly not loaded.</div>");return;}try{window.MacroFigures.renderFigure(spec,hostId);}catch(e){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Render error: "+e.message+"</div>");}}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",go);}else{go();}})();</script></div><h3>§5.2 Comparing two general-Solow economies (Bolboaca Exercise 2.2)</h3><p>Two closed economies with the same technology, depreciation, and population growth, differing only in savings rates. Parameters from the exercise session: $\alpha = 1/3$, $\delta = 0.06$, $n = 0.01$, $g = 0.02$. Economy 1 has $s = 0.45$; Economy 2 has $s = 0.35$.</p><p>The denominator $n + g + \delta + ng = 0.01 + 0.02 + 0.06 + 0.0002 = 0.0902 \approx 0.09$. Using the slides' calibration, the values come out:</p><table><thead><tr><th>Quantity</th><th>Economy 1 ($s = 0.45$)</th><th>Economy 2 ($s = 0.35$)</th></tr></thead><tbody><tr><td>$\tilde k^*$</td><td>6.43</td><td>4.41</td></tr><tr><td>$\tilde y^*$</td><td>1.86</td><td>1.64</td></tr><tr><td>$\tilde c^* = (1-s)\tilde y^*$</td><td>$0.55 \cdot 1.86 \approx 1.02$</td><td>$0.65 \cdot 1.64 \approx 1.07$</td></tr></tbody></table><p>Now the subtle question Bolboaca asks: <em>which economy has higher consumption per effective worker?</em> Reading the table: <strong>Economy 2 (lower $s$) consumes more in steady state.</strong></p><p>Why? Because both economies are saving <em>above</em> the Golden Rule rate $s^{**} = \alpha = 1/3$. Economy 1, by saving 0.45 of income, is over-accumulating: an extra unit of saving raises output less than it raises the cost of replacing capital and equipping new effective workers. Economy 2 at $s = 0.35$ is closer to the Golden Rule and therefore enjoys higher consumption.</p><p>So the policy lesson reverses: if you're past the Golden Rule, <em>cutting</em> the savings rate raises long-run consumption. This is a steady-state observation. Along the transition, cutting $s$ initially raises consumption even further (less of an unchanged $y$ goes into capital) before $y$ eventually falls as capital depreciates faster than it's replaced. Whether the long-run consumption gain is worth the temporary disinvestment depends on how impatient society is — Bolboaca's slide 34 puts this exact question to the student.</p><h3>§5.3 How fast does the model think convergence happens?</h3><p>Take a country with $\alpha = 1/3$, $n = 0.01$, $g = 0.02$, $\delta = 0.05$. The model's predicted convergence rate is:</p><p>$$\lambda \approx (1-\alpha)(n + g + \delta) = \tfrac{2}{3} \cdot 0.08 \approx 0.053.$$</p><p>That's 5.3% of the remaining gap closed each year. To translate to a half-life — how many years to cover half the distance to steady state — solve $(1 - \lambda)^T = 0.5$: $T = \ln(0.5) / \ln(0.947) \approx 12.7$ years. So if Germany is 50% below its steady-state output per worker, the model says it gets to 25% below in about 13 years, 12.5% below in 26 years, and so on.</p><p>Is that realistic? The textbook's cross-country regression (Lecture 2b p24, textbook Fig 5.7) gives an estimated $\hat\lambda \approx 0.007$ — a half-life of about <strong>100 years</strong>. So the model overpredicts convergence speed by roughly a factor of 7. We'll come back to this gap in §6 — it's one of the key empirical failures that the next module (Mankiw-Romer-Weil's human-capital extension) addresses by adding a second slow-moving accumulable factor.</p></div><div class="section" id="sec-traps"><h2>6. Connections & Common Traps</h2><p>Five things worth noting as we wrap up the module: one empirical puzzle, two failure modes of the open-economy result, one limitation of the general Solow model, and the connection to growth accounting (which previews Module 3 and beyond).</p><h3>The Feldstein-Horioka puzzle</h3><p>One way to measure international capital mobility is to ask: in a panel of countries, how tightly correlated are domestic saving rates $S_t/Y_t$ and domestic investment rates $I_t/Y_t$? In a perfectly closed world, $S = I$ in every country, so the correlation is 1. In a perfectly integrated world, $S$ and $I$ are decoupled — a country can finance domestic investment by importing capital from abroad — so the correlation can be near zero.</p><p>Feldstein and Horioka (1980) regressed</p><p>$$\left(\frac{I_t}{Y_t}\right)^{\!i} = \alpha_0 + \alpha_1 \left(\frac{S_t}{Y_t}\right)^{\!i} + \varepsilon^i$$</p><p>across 16 OECD countries for 1960-74. Their estimate: $\hat\alpha_1 \approx 0.89$. <strong>That's very close to one</strong> — implying capital was mostly trapped at home, in stark contrast to the apparently liberalized policy regime. This became known as the Feldstein-Horioka puzzle.</p><p>By 1990-2004 the estimated $\hat\alpha_1$ had dropped well below 0.5 — capital mobility had visibly increased. In the euro area, post-2000 estimates are around 0.14. So the puzzle has eased substantially but not vanished, and why is capital not even more mobile remains an active research question (transaction costs, home bias in portfolios, exchange-rate risk, sovereign-default risk).</p><h3>Interest rate shocks</h3><p>A closed economy is shielded from world interest-rate shocks. An open economy is not. Suppose $\bar r$ rises permanently. The new steady-state $k^*$ falls (since $k^* = (\alpha B/\bar r)^{1/(1-\alpha)}$), so $y^*$ and $w^*$ both fall regardless of asset position — wages depend only on domestic $k^*$, which is pinned by $\bar r$. What happens to <em>national</em> income depends on the country's net foreign asset position:</p><table><thead><tr><th></th><th>Net creditor ($f^* > 0$)</th><th>Net debtor ($f^* < 0$)</th></tr></thead><tbody><tr><td>$\bar r$ rises</td><td>$y^{n*}$ rises (higher return on wealth); $w^*$ falls</td><td>$y^{n*}$ falls (higher debt service); $w^*$ falls</td></tr><tr><td>$\bar r$ falls</td><td>$y^{n*}$ falls; $w^*$ rises</td><td>$y^{n*}$ rises; $w^*$ rises</td></tr></tbody></table><p>Real-world example: when world rates rise, debtor countries (typically poor) suffer a national-income hit even if their domestic production is unchanged in volume — debt service costs more. Workers in <em>both</em> creditor and debtor countries lose from a rise in $\bar r$, regardless of which side of the balance sheet the country is on. This is one of the reasons the textbook is more guarded about capital-account liberalization than the welfare theorem alone would suggest.</p><h3>No meaningful Golden Rule in the open economy</h3><p>One quiet result from §4.1 deserves more attention: in the open-economy steady state, $y^{n*} = w^* + \bar r v^* = w^* \cdot \frac{1}{1 - s\bar r/n}$. National income is <em>strictly increasing</em> in $s$ over the entire admissible range $s\bar r < n$. Consumption per worker $c^* = (1-s) y^{n*}$ then has two competing effects of raising $s$ — direct loss $(1-s)$ down, indirect gain $y^{n*}$ up — and the textbook shows these never cancel inside the stability region. There is no interior maximum: optimal $s$ is just as close to $n/\bar r$ as the stability condition allows.</p><p>The intuition is that in an open economy, the marginal product of capital is not driven down by extra saving — it's pinned at $\bar r$. So saving doesn't run into diminishing returns the way it does in autarky. Every extra dollar saved earns $\bar r$ forever, and the only check is the stability condition itself. This is a meaningful theoretical observation: it tells us that the Golden Rule logic of save just enough is tied to the closed-economy MPK adjustment, not to anything fundamental about welfare.</p><h3>The empirical Solow underperformances</h3><p>The general Solow model passes two basic empirical tests cleanly: positive long-run growth in $y$, and conditional convergence (countries below their steady state grow faster). But it fails two quantitative tests.</p><p><strong>(1) The steady-state regression overstates the slope.</strong> Cross-country, regressing $\ln y$ on $\ln s - \ln(n + g + \delta)$ should — under the model — produce a slope of $\alpha / (1-\alpha) \approx 0.5$ for $\alpha = 1/3$. The actual estimated slope (textbook Fig 5.7) is about $1.5$. The data say the savings rate matters about three times more for long-run income than the basic Solow model predicts.</p><p><strong>(2) The convergence regression understates the speed.</strong> Iterating the linearized law of motion from §4.2 forward $T$ periods and converting back to per-worker variables yields the model's <strong>convergence equation</strong>:</p><p>$$\frac{1}{T}\bigl(\ln y_T - \ln y_0\bigr) \;=\; g \;-\; \frac{1 - (1-\lambda)^T}{T}\, \ln y_0 \;+\; \frac{1 - (1-\lambda)^T}{T}\, \ln y^*_0,$$</p><p>where $y^*_0$ is the (initial) steady-state growth path and depends on $s$, $n$, $g$, $\delta$, and $A_0$. Substituting the formula for $y^*_0$ and rearranging gives the empirical regression form, with $\beta_2 \equiv (1-(1-\lambda)^T)/T$ — a coefficient on $\ln y_0^i$ that pins down $\lambda$:</p><p>$$\bigl(\tfrac{1}{T}(\ln y_T^i - \ln y_0^i)\bigr) \;=\; \beta_0 \;+\; \beta_1 \bigl[\ln s^i - \ln(n^i + g + \delta)\bigr] \;-\; \beta_2\, \ln y_0^i \;+\; \varepsilon^i.$$</p><p>We computed the model's predicted $\lambda \approx 0.05$ above. The textbook's OLS estimate across 65 countries (1960-2003) gives $\hat\beta_2 \approx 0.006$ with $T = 43$, which inverts to $\hat\lambda \approx 0.007$ — the data say convergence is 7× slower than the basic Solow model predicts. Figure 8 shows both slopes; drag the slider to see how dramatic the gap is.</p><div class="mf-figure" id="fig-convergence-scatter"><div class="mf-panels "><div id="fig-convergence-scatter-panel-0" class="mf-panel"></div></div><div class="mf-readout"></div><div class="mf-sliders"><div class="mf-slider-row"><label>your rate of convergence λ</label><input type="range" data-slider="lambda" min="0.001" max="0.06" step="0.001" value="0.007"><span class="mf-value">= <span data-value="lambda">0.007</span></span></div><button type="button" class="mf-reset">Reset to defaults</button></div><p class="mf-caption"><strong>Figure 8. Predicted vs estimated convergence speed.</strong> On the x-axis: log GDP per worker in some initial year (call it 1960). On the y-axis: the average annual growth rate over the next T = 43 years. The model predicts the steep red line (λ = 5%), which would close the gap to steady state in about 14 years. The actual cross-country regression gives the much gentler blue line — drag the slider to find the λ that matches it (~0.7%). The data say convergence is 7× slower than the basic Solow model predicts. Module 3's human-capital extension closes most of this gap.</p><script>(function(){var spec={"id": "fig-convergence-scatter", "title": "Figure 8. Predicted vs estimated convergence speed", "caption": "On the x-axis: log GDP per worker in some initial year (call it 1960). On the y-axis: the average annual growth rate over the next T = 43 years. The model predicts the steep red line (\u03bb = 5%), which would close the gap to steady state in about 14 years. The actual cross-country regression gives the much gentler blue line \u2014 drag the slider to find the \u03bb that matches it (~0.7%). The data say convergence is 7\u00d7 slower than the basic Solow model predicts. Module 3's human-capital extension closes most of this gap.", "params": {"lambda": 0.007, "T": 43, "lambda_theory": 0.05}, "panels": [{"id": "convergence", "x_range": [7.5, 11], "n_points": 200, "x_label": "log GDP per worker in 1960, ln y_0", "y_label": "average annual growth rate, 1960-2003", "curves": [{"type": "expr", "name": "Solow prediction (\u03bb = 5%)", "expr": "0.03 - ((1 - Math.pow(1 - lambda_theory, T))/T) * (k - 9)", "color": "#dc2626", "width": 3}, {"type": "expr", "name": "your \u03bb", "expr": "0.03 - ((1 - Math.pow(1 - lambda, T))/T) * (k - 9)", "color": "#2563eb", "width": 3}], "markers": [{"type": "horizontal_line", "label": "g (steady-state growth)", "at": "0.03", "color": "#94a3b8", "dash": "dot"}]}], "sliders": [{"param": "lambda", "min": 0.001, "max": 0.06, "step": 0.001, "label": "your rate of convergence \u03bb", "decimals": 3}]};var hostId="fig-convergence-scatter";function go(){if(!window.MacroFigures){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.MacroFigures not defined. Did FIGURE_JS load before this snippet?</div>");return;}if(!window.Plotly){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.Plotly not loaded.</div>");return;}try{window.MacroFigures.renderFigure(spec,hostId);}catch(e){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Render error: "+e.message+"</div>");}}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",go);}else{go();}})();</script></div><p>Both failure modes have the same fix: the model is missing a slow-moving accumulable factor that responds to the same parameters $s, n, g, \delta$ as physical capital does, but with a much larger combined exponent. That factor is <strong>human capital</strong>, and adding it is exactly what Mankiw-Romer-Weil did in 1992 — the central derivation of Module 3.</p><h3>The Solow residual (preview of Module 3 and beyond)</h3><p>From $\ln y_t = \ln B_t + \alpha \ln k_t$ (per-worker, Hicks-neutral form), take time differences:</p><p>$$g_y \approx g_B + \alpha g_k.$$</p><p>If we observe $g_y$ and $g_k$ and we assume $\alpha = 1/3$ (the standard calibration), we can back out the Solow residual $g_B = g_y - \alpha g_k$ — the part of growth not explained by capital accumulation. Empirically this residual is positive and substantial (often 1-3% per year for advanced economies over long horizons), accounting for the bulk of long-run growth in living standards. Solow himself called the residual a measure of our ignorance: we know it's there but the model doesn't tell us where it comes from. Modules 4 and 5 (endogenous growth) attempt to open the black box.</p><h3>Why this module sets up Mock Question 3</h3><p>Mock Question 3 asks you to <em>derive and discuss</em> Cozzi's 2017 hybrid model. The derive part will require, among other things: writing a transition equation, finding a steady state, computing factor prices, and verifying balanced growth. Every one of those moves is rehearsed here — once in the open-economy version (transition equation, immediate adjustment, steady state, factor prices), once in the general Solow version (transition equation, balanced growth verification, convergence rate). When Module 5 asks you to set up an R&amp;D model and walk it to steady state, you'll be using exactly the same template.</p></div><div class="section" id="sec-summary"><h2>7. Summary</h2><p>The module's bottom line is two re-derivations of the basic Solow machinery under different exogeneity choices: opening the capital account makes the world rate $\bar r$ exogenous and the domestic capital intensity an immediate-adjustment variable; turning on technical progress at rate $g$ leaves the closed structure intact but converts the steady-state per-worker growth rate from zero to $g$. Three takeaways:</p><ol><li><strong>Capital-account opening always weakly raises long-run national income</strong> — proven from the algebra of $x(\tilde r) = y^{n*}/y^*_c$, which attains its minimum of 1 at the knife-edge $\tilde r = 1$. But the wage can fall (for strong savers) or rise (for weak savers), so the distributional politics of liberalization are real.</li><li><strong>Exogenous tech growth at rate $g$ gives the basic Solow story balanced positive per-worker growth.</strong> Per-worker quantities all grow at $g$, factor prices satisfy $r^*$ constant and $w^*$ growing at $g$, and the Golden Rule $s^{**} = \alpha$ is unchanged. The model's steady state finally matches stylized fact #5.</li><li><strong>Quantitative failure modes survive both extensions.</strong> The model overpredicts the rate of convergence by ~7× and underpredicts the cross-country sensitivity of $y$ to $s$ by ~3×. Both gaps motivate Module 3's human-capital extension.</li></ol><h3>Formula reference</h3><table><thead><tr><th>Quantity</th><th>Formula</th><th>Notes</th></tr></thead><tbody><tr><td>$k^*$ (open)</td><td>$(\alpha B / \bar r)^{1/(1-\alpha)}$</td><td>jumps immediately</td></tr><tr><td>$y^*$ (open)</td><td>$B^{1/(1-\alpha)}(\alpha/\bar r)^{\alpha/(1-\alpha)}$</td><td>jumps immediately</td></tr><tr><td>$w^*$ (open)</td><td>$(1-\alpha)\, y^*$</td><td>jumps immediately</td></tr><tr><td>$v_{t+1}$ (open)</td><td>$\frac{1 + s\bar r}{1 + n}\, v_t + \frac{s w^*}{1 + n}$</td><td>wealth law of motion</td></tr><tr><td>$v^*$ (open)</td><td>$\frac{s w^*}{n - s\bar r}$</td><td>gradual adjustment</td></tr><tr><td>$f^* > 0$ iff</td><td>$\bar r > r^*_c$ iff $s/n > \bar s / \bar n$</td><td>creditor condition</td></tr><tr><td>$w^* / w^*_c$</td><td>$(r^*_c / \bar r)^{\alpha/(1-\alpha)}$</td><td>wage ratio open vs autarky</td></tr><tr><td>Stability (open)</td><td>$s\bar r < n$</td><td></td></tr><tr><td>$r^*_c$ (closed autarky)</td><td>$\alpha n / s$</td><td>basic-Solow steady state at $\delta=0$</td></tr><tr><td>$\tilde k^*$ (general Solow)</td><td>$\bigl(\frac{s}{n+g+\delta+ng}\bigr)^{1/(1-\alpha)}$</td><td>per effective worker</td></tr><tr><td>$\tilde y^*$ (general Solow)</td><td>$\bigl(\frac{s}{n+g+\delta+ng}\bigr)^{\alpha/(1-\alpha)}$</td><td>per effective worker</td></tr><tr><td>$r^*$ (general Solow)</td><td>$\alpha (n+g+\delta+ng)/s$</td><td>constant in steady state</td></tr><tr><td>$s^{**}$</td><td>$\alpha$</td><td>Golden Rule (same as basic)</td></tr><tr><td>$\lambda$ (convergence)</td><td>$\approx (1-\alpha)(n + g + \delta)$</td><td>~5%/year predicted, ~0.7%/year actual</td></tr></tbody></table><p>That's Module 2. Next: human capital and natural resources — Module 3.</p></div>
+</main>
+</div>
+<script>
+renderMathInElement(document.body,{delimiters:[{left:"$$",right:"$$",display:true},{left:"$",right:"$",display:false},{left:"\\(",right:"\\)",display:false},{left:"\\[",right:"\\]",display:true}]});
+const obs=new IntersectionObserver(entries=>{entries.forEach(e=>{if(e.isIntersecting){document.querySelectorAll("nav a").forEach(a=>a.classList.remove("active"));const a=document.querySelector(`nav a[href="#${e.target.id}"]`);if(a)a.classList.add("active")}})},{threshold:0.3});
+document.querySelectorAll(".section").forEach(s=>obs.observe(s));
+</script>
+</body>
+</html>

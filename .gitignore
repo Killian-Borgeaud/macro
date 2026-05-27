@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+.Python
+*.egg-info/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Claude Code local overrides
+.claude/settings.local.json
+
+# Visual-test previews (regenerated on every build, not source of truth)
+tools/styling/*_preview.html
+tools/styling/preview.html
+
+# Generated payloads (skills write to $env:TEMP, but in case they land here)
+*_payload.json
+!tools/styling/*_fixture.json
+
+# Build/temp artifacts
+.tmp/
+tmp/

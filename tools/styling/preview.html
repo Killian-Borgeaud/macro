@@ -183,12 +183,24 @@ window.MacroFigures = window.MacroFigures || (function() {
       }
 
       if (pt) {
-        traces.push({
+        const pointTrace = {
           x: [pt.x], y: [pt.y], mode: 'markers',
           marker: { size: 8, color: m.color || '#003135', line: { color: 'white', width: 1.5 } },
           name: m.label, showlegend: false,
           hovertemplate: (m.label ? m.label + ' = ' : '') + '(%{x:.3f}, %{y:.3f})<extra></extra>'
-        });
+        };
+        // label_point markers render the label TEXT next to the dot; other marker
+        // types (intersection, max/min) write their label via annotations / guides.
+        if (m.type === 'label_point' && m.label) {
+          pointTrace.mode = 'markers+text';
+          pointTrace.text = [m.label];
+          pointTrace.textposition = m.textposition || 'top right';
+          pointTrace.textfont = {
+            size: 13, color: m.color || '#003135',
+            family: 'JetBrains Mono, ui-monospace, monospace', weight: 700
+          };
+        }
+        traces.push(pointTrace);
         if (m.guide === 'vertical') {
           shapes.push({ type: 'line', x0: pt.x, x1: pt.x, y0: 0, y1: pt.y,
                         line: { color: '#5a7378', dash: 'dash', width: 1 } });

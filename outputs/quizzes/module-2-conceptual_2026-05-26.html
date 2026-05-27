@@ -1,0 +1,1105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quiz: Open-Economy Solow and Technological Progress</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script>
+window.MacroFigures = window.MacroFigures || (function() {
+
+  function linspace(a, b, n) {
+    const out = [];
+    for (let i = 0; i < n; i++) out.push(a + (b - a) * i / (n - 1));
+    return out;
+  }
+
+  function compileExpr(expr, paramNames) {
+    return new Function('k', 'p',
+      'const {' + paramNames.join(',') + '} = p; return ' + expr + ';');
+  }
+
+  function compileScalarExpr(expr, paramNames) {
+    if (typeof expr === 'number') return () => expr;
+    if (typeof expr === 'string') {
+      return new Function('p',
+        'const {' + paramNames.join(',') + '} = p; return ' + expr + ';');
+    }
+    return () => null;
+  }
+
+  function findIntersection(xs, y1s, y2s) {
+    for (let i = 1; i < xs.length; i++) {
+      const d0 = y1s[i-1] - y2s[i-1];
+      const d1 = y1s[i] - y2s[i];
+      if (d0 === 0) return { x: xs[i-1], y: y1s[i-1] };
+      if (d0 * d1 < 0) {
+        const t = d0 / (d0 - d1);
+        return {
+          x: xs[i-1] + t * (xs[i] - xs[i-1]),
+          y: y1s[i-1] + t * (y1s[i] - y1s[i-1])
+        };
+      }
+    }
+    return null;
+  }
+
+  function findExtremum(xs, ys, kind) {
+    let idx = 0;
+    for (let i = 1; i < ys.length; i++) {
+      if (kind === 'max' ? ys[i] > ys[idx] : ys[i] < ys[idx]) idx = i;
+    }
+    return { x: xs[idx], y: ys[idx] };
+  }
+
+  function buildCurveData(curve, xs, params, paramNames) {
+    if (curve.type === 'time_series') {
+      // Discrete recursion: k_{t+1} = recursion(k_t, p), starting from initial.
+      const T = (curve.t_range && curve.t_range[1]) || 50;
+      const t0 = (curve.t_range && curve.t_range[0]) || 0;
+      const initFn = compileScalarExpr(curve.initial, paramNames);
+      const recFn = new Function('k', 'p',
+        'const {' + paramNames.join(',') + '} = p; return ' + curve.recursion + ';');
+      const ts = [t0], ks = [initFn(params)];
+      for (let t = t0 + 1; t <= T; t++) {
+        ks.push(recFn(ks[ks.length - 1], params));
+        ts.push(t);
+      }
+      return { x: ts, y: ks };
+    }
+    if (curve.type === 'piecewise') {
+      // [{when: "k < 10", expr: "..."}], else expr at end
+      const fns = curve.pieces.map(p => ({
+        when: p.when ? new Function('k', 'p',
+          'const {' + paramNames.join(',') + '} = p; return ' + p.when + ';') : null,
+        fn: compileExpr(p.expr, paramNames)
+      }));
+      return {
+        x: xs,
+        y: xs.map(k => {
+          for (const piece of fns) {
+            if (!piece.when || piece.when(k, params)) return piece.fn(k, params);
+          }
+          return null;
+        })
+      };
+    }
+    // default: type === 'expr'
+    const fn = compileExpr(curve.expr, paramNames);
+    return { x: xs, y: xs.map(k => fn(k, params)) };
+  }
+
+  function buildPanel(panel, params, paramNames, panelHostId) {
+    let xs;
+    // For panels containing only time_series curves, x_range may be omitted.
+    if (panel.x_range) {
+      xs = linspace(panel.x_range[0], panel.x_range[1], panel.n_points || 200);
+    } else {
+      xs = [];
+    }
+
+    const curveData = panel.curves.map(c => buildCurveData(c, xs, params, paramNames));
+
+    const traces = panel.curves.map((c, i) => ({
+      x: curveData[i].x, y: curveData[i].y,
+      name: c.name, mode: c.mode || 'lines',
+      line: { color: c.color, width: c.width || 1.6, dash: c.dash || 'solid' },
+      marker: { size: c.marker_size || 5, color: c.color, line: { color: 'white', width: 1 } }
+    }));
+
+    const shapes = [];
+    const annotations = [];
+    const readoutParts = [];
+
+    for (const m of (panel.markers || [])) {
+      let pt = null;
+      let line = null;
+
+      if (m.type === 'intersection') {
+        pt = findIntersection(curveData[m.curves[0]].x, curveData[m.curves[0]].y, curveData[m.curves[1]].y);
+      } else if (m.type === 'maximum' || m.type === 'minimum') {
+        const kind = m.type === 'maximum' ? 'max' : 'min';
+        pt = findExtremum(curveData[m.curve].x, curveData[m.curve].y, kind);
+      } else if (m.type === 'vertical_line') {
+        const x = compileScalarExpr(m.at, paramNames)(params);
+        line = { type: 'line', x0: x, x1: x, yref: 'paper', y0: 0, y1: 1,
+                 line: { color: m.color || '#5a7378', dash: m.dash || 'dash', width: 1 } };
+        if (m.label) annotations.push({
+          x: x, y: 0, xref: 'x', yref: 'paper', text: m.label,
+          showarrow: false, yshift: -18, font: { size: 11, color: '#111' }
+        });
+      } else if (m.type === 'horizontal_line') {
+        const y = compileScalarExpr(m.at, paramNames)(params);
+        line = { type: 'line', y0: y, y1: y, xref: 'paper', x0: 0, x1: 1,
+                 line: { color: m.color || '#5a7378', dash: m.dash || 'dash', width: 1 } };
+        if (m.label) annotations.push({
+          x: 1, y: y, xref: 'paper', yref: 'y', text: m.label,
+          showarrow: false, xshift: -8, yshift: -8, font: { size: 11, color: '#111' }
+        });
+      } else if (m.type === 'tangent_line') {
+        const x0 = compileScalarExpr(m.at, paramNames)(params);
+        const fn = compileExpr(panel.curves[m.curve].expr, paramNames);
+        const h = Math.max(0.001, Math.abs(x0) * 0.001);
+        const slope = (fn(x0 + h, params) - fn(x0 - h, params)) / (2 * h);
+        const y0v = fn(x0, params);
+        const xMin = panel.x_range[0], xMax = panel.x_range[1];
+        traces.push({
+          x: [xMin, xMax],
+          y: [y0v + slope * (xMin - x0), y0v + slope * (xMax - x0)],
+          mode: 'lines', name: m.label || 'tangent',
+          line: { color: m.color || '#16a34a', dash: 'dot', width: 2 }, showlegend: !!m.label
+        });
+        pt = { x: x0, y: y0v };
+      } else if (m.type === 'asymptote') {
+        const fn = compileExpr(panel.curves[m.curve].expr, paramNames);
+        const yInf = fn(1e9, params);
+        line = { type: 'line', y0: yInf, y1: yInf, xref: 'paper', x0: 0, x1: 1,
+                 line: { color: m.color || '#94a3b8', dash: 'dot', width: 1 } };
+        if (m.label) annotations.push({
+          x: 0.98, y: yInf, xref: 'paper', yref: 'y', text: m.label,
+          showarrow: false, xanchor: 'right', yshift: -8, font: { size: 11, color: '#666' }
+        });
+      } else if (m.type === 'area') {
+        // Shaded region between curves[0] and curves[1]
+        const ys1 = curveData[m.curves[0]].y;
+        const ys2 = curveData[m.curves[1]].y;
+        traces.push({
+          x: [...curveData[m.curves[0]].x, ...curveData[m.curves[0]].x.slice().reverse()],
+          y: [...ys1, ...ys2.slice().reverse()],
+          fill: 'toself', fillcolor: m.color || 'rgba(37,99,235,0.15)',
+          line: { width: 0 }, name: m.label || 'area', hoverinfo: 'skip',
+          showlegend: !!m.label
+        });
+      } else if (m.type === 'label_point') {
+        const x = compileScalarExpr(m.x, paramNames)(params);
+        const y = compileScalarExpr(m.y, paramNames)(params);
+        pt = { x, y };
+      }
+
+      if (pt) {
+        const pointTrace = {
+          x: [pt.x], y: [pt.y], mode: 'markers',
+          marker: { size: 8, color: m.color || '#003135', line: { color: 'white', width: 1.5 } },
+          name: m.label, showlegend: false,
+          hovertemplate: (m.label ? m.label + ' = ' : '') + '(%{x:.3f}, %{y:.3f})<extra></extra>'
+        };
+        // label_point markers render the label TEXT next to the dot; other marker
+        // types (intersection, max/min) write their label via annotations / guides.
+        if (m.type === 'label_point' && m.label) {
+          pointTrace.mode = 'markers+text';
+          pointTrace.text = [m.label];
+          pointTrace.textposition = m.textposition || 'top right';
+          pointTrace.textfont = {
+            size: 13, color: m.color || '#003135',
+            family: 'JetBrains Mono, ui-monospace, monospace', weight: 700
+          };
+        }
+        traces.push(pointTrace);
+        if (m.guide === 'vertical') {
+          shapes.push({ type: 'line', x0: pt.x, x1: pt.x, y0: 0, y1: pt.y,
+                        line: { color: '#5a7378', dash: 'dash', width: 1 } });
+        } else if (m.guide === 'horizontal') {
+          shapes.push({ type: 'line', xref: 'paper', x0: 0, x1: 1, y0: pt.y, y1: pt.y,
+                        line: { color: '#5a7378', dash: 'dash', width: 1 } });
+        } else if (m.guide === 'both') {
+          shapes.push({ type: 'line', x0: pt.x, x1: pt.x, y0: 0, y1: pt.y,
+                        line: { color: '#5a7378', dash: 'dash', width: 1 } });
+          shapes.push({ type: 'line', xref: 'paper', x0: 0, x1: 1, y0: pt.y, y1: pt.y,
+                        line: { color: '#5a7378', dash: 'dash', width: 1 } });
+        }
+        if (m.label && m.guide === 'vertical') annotations.push({
+          x: pt.x, y: 0, xref: 'x', yref: 'y', text: m.label + ' = ' + pt.x.toFixed(2),
+          showarrow: false, yshift: -18, font: { size: 11, color: '#111' }
+        });
+        readoutParts.push(panel.id + ': ' + (m.label || '?') +
+                          ' = ' + pt.x.toFixed(3) + ', y = ' + pt.y.toFixed(3));
+      }
+      if (line) shapes.push(line);
+    }
+
+    const layout = {
+      font: { family: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+              color: '#003135', size: 12 },
+      xaxis: { title: { text: panel.x_label, font: { size: 12, color: '#5a7378' } },
+               gridcolor: '#e6eef0', zerolinecolor: '#d4e1e4', linecolor: '#d4e1e4',
+               tickfont: { color: '#5a7378', size: 11 } },
+      yaxis: { title: { text: panel.y_label, font: { size: 12, color: '#5a7378' } },
+               gridcolor: '#e6eef0', zerolinecolor: '#d4e1e4', linecolor: '#d4e1e4',
+               tickfont: { color: '#5a7378', size: 11 } },
+      shapes: shapes, annotations: annotations,
+      margin: { t: 28, r: 20, b: 50, l: 60 },
+      title: panel.title ? { text: panel.title, font: { size: 13, color: '#024950' } } : undefined,
+      legend: { x: 0.02, y: 0.98, bgcolor: 'rgba(255,255,255,0.9)',
+                bordercolor: '#d4e1e4', borderwidth: 1, font: { size: 11, color: '#003135' } },
+      plot_bgcolor: '#ffffff', paper_bgcolor: '#ffffff'
+    };
+
+    Plotly.react(panelHostId, traces, layout, { responsive: true, displayModeBar: false });
+    return readoutParts;
+  }
+
+  function renderFigure(spec, hostId) {
+    const root = document.getElementById(hostId);
+    if (!root) { console.warn('Figure host not found:', hostId); return; }
+    const paramNames = Object.keys(spec.params);
+    const defaults = JSON.parse(JSON.stringify(spec.params));
+    const params = JSON.parse(JSON.stringify(spec.params));
+
+    const panels = spec.panels || [{
+      id: 'main', x_range: spec.x_range, n_points: spec.n_points,
+      x_label: spec.x_label, y_label: spec.y_label,
+      curves: spec.curves, markers: spec.markers
+    }];
+
+    function renderAll() {
+      const readoutLines = [];
+      panels.forEach((p, i) => {
+        const lines = buildPanel(p, params, paramNames, hostId + '-panel-' + i);
+        readoutLines.push(...lines);
+      });
+      const readoutEl = root.querySelector('.mf-readout');
+      if (readoutEl) readoutEl.textContent = readoutLines.join('   |   ');
+    }
+
+    // Wire sliders
+    (spec.sliders || []).forEach(s => {
+      const sl = root.querySelector('[data-slider="' + s.param + '"]');
+      const vsp = root.querySelector('[data-value="' + s.param + '"]');
+      if (sl) sl.addEventListener('input', e => {
+        params[s.param] = parseFloat(e.target.value);
+        if (vsp) vsp.textContent = params[s.param].toFixed(s.decimals || 2);
+        renderAll();
+      });
+    });
+
+    // Reset button
+    const resetBtn = root.querySelector('.mf-reset');
+    if (resetBtn) resetBtn.addEventListener('click', () => {
+      Object.assign(params, JSON.parse(JSON.stringify(defaults)));
+      (spec.sliders || []).forEach(s => {
+        const sl = root.querySelector('[data-slider="' + s.param + '"]');
+        const vsp = root.querySelector('[data-value="' + s.param + '"]');
+        if (sl) sl.value = defaults[s.param];
+        if (vsp) vsp.textContent = defaults[s.param].toFixed(s.decimals || 2);
+      });
+      renderAll();
+    });
+
+    renderAll();
+  }
+
+  return { renderFigure };
+})();
+</script>
+<style>
+:root{
+  --bg:#fdf6e3;
+  --card:#ffffff;
+  --border:#e6dcc4;
+  --text:#003135;
+  --muted:#5a7378;
+  --accent:#024950;
+  --accent-2:#0FA4AF;
+  --accent-bg:rgba(15,164,175,0.10);
+  --key:#964734;
+  --key-bg:rgba(150,71,52,0.08);
+  --box-fill:#003135;
+  --box-text:#e6f4f5;
+  --box-line:#0FA4AF;
+  --col-w:760px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background-color:var(--bg)}
+body{
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  color:var(--text);
+  line-height:1.7;
+  font-weight:400;
+  font-feature-settings:"cv11","ss01","ss03";
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.45  0 0 0 0 0.35  0 0 0 0 0.20  0 0 0 0.06 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  background-repeat:repeat;
+  background-attachment:fixed;
+}
+.container{
+  max-width:var(--col-w);
+  margin:0 auto;
+  padding:4rem 1.5rem 5rem;
+}
+h1{
+  font-size:2.5rem;
+  font-weight:300;
+  letter-spacing:-0.03em;
+  line-height:1.15;
+  margin-bottom:.6rem;
+  color:var(--text);
+}
+.meta{
+  color:var(--muted);
+  font-size:.85rem;
+  font-weight:400;
+  letter-spacing:.01em;
+  margin-bottom:2rem;
+  padding-bottom:1.25rem;
+  border-bottom:1px solid var(--border);
+}
+.progress{
+  display:flex;align-items:center;gap:.9rem;
+  margin-bottom:2.5rem;
+  font-size:.78rem;color:var(--muted);
+  position:sticky;top:0;
+  background:var(--bg);
+  padding:.85rem 0;
+  z-index:10;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+  border-bottom:1px solid var(--border);
+}
+.progress-bar{flex:1;height:1px;background:var(--border);overflow:hidden}
+.progress-fill{height:100%;background:var(--accent-2);transition:width .3s ease}
+.score-display{font-weight:500;color:var(--accent);font-variant-numeric:tabular-nums}
+
+/* ── Chain (scenario) block ──────────────────────────────────────────── */
+.chain-block{
+  position:relative;
+  margin:2.5rem 0;
+  padding:1.5rem 1.5rem 1rem;
+  outline:1px solid var(--accent);
+  outline-offset:6px;
+}
+.chain-label{
+  position:absolute;top:-9px;right:14px;
+  background:var(--bg);
+  padding:0 .5rem;
+  font-size:.65rem;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:var(--accent);
+  font-weight:600;
+}
+.chain-setup{
+  font-size:.95rem;
+  color:var(--text);
+  padding:0 0 1.1rem;
+  margin-bottom:1.25rem;
+  border-bottom:1px dashed var(--border);
+  line-height:1.65;
+}
+.chain-setup strong{color:var(--accent);font-weight:600}
+.chain-block .question-card{margin-bottom:1rem}
+.chain-block .question-card:last-child{margin-bottom:0}
+
+/* ── Question card ───────────────────────────────────────────────────── */
+.question-card{
+  background:var(--card);
+  border:1px solid var(--border);
+  padding:1.6rem 1.75rem;
+  margin-bottom:1.5rem;
+  transition:border-color .25s;
+}
+.question-card.answered-correct{border-color:var(--accent-2)}
+.question-card.answered-wrong{border-color:var(--key)}
+.question-header{
+  display:flex;justify-content:space-between;align-items:center;
+  margin-bottom:1.1rem;
+  padding-bottom:.7rem;
+  border-bottom:1px solid var(--border);
+}
+.question-number{
+  font-size:.75rem;font-weight:600;
+  color:var(--accent);
+  letter-spacing:.08em;
+}
+.question-style{
+  font-size:.65rem;
+  color:var(--muted);
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  font-weight:500;
+}
+.question-stem{
+  font-size:1rem;
+  margin-bottom:1.2rem;
+  line-height:1.7;
+}
+.question-stem p{margin-bottom:.7rem}
+.question-stem p:last-child{margin-bottom:0}
+
+/* ── Derivation step list (inside stem) ──────────────────────────────── */
+.derivation-block{
+  margin:1rem 0 1.2rem;
+  padding:1rem 1.2rem;
+  background:rgba(255,255,255,0.5);
+  border:1px solid var(--border);
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+  font-size:.9rem;
+}
+.derivation-step{
+  display:flex;
+  align-items:baseline;
+  gap:.9rem;
+  padding:.35rem 0;
+  line-height:1.5;
+}
+.derivation-step .step-num{
+  color:var(--muted);
+  font-size:.7rem;
+  min-width:1.6rem;
+  font-weight:500;
+}
+.derivation-step.highlight{
+  background:var(--accent-bg);
+  margin:.2rem -.8rem;
+  padding:.45rem .8rem;
+  border-left:2px solid var(--accent-2);
+}
+.derivation-step.highlight .step-num{color:var(--accent-2);font-weight:600}
+.derivation-step .step-body{flex:1;color:var(--text)}
+.derivation-step.missing .step-body{
+  color:var(--accent-2);
+  font-style:italic;
+  font-family:'Inter',sans-serif;
+}
+
+/* ── Embedded figure inside question stem ────────────────────────────── */
+.question-card .mf-figure{margin:1rem 0 1.2rem;border-color:var(--border)}
+
+/* ── Productive-failure reveal: hide answer surfaces until user thinks first ─ */
+.reveal-btn{
+  display:inline-block;
+  background:transparent;
+  color:var(--accent);
+  border:1px dashed var(--accent);
+  padding:.6rem 1.2rem;
+  margin:.5rem 0 1rem;
+  font-size:.75rem;
+  font-family:inherit;
+  font-weight:500;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+  cursor:pointer;
+  transition:background .15s, color .15s, border-style .15s;
+}
+.reveal-btn:hover{background:var(--accent);color:#fff;border-style:solid}
+.reveal-hint{
+  font-size:.7rem;color:var(--muted);
+  margin-left:.7rem;letter-spacing:.04em;
+  font-style:italic;
+}
+.choices,.mtf-statements,.submit-row{display:none}
+.question-card.revealed .choices{display:flex}
+.question-card.revealed .mtf-statements{display:block}
+.question-card.revealed .submit-row{display:flex}
+.question-card.revealed .reveal-btn{display:none}
+
+/* ── Choices ─────────────────────────────────────────────────────────── */
+.choices{flex-direction:column;gap:.45rem}
+.choice{
+  display:flex;align-items:flex-start;gap:.85rem;
+  padding:.75rem 1rem;
+  border:1px solid var(--border);
+  background:var(--card);
+  cursor:pointer;
+  transition:background .15s, border-color .15s;
+  font-size:.95rem;
+  line-height:1.55;
+}
+.choice:hover:not(.disabled){background:var(--accent-bg);border-color:var(--accent-2)}
+.choice.disabled{cursor:default}
+.choice.selected{background:var(--accent-bg);border-color:var(--accent-2)}
+.choice.correct-reveal{
+  background:var(--accent-bg);
+  border-color:var(--accent-2);
+}
+.choice.wrong-reveal{
+  background:var(--key-bg);
+  border-color:var(--key);
+}
+.choice.missed-reveal{
+  /* multi-select: correct option the user failed to tick */
+  background:transparent;
+  border-color:var(--accent-2);
+  border-style:dashed;
+}
+
+/* Single-MCQ: circular letter chip */
+.choice-letter{
+  min-width:1.7rem;height:1.7rem;
+  display:flex;align-items:center;justify-content:center;
+  background:transparent;
+  border:1px solid var(--border);
+  border-radius:50%;
+  font-weight:500;font-size:.78rem;
+  color:var(--muted);
+  flex-shrink:0;margin-top:.05rem;
+  transition:all .15s;
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+}
+.choice:hover:not(.disabled) .choice-letter{border-color:var(--accent-2);color:var(--accent-2)}
+.choice.correct-reveal .choice-letter{background:var(--accent-2);color:#fff;border-color:var(--accent-2)}
+.choice.wrong-reveal .choice-letter{background:var(--key);color:#fff;border-color:var(--key)}
+.choice.missed-reveal .choice-letter{background:transparent;color:var(--accent-2);border-color:var(--accent-2)}
+
+/* Multi-select: hollow square that fills cyan when ticked */
+.question-card.multi .choice-letter{
+  border-radius:0;
+  position:relative;
+}
+.question-card.multi .choice.selected .choice-letter{
+  background:var(--accent-2);
+  color:#fff;
+  border-color:var(--accent-2);
+}
+.question-card.multi .choice.selected .choice-letter::after{
+  content:'';
+  position:absolute;
+  left:5px;top:3px;
+  width:5px;height:9px;
+  border:solid #fff;
+  border-width:0 1.5px 1.5px 0;
+  transform:rotate(45deg);
+}
+.question-card.multi .choice.selected .choice-letter > span{visibility:hidden}
+
+/* Numeric: monospace choice text */
+.question-card.mono-choices .choice-body{
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+  font-size:.95rem;
+  color:var(--text);
+}
+
+/* ── MTF (multiple true-false) cluster ───────────────────────────────── */
+.mtf-statements{display:block}
+.mtf-row{
+  border:1px solid var(--border);
+  background:var(--card);
+  margin-bottom:.55rem;
+  padding:.75rem 1rem;
+  transition:border-color .15s;
+}
+.mtf-row.correct-reveal{border-color:var(--accent-2);background:var(--accent-bg)}
+.mtf-row.wrong-reveal{border-color:var(--key);background:var(--key-bg)}
+.mtf-row-body{
+  display:flex;
+  align-items:flex-start;
+  gap:.85rem;
+  font-size:.95rem;
+  line-height:1.55;
+}
+.mtf-letter{
+  min-width:1.7rem;height:1.7rem;
+  display:flex;align-items:center;justify-content:center;
+  background:transparent;
+  border:1px solid var(--border);
+  border-radius:50%;
+  font-weight:500;font-size:.78rem;
+  color:var(--muted);
+  flex-shrink:0;margin-top:.05rem;
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+}
+.mtf-text{flex:1}
+.mtf-pick{
+  display:flex;
+  gap:.35rem;
+  flex-shrink:0;
+}
+.mtf-pick button{
+  width:2.2rem;height:1.9rem;
+  background:transparent;
+  color:var(--muted);
+  border:1px solid var(--border);
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+  font-size:.85rem;
+  font-weight:500;
+  cursor:pointer;
+  transition:all .15s;
+}
+.mtf-pick button:hover:not(:disabled){border-color:var(--accent-2);color:var(--accent-2)}
+.mtf-pick button.picked{background:var(--accent-2);color:#fff;border-color:var(--accent-2)}
+.mtf-pick button:disabled{cursor:default;opacity:.6}
+.mtf-row.correct-reveal .mtf-letter{background:var(--accent-2);color:#fff;border-color:var(--accent-2)}
+.mtf-row.wrong-reveal .mtf-letter{background:var(--key);color:#fff;border-color:var(--key)}
+.mtf-defense{
+  display:none;
+  font-size:.78rem;
+  color:var(--muted);
+  font-style:italic;
+  margin-top:.5rem;
+  padding-top:.5rem;
+  border-top:1px dashed var(--border);
+  line-height:1.55;
+}
+.mtf-row.correct-reveal .mtf-defense,
+.mtf-row.wrong-reveal .mtf-defense{display:block}
+.mtf-row.correct-reveal .mtf-defense{color:var(--accent)}
+.mtf-row.wrong-reveal .mtf-defense{color:var(--key)}
+
+.choice-body{flex:1}
+
+/* Per-choice defense (revealed after submit) — small muted text under choice */
+.choice-defense{
+  display:none;
+  font-size:.78rem;
+  color:var(--muted);
+  font-style:italic;
+  margin-top:.35rem;
+  line-height:1.5;
+}
+.choice.disabled .choice-defense{display:block}
+.choice.correct-reveal .choice-defense{color:var(--accent)}
+.choice.wrong-reveal .choice-defense{color:var(--key)}
+
+/* Multi-select submit button */
+.submit-row{
+  margin-top:1rem;
+  display:flex;
+  align-items:center;
+  gap:1rem;
+  font-size:.75rem;
+  color:var(--muted);
+  letter-spacing:.04em;
+}
+.submit-btn{
+  background:transparent;
+  color:var(--accent);
+  border:1px solid var(--accent);
+  padding:.45rem 1.1rem;
+  font-size:.78rem;
+  font-family:inherit;
+  font-weight:500;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+  cursor:pointer;
+  transition:background .15s, color .15s;
+}
+.submit-btn:hover:not(:disabled){background:var(--accent);color:#fff}
+.submit-btn:disabled{opacity:.4;cursor:not-allowed}
+
+/* ── Explanation: HUD callout, same as lecture .example ──────────────── */
+.explanation{
+  display:none;
+  position:relative;
+  background:var(--box-fill);
+  color:var(--box-text);
+  padding:1.25rem 1.5rem;
+  margin:1.4rem 0 .25rem;
+  outline:1px solid var(--box-line);
+  outline-offset:4px;
+  font-size:.92rem;
+  line-height:1.65;
+}
+.explanation.visible{display:block}
+.explanation p{margin-bottom:.6rem}
+.explanation p:last-child{margin-bottom:0}
+.explanation strong{color:var(--box-line);font-weight:600;letter-spacing:.02em}
+.explanation .katex{color:var(--box-text)}
+.explanation code{background:rgba(255,255,255,0.08);color:var(--box-line);padding:.1rem .35rem;border-radius:2px;font-family:'JetBrains Mono',monospace;font-size:.85em}
+.explanation .connection{
+  margin-top:.9rem;
+  padding-top:.8rem;
+  border-top:1px solid rgba(15,164,175,0.3);
+  font-size:.85rem;
+  color:rgba(230,244,245,0.85);
+}
+.explanation .connection strong{color:#e8826a}
+
+/* HUD tracer extending leftward into gutter — mirrored from .example */
+.explanation::before{
+  content:'';
+  position:absolute;
+  width:74px;
+  height:60px;
+  pointer-events:none;
+  background-color:var(--box-line);
+  bottom:14px;left:-82px;
+  -webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;
+  -webkit-mask-position:center;mask-position:center;
+  -webkit-mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 74 60'><line x1='26' y1='9' x2='74' y2='9' stroke='black' stroke-width='3'/><line x1='52' y1='28' x2='74' y2='28' stroke='black' stroke-width='3'/><line x1='40' y1='47' x2='74' y2='47' stroke='black' stroke-width='3'/><rect x='8' y='4' width='10' height='10' fill='none' stroke='black' stroke-width='1.6'/></svg>");
+          mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 74 60'><line x1='26' y1='9' x2='74' y2='9' stroke='black' stroke-width='3'/><line x1='52' y1='28' x2='74' y2='28' stroke='black' stroke-width='3'/><line x1='40' y1='47' x2='74' y2='47' stroke='black' stroke-width='3'/><rect x='8' y='4' width='10' height='10' fill='none' stroke='black' stroke-width='1.6'/></svg>");
+}
+@media(max-width:1100px){.explanation::before{display:none}}
+
+/* ── Summary ─────────────────────────────────────────────────────────── */
+.summary{
+  background:var(--card);
+  border:1px solid var(--border);
+  padding:2.25rem;
+  margin-top:2.5rem;
+  display:none;
+}
+.summary h2{
+  font-size:1.55rem;font-weight:400;
+  letter-spacing:-0.02em;
+  color:var(--accent);
+  margin-bottom:.4rem;
+  text-align:center;
+}
+.summary .score-big{
+  font-size:3.5rem;font-weight:300;
+  color:var(--accent);
+  margin:.5rem 0;text-align:center;
+  letter-spacing:-0.03em;
+  font-variant-numeric:tabular-nums;
+}
+.summary .score-label{
+  color:var(--muted);font-size:.85rem;
+  text-align:center;margin-bottom:1.75rem;
+  letter-spacing:.02em;
+}
+.results-table{
+  width:100%;border-collapse:collapse;
+  margin:1.25rem 0;font-size:.85rem;
+}
+.results-table th,.results-table td{
+  padding:.55rem .75rem;
+  border-bottom:1px solid var(--border);
+  text-align:left;
+}
+.results-table th{
+  background:var(--accent-bg);
+  font-weight:600;color:var(--accent);
+  font-size:.7rem;text-transform:uppercase;
+  letter-spacing:.06em;
+}
+.results-table .row-correct td:last-child{color:var(--accent-2);font-weight:600}
+.results-table .row-wrong td:last-child{color:var(--key);font-weight:600}
+.json-section{margin-top:1.5rem}
+.json-section label{
+  display:block;font-weight:500;font-size:.7rem;
+  margin-bottom:.4rem;color:var(--muted);
+  letter-spacing:.08em;text-transform:uppercase;
+}
+.json-box{
+  width:100%;min-height:80px;
+  padding:.8rem;
+  border:1px solid var(--border);
+  background:rgba(255,255,255,0.5);
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+  font-size:.78rem;
+  color:var(--text);
+  resize:vertical;
+  line-height:1.5;
+}
+.btn-row{
+  display:flex;gap:.75rem;justify-content:center;
+  margin-top:1rem;flex-wrap:wrap;
+}
+.btn{
+  display:inline-block;
+  padding:.55rem 1.25rem;
+  background:var(--accent);
+  color:#fff;
+  border:none;
+  font-size:.78rem;
+  font-family:inherit;
+  font-weight:500;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  cursor:pointer;
+  transition:background .15s;
+}
+.btn:hover{background:var(--accent-2)}
+.btn-secondary{
+  background:transparent;
+  color:var(--accent);
+  border:1px solid var(--accent);
+}
+.btn-secondary:hover{background:var(--accent);color:#fff}
+.copy-toast{
+  position:fixed;bottom:2rem;left:50%;
+  transform:translateX(-50%);
+  background:var(--box-fill);color:var(--box-text);
+  padding:.6rem 1.25rem;
+  font-size:.85rem;
+  display:none;z-index:100;
+  outline:1px solid var(--box-line);outline-offset:3px;
+}
+
+.mf-figure { margin: 1.75rem 0; padding: 1.25rem; background: #ffffff;
+             border: 1px solid #b8dcd9; border-radius: 0; }
+.mf-figure h4 { margin: 0 0 0.8rem 0; font-size: 1rem; font-weight: 600;
+                color: #024950; letter-spacing: -0.01em; }
+.mf-panels { display: grid; gap: 1rem; }
+.mf-panels.cols-2 { grid-template-columns: 1fr 1fr; }
+@media (max-width: 720px) { .mf-panels.cols-2 { grid-template-columns: 1fr; } }
+.mf-panel { min-height: 380px; }
+.mf-sliders { display: grid; gap: 0.35rem; margin-top: 1.25rem; padding: 0;
+              background: transparent; border: none; }
+.mf-slider-row { display: grid; grid-template-columns: 160px 1fr 70px;
+                 align-items: center; gap: 0.9rem; }
+.mf-slider-row label { font-size: 0.76rem; color: #5a7378; font-weight: 400;
+                       letter-spacing: 0.01em; }
+.mf-slider-row input[type=range] {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 16px; background: transparent; margin: 0; padding: 0;
+  cursor: pointer;
+}
+.mf-slider-row input[type=range]::-webkit-slider-runnable-track {
+  height: 1px; background: #b8dcd9; border: none;
+}
+.mf-slider-row input[type=range]::-moz-range-track {
+  height: 1px; background: #b8dcd9; border: none;
+}
+.mf-slider-row input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  height: 9px; width: 9px; border-radius: 50%;
+  background: #0FA4AF; border: none; margin-top: -4px;
+  cursor: pointer; transition: transform .12s, background .12s;
+}
+.mf-slider-row input[type=range]::-moz-range-thumb {
+  height: 9px; width: 9px; border-radius: 50%;
+  background: #0FA4AF; border: none;
+  cursor: pointer; transition: transform .12s, background .12s;
+}
+.mf-slider-row input[type=range]:hover::-webkit-slider-thumb {
+  background: #024950; transform: scale(1.25);
+}
+.mf-slider-row input[type=range]:hover::-moz-range-thumb {
+  background: #024950; transform: scale(1.25);
+}
+.mf-slider-row .mf-value { font-family: 'JetBrains Mono', ui-monospace, monospace;
+                           text-align: right; color: #024950; font-weight: 400;
+                           font-size: 0.76rem; }
+.mf-slider-row .mf-value::before { content: ''; }
+.mf-reset { background: transparent; border: none;
+            padding: 0.35rem 0; margin-top: 0.4rem; cursor: pointer; font-size: 0.72rem;
+            color: #5a7378; justify-self: start; letter-spacing: 0.05em;
+            text-transform: uppercase; font-family: inherit;
+            border-bottom: 1px solid transparent; transition: color .15s, border-color .15s; }
+.mf-reset:hover { color: #024950; border-bottom-color: #0FA4AF; }
+.mf-readout { font-family: 'JetBrains Mono', ui-monospace, monospace;
+              font-size: 0.74rem; color: #964734; font-weight: 400;
+              margin-top: 0.6rem; padding: 0.4rem 0;
+              border-top: 1px dashed #b8dcd9; min-height: 1rem;
+              letter-spacing: 0.01em; }
+.mf-caption { font-size: 0.84rem; color: #5a7378; line-height: 1.6;
+              margin-top: 1rem; padding: 0.75rem 0 0;
+              border-top: 1px solid #b8dcd9; }
+.mf-caption strong { color: #024950; font-weight: 600; letter-spacing: 0.01em; }
+
+@media(max-width:600px){
+  .container{padding:2rem 1rem 3rem}
+  .question-card{padding:1.25rem}
+  h1{font-size:1.8rem}
+}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Quiz: Open-Economy Solow and Technological Progress</h1>
+<div class="meta">Macro III — Module 2 — 2026-05-26</div>
+<div class="progress">
+<span id="prog-text">0 / 20</span>
+<div class="progress-bar"><div class="progress-fill" id="prog-fill" style="width:0%"></div></div>
+<span class="score-display" id="score-text"></span>
+</div>
+<div class="question-card mtf" id="q-1" data-correct="{&quot;A&quot;: true, &quot;B&quot;: false, &quot;C&quot;: true, &quot;D&quot;: false}" data-topic="Current account identity" data-done="0"><div class="question-header"><span class="question-number">Q1</span><span class="question-style">Multi true-false</span></div><div class="question-stem"><p>A small open economy has aggregate saving $S_t$, gross domestic investment $I_t = K_{t+1} - K_t$ (with $\delta = 0$), and net foreign assets $F_t$. Evaluate each statement.</p></div><button class="reveal-btn" type="button" onclick="reveal(1)">Reveal statements</button><span class="reveal-hint">Think through the setup first.</span><div class="mtf-statements"><div class="mtf-row" data-letter="A"><div class="mtf-row-body"><span class="mtf-letter">A</span><span class="mtf-text">$F_{t+1} - F_t = S_t - I_t$ holds by an accounting identity, not a behavioral assumption.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(1,'A',true)">T</button><button type="button" data-value="false" onclick="pickTF(1,'A',false)">F</button></div></div><div class="mtf-defense">Subtract the capital-accumulation equation from $V_{t+1} - V_t = S_t$, using $V = K + F$ — pure accounting. A doubter might think this only holds in equilibrium; in fact it's true period by period.</div></div><div class="mtf-row" data-letter="B"><div class="mtf-row-body"><span class="mtf-letter">B</span><span class="mtf-text">A country with a current-account surplus ($CA_t > 0$) is exporting more goods than it imports.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(1,'B',true)">T</button><button type="button" data-value="false" onclick="pickTF(1,'B',false)">F</button></div></div><div class="mtf-defense">$CA_t$ also includes net asset income $\bar r F_t$. A creditor country can run a goods deficit and still have $CA_t > 0$ via interest receipts. Picked by students who conflate $CA$ with the trade balance.</div></div><div class="mtf-row" data-letter="C"><div class="mtf-row-body"><span class="mtf-letter">C</span><span class="mtf-text">If domestic saving exceeds domestic investment, the country is accumulating net foreign assets.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(1,'C',true)">T</button><button type="button" data-value="false" onclick="pickTF(1,'C',false)">F</button></div></div><div class="mtf-defense">Direct restatement of $F_{t+1} - F_t = S_t - I_t$. Looks too simple to be the right answer, but is.</div></div><div class="mtf-row" data-letter="D"><div class="mtf-row-body"><span class="mtf-letter">D</span><span class="mtf-text">In the closed-economy benchmark, $CA_t = 0$ is an assumption, not a result.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(1,'D',true)">T</button><button type="button" data-value="false" onclick="pickTF(1,'D',false)">F</button></div></div><div class="mtf-defense">It's a result: closed economy means $F_t \equiv 0$, so $F_{t+1} - F_t = 0$, and the identity then forces $S_t = I_t$. Picked by students who think 'closed' is just shorthand for $CA = 0$ as an imposed condition.</div></div></div><div class="submit-row"><button type="button" class="submit-btn" disabled onclick="submitMtf(1)">Submit</button><span>Pick T or F for each statement.</span></div><div class="explanation"><p>The cluster targets four common misreadings of the open-economy accounting framework: (i) thinking the savings-investment gap requires equilibrium to bind, (ii) confusing $CA$ with the trade balance, (iii) trusting the simplest formulation, and (iv) misunderstanding what 'closed economy' assumes vs implies. All four trace back to losing track of what's definitional and what's behavioral.</p></div></div>
+<div class="question-card mtf" id="q-2" data-correct="{&quot;A&quot;: true, &quot;B&quot;: false, &quot;C&quot;: false, &quot;D&quot;: true}" data-topic="Open-economy two-speed dynamics" data-done="0"><div class="question-header"><span class="question-number">Q2</span><span class="question-style">Multi true-false</span></div><div class="question-stem"><p>A small open economy with perfect capital mobility, Cobb-Douglas production $Y = BK^{\alpha}L^{1-\alpha}$, $\delta = 0$, and constant world interest rate $\bar r$. The economy starts with $K_0$ below its open-economy level. Evaluate each statement.</p></div><button class="reveal-btn" type="button" onclick="reveal(2)">Reveal statements</button><span class="reveal-hint">Think through the setup first.</span><div class="mtf-statements"><div class="mtf-row" data-letter="A"><div class="mtf-row-body"><span class="mtf-letter">A</span><span class="mtf-text">Capital per worker $k_t$ jumps in period 0 to a level satisfying $\bar r = \alpha B k^{\alpha-1}$ and stays constant thereafter.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(2,'A',true)">T</button><button type="button" data-value="false" onclick="pickTF(2,'A',false)">F</button></div></div><div class="mtf-defense">Capital is perfectly mobile, so domestic MPK must equal $\bar r$ in every period; this pins $k$ at a constant level independent of $s$ or $n$.</div></div><div class="mtf-row" data-letter="B"><div class="mtf-row-body"><span class="mtf-letter">B</span><span class="mtf-text">Wealth per worker $v_t$ jumps in period 0 to its steady-state value.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(2,'B',true)">T</button><button type="button" data-value="false" onclick="pickTF(2,'B',false)">F</button></div></div><div class="mtf-defense">Wealth accumulates gradually through saving — the transition equation $v_{t+1} = \frac{1+s\bar r}{1+n}v_t + \frac{sw^*}{1+n}$ describes a SLOW adjustment. Conflated with the jumping behavior of $k$ by students who don't separate the two state-like variables.</div></div><div class="mtf-row" data-letter="C"><div class="mtf-row-body"><span class="mtf-letter">C</span><span class="mtf-text">The wage rate $w_t$ converges gradually toward $w^*$ alongside $v_t$.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(2,'C',true)">T</button><button type="button" data-value="false" onclick="pickTF(2,'C',false)">F</button></div></div><div class="mtf-defense">Because $w = (1-\alpha)Bk^{\alpha}$ and $k$ has already jumped, $w$ has also already jumped to $w^*$ in period 0. Picked by students who forget that the wage depends on $k$ alone, not on $v$.</div></div><div class="mtf-row" data-letter="D"><div class="mtf-row-body"><span class="mtf-letter">D</span><span class="mtf-text">The savings rate $s$ affects long-run national wealth $v^*$ but does NOT affect $k^*$, $y^*$, or $w^*$.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(2,'D',true)">T</button><button type="button" data-value="false" onclick="pickTF(2,'D',false)">F</button></div></div><div class="mtf-defense">$k^*$ is pinned by $\bar r$, not by saving. Saving accumulates as foreign assets (wealth) rather than as domestic capital. Counterintuitive but central.</div></div></div><div class="submit-row"><button type="button" class="submit-btn" disabled onclick="submitMtf(2)">Submit</button><span>Pick T or F for each statement.</span></div><div class="explanation"><p>The two-speed structure of the open-economy Solow model is its most distinctive feature: $k, y, w$ jump immediately (in one period) to their steady-state values, while $v$ (and hence $f = v - k$) crawls there gradually through saving. Misreading either timing wrecks the rest of the analysis.</p></div></div>
+<div class="question-card mtf" id="q-3" data-correct="{&quot;A&quot;: true, &quot;B&quot;: false, &quot;C&quot;: true, &quot;D&quot;: true}" data-topic="Balanced growth in the general Solow model" data-done="0"><div class="question-header"><span class="question-number">Q3</span><span class="question-style">Multi true-false</span></div><div class="question-stem"><p>A closed economy in the general Solow model with labour-augmenting technology $A_{t+1} = (1+g)A_t$, in balanced-growth steady state with $\tilde k_t = \tilde k^*$. Evaluate each statement.</p></div><button class="reveal-btn" type="button" onclick="reveal(3)">Reveal statements</button><span class="reveal-hint">Think through the setup first.</span><div class="mtf-statements"><div class="mtf-row" data-letter="A"><div class="mtf-row-body"><span class="mtf-letter">A</span><span class="mtf-text">Output per worker $y_t$ grows at rate $g$, and capital per worker $k_t$ grows at rate $g$.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(3,'A',true)">T</button><button type="button" data-value="false" onclick="pickTF(3,'A',false)">F</button></div></div><div class="mtf-defense">Both equal $A_t$ times a constant ($\tilde y^*$ and $\tilde k^*$ respectively), so both inherit $A_t$'s growth rate $g$.</div></div><div class="mtf-row" data-letter="B"><div class="mtf-row-body"><span class="mtf-letter">B</span><span class="mtf-text">The real interest rate $r_t$ grows at rate $g$.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(3,'B',true)">T</button><button type="button" data-value="false" onclick="pickTF(3,'B',false)">F</button></div></div><div class="mtf-defense">$r_t$ is constant in balanced growth — it equals $\alpha (n+g+\delta+ng)/s$, which has no $t$ subscript. Picked by students who think 'everything grows at $g$' in balanced growth; in fact, factor prices split: $w$ grows at $g$, $r$ stays constant.</div></div><div class="mtf-row" data-letter="C"><div class="mtf-row-body"><span class="mtf-letter">C</span><span class="mtf-text">The wage rate $w_t$ grows at rate $g$.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(3,'C',true)">T</button><button type="button" data-value="false" onclick="pickTF(3,'C',false)">F</button></div></div><div class="mtf-defense">$w_t = (1-\alpha) A_t \tilde y^*$, so it inherits $A_t$'s growth. The capital-labour ratio is fixed in efficiency units, so the real wage rises with the level of effective labour.</div></div><div class="mtf-row" data-letter="D"><div class="mtf-row-body"><span class="mtf-letter">D</span><span class="mtf-text">The capital-output ratio $K_t/Y_t$ is constant in balanced growth.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(3,'D',true)">T</button><button type="button" data-value="false" onclick="pickTF(3,'D',false)">F</button></div></div><div class="mtf-defense">$K/Y = \tilde k^*/\tilde y^* = (\tilde k^*)^{1-\alpha}$, which is constant. This is one of Kaldor's stylized facts that the general Solow model successfully reproduces.</div></div></div><div class="submit-row"><button type="button" class="submit-btn" disabled onclick="submitMtf(3)">Submit</button><span>Pick T or F for each statement.</span></div><div class="explanation"><p>Balanced growth doesn't mean 'all variables grow at $g$' — it means per-worker quantities ($y, k, c, w$) all grow at the same rate $g$, factor PRICES split (wage tracks the growing technology, interest rate stays constant), and dimensionless RATIOS like $K/Y$ are constant. Statement B is the classic trap: thinking every variable inherits $g$.</p></div></div>
+<div class="question-card mtf" id="q-4" data-correct="{&quot;A&quot;: true, &quot;B&quot;: false, &quot;C&quot;: false, &quot;D&quot;: true}" data-topic="Welfare effect of opening the capital account" data-done="0"><div class="question-header"><span class="question-number">Q4</span><span class="question-style">Multi true-false</span></div><div class="question-stem"><p>The textbook proves $y^{n*} \geq y^*_c$, with equality only in the knife-edge case $\bar r = r^*_c$. Evaluate each statement about this result.</p></div><button class="reveal-btn" type="button" onclick="reveal(4)">Reveal statements</button><span class="reveal-hint">Think through the setup first.</span><div class="mtf-statements"><div class="mtf-row" data-letter="A"><div class="mtf-row-body"><span class="mtf-letter">A</span><span class="mtf-text">Opening the capital account weakly raises long-run national income per worker, regardless of whether the country is a strong or weak saver.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(4,'A',true)">T</button><button type="button" data-value="false" onclick="pickTF(4,'A',false)">F</button></div></div><div class="mtf-defense">Direct statement of the theorem. The minimum of $x(\tilde r) = y^{n*}/y^*_c$ is 1, attained only at $\tilde r = 1$.</div></div><div class="mtf-row" data-letter="B"><div class="mtf-row-body"><span class="mtf-letter">B</span><span class="mtf-text">Opening the capital account weakly raises the long-run wage, regardless of saving behavior.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(4,'B',true)">T</button><button type="button" data-value="false" onclick="pickTF(4,'B',false)">F</button></div></div><div class="mtf-defense">Wages can FALL on opening: a strong-saver country has $r^*_c < \bar r$, so opening drives capital OUT, lowers domestic $k$, and lowers MPL and hence $w$. The welfare gain accrues to capital income, not labour income. Picked by students who conflate $y^{n*}$ with $w^*$.</div></div><div class="mtf-row" data-letter="C"><div class="mtf-row-body"><span class="mtf-letter">C</span><span class="mtf-text">Opening the capital account always makes the country a net creditor in the long run.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(4,'C',true)">T</button><button type="button" data-value="false" onclick="pickTF(4,'C',false)">F</button></div></div><div class="mtf-defense">Direction of capital flows depends on $s/n$ vs $\bar s/\bar n$ (equivalently $r^*_c$ vs $\bar r$). Weak savers become DEBTORS on opening — they import capital. Picked by students who think 'opening = exporting saving'.</div></div><div class="mtf-row" data-letter="D"><div class="mtf-row-body"><span class="mtf-letter">D</span><span class="mtf-text">If the country's autarky rate $r^*_c$ exactly equals the world rate $\bar r$, opening the capital account leaves long-run national income unchanged.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(4,'D',true)">T</button><button type="button" data-value="false" onclick="pickTF(4,'D',false)">F</button></div></div><div class="mtf-defense">The knife-edge case: $\tilde r = 1$ gives $x = 1$, and capital has no incentive to flow in either direction. Both $f^*$ and $y^{n*} - y^*_c$ are zero.</div></div></div><div class="submit-row"><button type="button" class="submit-btn" disabled onclick="submitMtf(4)">Submit</button><span>Pick T or F for each statement.</span></div><div class="explanation"><p>The opening theorem is about AVERAGE national income, not factor incomes or asset positions. Statements B and C are the high-frequency confusions: workers may lose, and the country may become a debtor — and both are still consistent with rising $y^{n*}$.</p></div></div>
+<div class="question-card mtf" id="q-5" data-correct="{&quot;A&quot;: true, &quot;B&quot;: false, &quot;C&quot;: true, &quot;D&quot;: false}" data-topic="Golden Rule in different Solow variants" data-done="0"><div class="question-header"><span class="question-number">Q5</span><span class="question-style">Multi true-false</span></div><div class="question-stem"><p>The Golden Rule savings rate $s^{**} = \alpha$ is derived in the basic Solow model. Evaluate each statement about how the Golden Rule transfers across the variants covered in Module 2.</p></div><button class="reveal-btn" type="button" onclick="reveal(5)">Reveal statements</button><span class="reveal-hint">Think through the setup first.</span><div class="mtf-statements"><div class="mtf-row" data-letter="A"><div class="mtf-row-body"><span class="mtf-letter">A</span><span class="mtf-text">In the general Solow model with technological progress at rate $g$, the consumption-maximizing savings rate is still $s^{**} = \alpha$.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(5,'A',true)">T</button><button type="button" data-value="false" onclick="pickTF(5,'A',false)">F</button></div></div><div class="mtf-defense">Technology multiplies $\tilde y^*$ by $A_t$ uniformly, so the $s$ that maximizes $(1-s)A_t \tilde y^*$ is the same $s$ that maximizes $(1-s) \tilde y^*$ — and the latter problem is structurally identical to basic Solow.</div></div><div class="mtf-row" data-letter="B"><div class="mtf-row-body"><span class="mtf-letter">B</span><span class="mtf-text">In the open-economy Solow model, there is a well-defined Golden Rule savings rate strictly between 0 and the stability bound $n/\bar r$.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(5,'B',true)">T</button><button type="button" data-value="false" onclick="pickTF(5,'B',false)">F</button></div></div><div class="mtf-defense">There isn't one: $y^{n*}$ is strictly increasing in $s$ over the entire admissible range $s\bar r < n$, so $(1-s)y^{n*}$ never has an interior maximum. Picked by students who assume 'Golden Rule always exists when you can save'.</div></div><div class="mtf-row" data-letter="C"><div class="mtf-row-body"><span class="mtf-letter">C</span><span class="mtf-text">The Golden Rule condition can be expressed as MPK equals the dilution rate $n + g + \delta$ in the general Solow model.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(5,'C',true)">T</button><button type="button" data-value="false" onclick="pickTF(5,'C',false)">F</button></div></div><div class="mtf-defense">At $s = \alpha$, the steady-state interest rate $r^* = \alpha(n+g+\delta+ng)/s$ becomes $r^* = n+g+\delta+ng \approx n+g+\delta$. This is the standard Modified Golden Rule statement.</div></div><div class="mtf-row" data-letter="D"><div class="mtf-row-body"><span class="mtf-letter">D</span><span class="mtf-text">If the actual savings rate exceeds $s^{**}$ in the general Solow model, raising $s$ further still raises steady-state consumption per worker.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(5,'D',true)">T</button><button type="button" data-value="false" onclick="pickTF(5,'D',false)">F</button></div></div><div class="mtf-defense">Past the Golden Rule, raising $s$ LOWERS long-run consumption per worker — the capital-deepening cost exceeds the output gain. This is exactly Bolboaca Exercise 2.2's lesson: cutting $s$ from 0.45 to 0.35 raised $\tilde c^*$.</div></div></div><div class="submit-row"><button type="button" class="submit-btn" disabled onclick="submitMtf(5)">Submit</button><span>Pick T or F for each statement.</span></div><div class="explanation"><p>The Golden Rule survives the addition of exogenous technology unchanged (still $s^{**} = \alpha$), but the open-economy variant has no interior optimum because MPK is pinned by $\bar r$ rather than being driven down by saving. Statement D is the dynamic-inefficiency idea: economies CAN over-save, and Module 2's main numerical example demonstrates this.</p></div></div>
+<div class="question-card mtf" id="q-6" data-correct="{&quot;A&quot;: true, &quot;B&quot;: true, &quot;C&quot;: true, &quot;D&quot;: false}" data-topic="Hicks-neutral vs labour-augmenting technology" data-done="0"><div class="question-header"><span class="question-number">Q6</span><span class="question-style">Multi true-false</span></div><div class="question-stem"><p>Consider two specifications of technological progress with Cobb-Douglas production: (I) $Y_t = B_t K_t^{\alpha} L_t^{1-\alpha}$ with $B_t$ growing at rate $g_B$; (II) $Y_t = K_t^{\alpha}(A_t L_t)^{1-\alpha}$ with $A_t$ growing at rate $g_A$. Evaluate each statement.</p></div><button class="reveal-btn" type="button" onclick="reveal(6)">Reveal statements</button><span class="reveal-hint">Think through the setup first.</span><div class="mtf-statements"><div class="mtf-row" data-letter="A"><div class="mtf-row-body"><span class="mtf-letter">A</span><span class="mtf-text">Specifications (I) and (II) generate the same time path of $Y_t$ if $B_t = A_t^{1-\alpha}$.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(6,'A',true)">T</button><button type="button" data-value="false" onclick="pickTF(6,'A',false)">F</button></div></div><div class="mtf-defense">Substitute: $A_t^{1-\alpha} \cdot K^{\alpha} L^{1-\alpha} = K^{\alpha} (A_t L)^{1-\alpha}$. The equivalence is purely algebraic and depends on the Cobb-Douglas form.</div></div><div class="mtf-row" data-letter="B"><div class="mtf-row-body"><span class="mtf-letter">B</span><span class="mtf-text">If labour-augmenting technology grows at $g_A$, then under Cobb-Douglas the equivalent Hicks-neutral TFP grows at $g_B = (1-\alpha) g_A$.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(6,'B',true)">T</button><button type="button" data-value="false" onclick="pickTF(6,'B',false)">F</button></div></div><div class="mtf-defense">Taking the log derivative of $B_t = A_t^{1-\alpha}$ gives $g_B = (1-\alpha) g_A$. For $\alpha = 1/3$, $g_B \approx 0.67 \cdot g_A$ — Hicks-neutral TFP grows slower than labour-augmenting tech.</div></div><div class="mtf-row" data-letter="C"><div class="mtf-row-body"><span class="mtf-letter">C</span><span class="mtf-text">Per-worker output $y_t$ in steady state grows at $g_A$ under specification (II) but at $g_B/(1-\alpha)$ under specification (I).</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(6,'C',true)">T</button><button type="button" data-value="false" onclick="pickTF(6,'C',false)">F</button></div></div><div class="mtf-defense">Under (II), $y_t = A_t \tilde y^*$ grows at $g_A$. Under (I), per-worker output is $y_t = B_t^{1/(1-\alpha)} \cdot \text{const}$, growing at $g_B/(1-\alpha)$ — which equals $g_A$ once we equate them.</div></div><div class="mtf-row" data-letter="D"><div class="mtf-row-body"><span class="mtf-letter">D</span><span class="mtf-text">For a non-Cobb-Douglas production function (e.g. CES with elasticity of substitution $\neq 1$), Hicks-neutral and labour-augmenting technology are interchangeable.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(6,'D',true)">T</button><button type="button" data-value="false" onclick="pickTF(6,'D',false)">F</button></div></div><div class="mtf-defense">The equivalence relies specifically on the Cobb-Douglas property that exponents factor through scaling. For CES or general homothetic forms, only labour-augmenting (Harrod-neutral) progress is consistent with a balanced-growth path. Picked by students who treat the Cobb-Douglas trick as general.</div></div></div><div class="submit-row"><button type="button" class="submit-btn" disabled onclick="submitMtf(6)">Submit</button><span>Pick T or F for each statement.</span></div><div class="explanation"><p>The Cobb-Douglas equivalence (Statement A) is a special case that makes the choice of specification a notational convenience. Statement D is the classical Uzawa theorem in disguise: away from Cobb-Douglas, balanced growth requires Harrod-neutrality. This is exactly the kind of 'when does the trick break' question Cozzi likes to probe.</p></div></div>
+<div class="question-card mtf" id="q-7" data-correct="{&quot;A&quot;: true, &quot;B&quot;: true, &quot;C&quot;: true, &quot;D&quot;: false}" data-topic="Stability conditions" data-done="0"><div class="question-header"><span class="question-number">Q7</span><span class="question-style">Multi true-false</span></div><div class="question-stem"><p>The Module 2 lectures derive two distinct stability conditions: (I) $s\bar r < n$ for the open-economy wealth dynamics, and (II) $n + g + \delta + ng > 0$ for the general Solow $\tilde k$ dynamics. Evaluate each statement.</p></div><button class="reveal-btn" type="button" onclick="reveal(7)">Reveal statements</button><span class="reveal-hint">Think through the setup first.</span><div class="mtf-statements"><div class="mtf-row" data-letter="A"><div class="mtf-row-body"><span class="mtf-letter">A</span><span class="mtf-text">Condition (I) requires that the transition line $v_{t+1}(v_t)$ have slope strictly less than 1.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(7,'A',true)">T</button><button type="button" data-value="false" onclick="pickTF(7,'A',false)">F</button></div></div><div class="mtf-defense">Slope $= (1+s\bar r)/(1+n)$; less than 1 iff $s\bar r < n$. The slope-less-than-1 logic is the same one used for any first-order linear difference equation.</div></div><div class="mtf-row" data-letter="B"><div class="mtf-row-body"><span class="mtf-letter">B</span><span class="mtf-text">Condition (II) is essentially always satisfied in any economy with positive population, technology, or depreciation rates.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(7,'B',true)">T</button><button type="button" data-value="false" onclick="pickTF(7,'B',false)">F</button></div></div><div class="mtf-defense">Each of $n, g, \delta$ being non-negative with at least one strictly positive makes $n+g+\delta+ng > 0$ automatic. The condition is more a sanity check than a binding constraint.</div></div><div class="mtf-row" data-letter="C"><div class="mtf-row-body"><span class="mtf-letter">C</span><span class="mtf-text">Condition (I) translates, via the world's closure $\bar r = \alpha \bar n/\bar s$, into $\alpha \cdot s/n < \bar s/\bar n$, which is easily satisfied when the small economy resembles the world average.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(7,'C',true)">T</button><button type="button" data-value="false" onclick="pickTF(7,'C',false)">F</button></div></div><div class="mtf-defense">Substitute $\bar r = \alpha \bar n/\bar s$ into $s\bar r < n$: $s\alpha \bar n/\bar s < n$, which rearranges to $\alpha (s/n) < \bar s/\bar n$. With $\alpha \approx 1/3$ and $s/n$ near the world average, the inequality reduces to $1/3 < 1$.</div></div><div class="mtf-row" data-letter="D"><div class="mtf-row-body"><span class="mtf-letter">D</span><span class="mtf-text">If condition (I) fails, $v_t$ explodes — and so does the world economy as a whole.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(7,'D',true)">T</button><button type="button" data-value="false" onclick="pickTF(7,'D',false)">F</button></div></div><div class="mtf-defense">Even if a single small economy's condition fails, the world is closed and faces its own consistent steady state. Condition (I) is a per-country condition, not a global one. The world doesn't 'explode' because of one country's parameters.</div></div></div><div class="submit-row"><button type="button" class="submit-btn" disabled onclick="submitMtf(7)">Submit</button><span>Pick T or F for each statement.</span></div><div class="explanation"><p>The two stability conditions live at different levels: (I) is a small-economy condition that depends on the relation between $\bar r$ (world) and domestic $s/n$; (II) is a model-internal condition that's mechanically satisfied for any reasonable economy. Both are usually benign, but their LOGIC is different — (I) requires checking against world averages, (II) doesn't.</p></div></div>
+<div class="question-card mtf" id="q-8" data-correct="{&quot;A&quot;: true, &quot;B&quot;: true, &quot;C&quot;: true, &quot;D&quot;: false}" data-topic="Empirical performance of the Solow model" data-done="0"><div class="question-header"><span class="question-number">Q8</span><span class="question-style">Multi true-false</span></div><div class="question-stem"><p>The general Solow model produces two empirical predictions tested in cross-country data: (i) the steady-state regression of $\ln y$ on $\ln s - \ln(n+g+\delta)$ should have slope $\alpha/(1-\alpha)$; (ii) the rate of convergence is $\lambda \approx (1-\alpha)(n+g+\delta)$. Evaluate each statement.</p></div><button class="reveal-btn" type="button" onclick="reveal(8)">Reveal statements</button><span class="reveal-hint">Think through the setup first.</span><div class="mtf-statements"><div class="mtf-row" data-letter="A"><div class="mtf-row-body"><span class="mtf-letter">A</span><span class="mtf-text">The cross-country estimated slope of $\ln y$ on $\ln s - \ln(n+g+\delta)$ is about 1.5 — roughly three times larger than the model predicts for $\alpha = 1/3$.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(8,'A',true)">T</button><button type="button" data-value="false" onclick="pickTF(8,'A',false)">F</button></div></div><div class="mtf-defense">Textbook OLS estimate: $\hat\beta_1 \approx 1.52$, vs predicted $\alpha/(1-\alpha) = 0.5$ for $\alpha = 1/3$. The model UNDERSTATES how much $s$ matters.</div></div><div class="mtf-row" data-letter="B"><div class="mtf-row-body"><span class="mtf-letter">B</span><span class="mtf-text">The estimated rate of convergence across countries is about 0.7%/year, slower than the model's prediction of about 5%/year.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(8,'B',true)">T</button><button type="button" data-value="false" onclick="pickTF(8,'B',false)">F</button></div></div><div class="mtf-defense">Standard textbook number: $\hat\lambda \approx 0.007$ corresponds to a half-life of ~100 years; the model predicts ~14 years. Both empirical failures (slope and convergence) point in the same direction: the model is missing slow-moving accumulable factors.</div></div><div class="mtf-row" data-letter="C"><div class="mtf-row-body"><span class="mtf-letter">C</span><span class="mtf-text">The model passes the qualitative test of conditional convergence — countries further below their steady state grow faster, holding $s, n, g, \delta$ fixed.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(8,'C',true)">T</button><button type="button" data-value="false" onclick="pickTF(8,'C',false)">F</button></div></div><div class="mtf-defense">The negative coefficient on $\ln y_0$ in the convergence regression is robust and significant. The model fails on MAGNITUDES, not on the direction of effects.</div></div><div class="mtf-row" data-letter="D"><div class="mtf-row-body"><span class="mtf-letter">D</span><span class="mtf-text">Both empirical failures are fixed by replacing $\alpha = 1/3$ with a higher $\alpha$ such as 0.6.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(8,'D',true)">T</button><button type="button" data-value="false" onclick="pickTF(8,'D',false)">F</button></div></div><div class="mtf-defense">Raising $\alpha$ to 0.6 would match the OLS slope and slow predicted convergence — but $\alpha = 0.6$ is wildly inconsistent with capital's share of national income (~1/3). The MRW human-capital extension fixes both empirical failures with $\alpha$ unchanged by introducing a separate human-capital factor.</div></div></div><div class="submit-row"><button type="button" class="submit-btn" disabled onclick="submitMtf(8)">Submit</button><span>Pick T or F for each statement.</span></div><div class="explanation"><p>The Solow model's two main quantitative failures (slope ~3× too small, convergence ~7× too fast) both reflect a missing accumulable factor that responds to $s, n, g, \delta$ like physical capital. Brute-forcing $\alpha$ upward is mathematically equivalent but economically wrong — capital income share data refutes it. Module 3's MRW extension is the principled fix.</p></div></div>
+<div class="question-card" id="q-9" data-correct="D" data-topic="Open-economy theorem scope" data-done="0"><div class="question-header"><span class="question-number">Q9</span><span class="question-style">Boundary</span></div><div class="question-stem"><p>The textbook proves that liberalizing the capital account raises long-run national income per worker $y^{n*}$ in a small open economy. Which of the following is <strong>NOT</strong> implied by this result?</p></div><button class="reveal-btn" type="button" onclick="reveal(9)">Reveal options</button><span class="reveal-hint">Try answering in your head first.</span><div class="choices"><div class="choice" onclick="pick(9,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">Domestic capital intensity $k$ may decrease as a result of opening if the country was a strong saver in autarky and capital flows out.<div class="choice-defense">This IS implied — strong-saver capital flowing out is the mechanism behind the wage drop in such countries. Tempting to dismiss because the theorem is framed as 'good'.</div></div></div><div class="choice" onclick="pick(9,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">Domestic real wages may decrease as a result of opening if the country was a strong saver in autarky and capital flows out.<div class="choice-defense">Also implied — same mechanism: lower $k$ means lower MPL means lower $w$. Picked by students who confuse 'national income rises' with 'every income rises'.</div></div></div><div class="choice" onclick="pick(9,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">The country's long-run consumption per worker $c^* = (1-s)y^{n*}$ rises, since the savings rate is held fixed under the policy shift.<div class="choice-defense">Implied by the same theorem: since $y^{n*}$ rises and $s$ is held fixed, $c^*$ rises with it. Picked by students who think the theorem applies only to income and not to consumption.</div></div></div><div class="choice" onclick="pick(9,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">Every domestic resident is at least as well off after opening as before, even without any compensating transfers across groups.<div class="choice-defense">Correct — this is NOT implied. The theorem is about AVERAGE income, not individual welfare. Workers in a high-saving rich country can be made worse off by opening even though average income rises.</div></div></div></div><div class="explanation"><p>The textbook's welfare theorem is a statement about national income (an average), not individual welfare or any distributional concept. D is precisely the gap the textbook flags: 'redistributive policies may be needed to ensure all groups benefit'. A and B describe mechanisms COMPATIBLE with the theorem (and consistent with strong-saver countries); C follows trivially from the income result.</p></div></div>
+<div class="question-card" id="q-10" data-correct="D" data-topic="Reasoning about savings rate effects" data-done="0"><div class="question-header"><span class="question-number">Q10</span><span class="question-style">Spot the flaw</span></div><div class="question-stem"><p>A student argues: 'In the open-economy Solow model, since the world interest rate $\bar r$ is exogenous, the savings rate $s$ has no effect on the long-run economy. Increasing $s$ is therefore a useless policy in a small open economy.' What is wrong with this argument?</p></div><button class="reveal-btn" type="button" onclick="reveal(10)">Reveal options</button><span class="reveal-hint">Try answering in your head first.</span><div class="choices"><div class="choice" onclick="pick(10,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">The argument is correct: in the open-economy long run, $s$ genuinely leaves $k^*$, $y^*$, $w^*$, and even $y^{n*}$ all pinned by the exogenous world rate $\bar r$.<div class="choice-defense">Picked by students who notice $s$ doesn't appear in $k^*$, $y^*$, $w^*$ and over-generalize to $y^{n*}$ without checking the wealth channel through $v^*$.</div></div></div><div class="choice" onclick="pick(10,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">The argument is wrong because in a small open economy, the world rate $\bar r$ adjusts endogenously to clear the domestic capital market once $s$ changes significantly.<div class="choice-defense">False at the small-economy level: that's the entire point of 'small' — the country cannot move $\bar r$. Picked by students who confuse small-open-economy with closed-economy logic.</div></div></div><div class="choice" onclick="pick(10,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">The argument is wrong because a higher savings rate accelerates the gradual convergence of $k_t$ toward its long-run level, generating transitional growth gains.<div class="choice-defense">False: in the open-economy variant $k$ doesn't converge at all — it jumps immediately. The transition speed for $v$ does depend on $s$, but the question was about long-run effects, not transitional dynamics.</div></div></div><div class="choice" onclick="pick(10,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">The savings rate still affects long-run net foreign assets $f^*$ and hence national income $y^{n*} = w^* + \bar r v^*$, even though it leaves productive capital $k^*$ unchanged.<div class="choice-defense">Correct. $v^* = sw^*/(n-s\bar r)$ is strictly increasing in $s$, so a higher savings rate accumulates more national wealth — which earns $\bar r$ forever. The policy lever is wealth abroad, not capital at home.</div></div></div></div><div class="explanation"><p>The student's argument captures one true thing (that $k^*$ is pinned by $\bar r$) and over-generalizes it. The full picture (D): $s$ doesn't affect productive capital, but it builds NET FOREIGN ASSETS, and the return on those assets is part of national income. So $s$ remains a meaningful policy lever — it just acts on wealth abroad rather than capital at home.</p></div></div>
+<div class="question-card" id="q-11" data-correct="C" data-topic="Symbol interpretation: A_t" data-done="0"><div class="question-header"><span class="question-number">Q11</span><span class="question-style">What it measures</span></div><div class="question-stem"><p>In the general Solow production function $Y_t = K_t^{\alpha}(A_t L_t)^{1-\alpha}$, what does the symbol $A_t$ represent?</p></div><button class="reveal-btn" type="button" onclick="reveal(11)">Reveal options</button><span class="reveal-hint">Try answering in your head first.</span><div class="choices"><div class="choice" onclick="pick(11,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">Hicks-neutral total factor productivity — the multiplier that appears in front of the entire Cobb-Douglas form $K^{\alpha}L^{1-\alpha}$.<div class="choice-defense">False — that's $B_t$, related by $B_t = A_t^{1-\alpha}$ but not equal unless $\alpha = 0$. Picked by students who use $A$ and TFP interchangeably across modules.</div></div></div><div class="choice" onclick="pick(11,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">Average labour productivity, computed as the data ratio of total output to total labour input $Y_t/L_t$ each period.<div class="choice-defense">False — average labour productivity is $y_t$, which depends on $k_t$ as well as $A_t$. $A_t$ is a structural parameter, not the data ratio.</div></div></div><div class="choice" onclick="pick(11,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">Labour-augmenting technology — the scaling factor that converts raw labour $L_t$ into effective labour $A_t L_t$ inside the production function.<div class="choice-defense">Correct. $A_t$ multiplies $L$ inside the production function; it captures how much output a unit of raw labour can produce given current technology.</div></div></div><div class="choice" onclick="pick(11,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">The growth rate of technological change in the economy, distinct from the level of technology that prevails at any given time.<div class="choice-defense">False — that's $g$. $A_t$ is the LEVEL of technology in period $t$; $g$ is its growth rate. Picked by students who muddle stocks and flows in growth models.</div></div></div></div><div class="explanation"><p>The four choices reflect the standard confusions: A and C are different specifications related by the Cobb-Douglas trick; B confuses a parameter with a data ratio; D confuses a level with a growth rate. The distinction matters: under Cobb-Douglas $A$ and $B$ give identical predictions; under more general production functions they don't.</p></div></div>
+<div class="question-card" id="q-12" data-correct="A" data-topic="Creditor/debtor condition" data-done="0"><div class="question-header"><span class="question-number">Q12</span><span class="question-style">Deep-short</span></div><div class="question-stem"><p>A small open economy has $r^*_c = 0.06$ (autarky steady-state interest rate from the closed Solow model) and faces a world interest rate $\bar r = 0.04$. After opening the capital account, the country will...</p></div><button class="reveal-btn" type="button" onclick="reveal(12)">Reveal options</button><span class="reveal-hint">Try answering in your head first.</span><div class="choices"><div class="choice" onclick="pick(12,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">...become a net debtor: its high autarky rate signals capital scarcity domestically, so opening lets foreign capital flow in to drive MPK down to $\bar r$.<div class="choice-defense">Correct. $r^*_c > \bar r$ implies $\bar r < r^*_c$ implies $f^* < 0$. Capital flows IN to drive domestic MPK down to $\bar r$, making the country a net debtor.</div></div></div><div class="choice" onclick="pick(12,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">...become a net creditor on the grounds that its high autarky rate implies it had been over-saving relative to the rest of the world.<div class="choice-defense">Reverses the direction. $r^*_c > \bar r$ means the country was UNDER-investing relative to the world (high MPK because capital was scarce, not abundant). It becomes a debtor, not creditor.</div></div></div><div class="choice" onclick="pick(12,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">...become a net debtor because the world capital market is willing to lend cheap, and the country opportunistically borrows whatever it can.<div class="choice-defense">Right answer for the wrong reason. Cheap world borrowing is a CONSEQUENCE of $\bar r < r^*_c$, not the cause of becoming a debtor. The country becomes a debtor because domestic MPK exceeds $\bar r$, creating an arbitrage opportunity.</div></div></div><div class="choice" onclick="pick(12,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">...remain at zero net foreign assets, because the 0.06 vs 0.04 difference is too small to generate meaningful capital flows in steady state.<div class="choice-defense">False — even small rate differences produce nonzero long-run asset positions. The 0.06 vs 0.04 gap is substantial (50% relative) and produces meaningful capital inflows.</div></div></div></div><div class="explanation"><p>The key relationship is $f^* > 0 \iff \bar r > r^*_c$. Intuition: capital flows TO where returns are higher. If world rates are LOW relative to autarky, the country was capital-scarce in autarky (high MPK) — foreign capital pours in, equalizing returns, making the country a net debtor. C reaches the same conclusion via a confused mechanism (cheap borrowing as cause, not effect); a partial-understander could pick it.</p></div></div>
+<div class="question-card" id="q-13" data-correct="B" data-topic="Module 1 autarky rate to Module 2 creditor condition" data-done="0"><div class="question-header"><span class="question-number">Q13</span><span class="question-style">Cross-topic</span></div><div class="question-stem"><p>The basic Solow model of Module 1 predicts a closed-economy steady-state interest rate $r^*_c = \alpha n/s$ (with $\delta = 0$). In the open-economy Solow model of Module 2, this exact same quantity appears again. What is its role in the open-economy model?</p></div><button class="reveal-btn" type="button" onclick="reveal(13)">Reveal options</button><span class="reveal-hint">Try answering in your head first.</span><div class="choices"><div class="choice" onclick="pick(13,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">It continues to function as the steady-state real interest rate in the open economy as well, since the closed-economy formula does not change.<div class="choice-defense">False — the open-economy steady-state rate is the exogenous $\bar r$, not $r^*_c$. Picked by students who think 'steady-state rate' is one number across models.</div></div></div><div class="choice" onclick="pick(13,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">It determines, by comparison with $\bar r$, whether the country becomes a creditor or a debtor on the international capital market.<div class="choice-defense">Correct. $f^* > 0 \iff \bar r > r^*_c \iff s/n > \bar s/\bar n$. The autarky rate is the threshold the world rate must exceed for the country to lend to the rest of the world.</div></div></div><div class="choice" onclick="pick(13,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">It determines the stability of the wealth transition equation, with stability holding precisely when $\bar r$ falls below $r^*_c$.<div class="choice-defense">Partially true but for the wrong reason. Stability requires $s\bar r < n$, equivalent to $\bar r < r^*_c/\alpha$ (not $r^*_c$ itself). A subtle distractor confusing related but distinct inequalities.</div></div></div><div class="choice" onclick="pick(13,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">It is the interest rate that prevails domestically during the transition phase before national wealth $v$ has converged to its steady-state value $v^*$.<div class="choice-defense">False — the domestic rate is $\bar r$ in EVERY period of the open-economy model, including the transition. Capital mobility is instantaneous, so the interest rate never deviates from the world rate.</div></div></div></div><div class="explanation"><p>The Module 1 autarky rate $r^*_c = \alpha n/s$ does not vanish when we open the economy — it's repurposed as a THRESHOLD. A country is on one side of the world capital market or the other depending on whether its autarky-Solow rate would have been below or above $\bar r$. This is exactly what links the Feldstein-Horioka logic ($s/n$ vs $\bar s/\bar n$) to the Module 1 formula.</p><div class="connection"><strong>Connection:</strong> Module 1 derives $r^*_c = \alpha n / s$ as the closed-economy long-run interest rate. Module 2 keeps this formula intact but reinterprets it: the same expression now tells us, before opening, whether the country's MPK would be above or below the world rate $\bar r$ — and hence the direction of capital flows once opening occurs. The algebra is identical; the economic meaning shifts from 'equilibrium rate' to 'threshold rate'.</div></div></div>
+<div class="question-card mono-choices" id="q-14" data-correct="D" data-topic="Inverted: parameter range from observed creditor status" data-done="0"><div class="question-header"><span class="question-number">Q14</span><span class="question-style">Numeric</span></div><div class="question-stem"><p>A small open economy is observed in long-run steady state with $f^* > 0$ (net creditor). Its parameters are $\alpha = 0.3$, $n = 0.02$, $\bar r = 0.05$. What can we infer about the country's saving rate $s$?</p></div><button class="reveal-btn" type="button" onclick="reveal(14)">Reveal options</button><span class="reveal-hint">Try answering in your head first.</span><div class="choices"><div class="choice" onclick="pick(14,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">$s > 0.12$. The creditor condition $\bar r > r^*_c = \alpha n/s$ gives this lower bound, and stability is automatic.<div class="choice-defense">Drops the stability condition. Sets the right creditor lower bound but ignores that the model also requires $s\bar r < n$, which puts an upper bound on $s$.</div></div></div><div class="choice" onclick="pick(14,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">$s < 0.40$. The stability condition $s\bar r < n$ gives this upper bound, and creditor status doesn't impose any lower bound.<div class="choice-defense">Drops the creditor condition. Stability tells us the upper bound, but creditor status separately requires $s$ to be large enough that $r^*_c < \bar r$.</div></div></div><div class="choice" onclick="pick(14,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">$s < 0.12$. The country is a creditor precisely when its savings rate stays low enough that domestic returns remain attractive.<div class="choice-defense">Sign error: confuses $f^* > 0$ with $f^* < 0$. Debtor status would require $s < 0.12$; creditor requires $s > 0.12$ so that $r^*_c < \bar r$.</div></div></div><div class="choice" onclick="pick(14,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">$0.12 < s < 0.40$. Creditor needs $s > \alpha n/\bar r = 0.12$, and stability needs $s < n/\bar r = 0.40$, simultaneously.<div class="choice-defense">Correct. Creditor: $\bar r > r^*_c = \alpha n/s$, so $0.05 > 0.006/s$, giving $s > 0.12$. Stability: $s\bar r < n$, so $s < 0.40$. Combined: $0.12 < s < 0.40$.</div></div></div></div><div class="explanation"><p>This inverts the standard direction of the problem: instead of given $s$ ask whether $f^* > 0$, we observe $f^* > 0$ and back out the constraints on $s$. Two conditions bind: (i) creditor status requires $\bar r > r^*_c$, giving $s > \alpha n / \bar r = 0.12$; (ii) stability $s\bar r < n$ gives $s < n/\bar r = 0.40$. Both must hold simultaneously, so $0.12 < s < 0.40$.</p></div></div>
+<div class="question-card" id="q-15" data-correct="C" data-topic="General Solow diagram identification" data-done="0"><div class="question-header"><span class="question-number">Q15</span><span class="question-style">Graph</span></div><div class="question-stem"><p>The diagram below shows a general Solow diagram in efficiency units, with the saving curve $s\tilde k^{\alpha}$ and the break-even line $(n+g+\delta)\tilde k$. Four points (A, B, C, D) are marked on or near the curves. Which point represents the steady-state value $\tilde k^*$?</p><div class="mf-figure" id="fig-q15"><div class="mf-panels "><div id="fig-q15-panel-0" class="mf-panel"></div></div><div class="mf-readout"></div><script>(function(){var spec={"id": "fig-q15", "params": {"s": 0.25, "alpha": 0.33, "n": 0.01, "g": 0.02, "delta": 0.05}, "x_range": [0.5, 80], "n_points": 200, "x_label": "k\u0303", "y_label": "", "curves": [{"name": "s\u00b7k\u0303^\u03b1", "expr": "s * Math.pow(k, alpha)", "color": "#0FA4AF"}, {"name": "(n+g+\u03b4)\u00b7k\u0303", "expr": "(n + g + delta) * k", "color": "#964734"}], "markers": [{"type": "label_point", "x": "5", "y": "s * Math.pow(5, alpha)", "label": "A", "color": "#003135"}, {"type": "label_point", "x": "50", "y": "s * Math.pow(50, alpha)", "label": "B", "color": "#003135"}, {"type": "intersection", "curves": [0, 1], "label": "C", "color": "#003135"}, {"type": "label_point", "x": "20", "y": "(0.01+0.02+0.05) * 20 * 1.6", "label": "D", "color": "#003135"}]};var hostId="fig-q15";function go(){if(!window.MacroFigures){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.MacroFigures not defined. Did FIGURE_JS load before this snippet?</div>");return;}if(!window.Plotly){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.Plotly not loaded.</div>");return;}try{window.MacroFigures.renderFigure(spec,hostId);}catch(e){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Render error: "+e.message+"</div>");}}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",go);}else{go();}})();</script></div></div><button class="reveal-btn" type="button" onclick="reveal(15)">Reveal options</button><span class="reveal-hint">Try answering in your head first.</span><div class="choices"><div class="choice" onclick="pick(15,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">Point A, located on the saving curve at low $\tilde k$ where the economy still has room to accumulate capital.<div class="choice-defense">A is on the saving curve but below steady state (where $s \tilde k^{\alpha} > (n+g+\delta) \tilde k$, so $\tilde k$ is rising). The economy is moving toward $\tilde k^*$, not at it.</div></div></div><div class="choice" onclick="pick(15,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">Point B, located on the saving curve at high $\tilde k$ where saving falls below break-even and capital declines.<div class="choice-defense">B is above steady state (where the saving curve is below the break-even line, so $\tilde k$ is falling). The economy is shrinking toward $\tilde k^*$, not at it.</div></div></div><div class="choice" onclick="pick(15,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">Point C, the unique positive intersection of the saving curve and the break-even line in the diagram.<div class="choice-defense">Correct. Steady state is exactly where saving equals break-even, $s \tilde k^{\alpha} = (n+g+\delta) \tilde k$. Geometrically, this is the unique positive crossing of the two curves.</div></div></div><div class="choice" onclick="pick(15,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">Point D, sitting above the break-even line at intermediate $\tilde k$ but on neither of the two curves.<div class="choice-defense">D is off both curves. Picked by students who don't realize a steady state requires being ON the saving curve AND on the break-even line simultaneously.</div></div></div></div><div class="explanation"><p>In the general Solow diagram, the steady state is geometrically the intersection of the concave saving curve $s\tilde k^{\alpha}$ and the linear break-even line $(n+g+\delta)\tilde k$. To the LEFT of $\tilde k^*$, the saving curve is above the break-even line so $\tilde k$ rises; to the right, the opposite. Only at the intersection (point C) does $\tilde k$ stay put.</p></div></div>
+<div class="question-card" id="q-16" data-correct="A" data-topic="Wealth law of motion derivation" data-done="0"><div class="question-header"><span class="question-number">Q16</span><span class="question-style">Derivation · justify step</span></div><div class="question-stem"><p>The derivation below converts the aggregate wealth recursion into a per-worker recursion. Which step justifies line (4)?</p><div class="derivation-block"><div class="derivation-step"><span class="step-num">(1)</span><span class="step-body">V_{t+1} = V_t + S_t</span></div><div class="derivation-step"><span class="step-num">(2)</span><span class="step-body">S_t = s Y^n_t = s (w_t L_t + \bar r V_t)</span></div><div class="derivation-step"><span class="step-num">(3)</span><span class="step-body">V_{t+1} = V_t + s w_t L_t + s \bar r V_t</span></div><div class="derivation-step highlight"><span class="step-num">(4)</span><span class="step-body">v_{t+1} = \frac{(1 + s\bar r) v_t + s w_t}{1 + n}</span></div></div></div><button class="reveal-btn" type="button" onclick="reveal(16)">Reveal options</button><span class="reveal-hint">Try answering in your head first.</span><div class="choices"><div class="choice" onclick="pick(16,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">Divide both sides of line (3) by $L_{t+1} = (1+n) L_t$, then use $v_t = V_t/L_t$ and $w_t L_t / L_t = w_t$ to simplify the result.<div class="choice-defense">Correct. Dividing line (3) by $L_{t+1}$ converts the aggregate recursion into per-worker form; the algebra collapses to $((1+s\bar r)v_t + sw_t)/(1+n)$.</div></div></div><div class="choice" onclick="pick(16,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">Apply the steady-state condition $v_{t+1} = v_t = v^*$ to the recursion above and solve algebraically for the implicit fixed point of the resulting difference equation.<div class="choice-defense">Wrong: line (4) is still a recursion (time-subscripted on both sides), not a steady-state equation. Steady state would eliminate the $t+1$ subscript. Picked by students who confuse transition equations with their fixed points.</div></div></div><div class="choice" onclick="pick(16,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">Substitute $w_t = w^*$, since the wage has already jumped to its steady-state value in the open-economy model with mobile capital.<div class="choice-defense">Partial truth — the wage HAS jumped to $w^*$ already, but the move from line (3) to line (4) is the per-worker conversion, not the wage substitution. Picked by students who notice $w$ in the final answer.</div></div></div><div class="choice" onclick="pick(16,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">Apply the labour-force growth equation $L_{t+1} = (1+n) L_t$ as a substitution into the numerator of the aggregate recursion to rewrite total population in next-period units.<div class="choice-defense">Almost right but incomplete — that equation is USED in the division, but the step itself involves division by $L_{t+1}$, not substitution into the numerator.</div></div></div></div><div class="explanation"><p>The move from line (3) to line (4) is converting the aggregate recursion into per-worker form by dividing both sides by $L_{t+1}$. This requires (i) using $L_{t+1} = (1+n) L_t$ to express the denominator in terms of $L_t$, and (ii) recognizing $V_t/L_t = v_t$ and $w_t L_t/L_t = w_t$. After conversion, the further substitution $w_t = w^*$ gives the textbook form $v_{t+1} = (1+s\bar r)v_t/(1+n) + sw^*/(1+n)$.</p></div></div>
+<div class="question-card" id="q-17" data-correct="A" data-topic="Identifying the derivation behind y^{n*} = w^* + r̄v^*" data-done="0"><div class="question-header"><span class="question-number">Q17</span><span class="question-style">Derivation · source</span></div><div class="question-stem"><p>The textbook identity $y^{n*} = w^* + \bar r v^*$ is a key intermediate result in the open-economy Solow analysis. Which derivation produces this identity?</p></div><button class="reveal-btn" type="button" onclick="reveal(17)">Reveal options</button><span class="reveal-hint">Try answering in your head first.</span><div class="choices"><div class="choice" onclick="pick(17,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">Start from $Y^n_t = Y_t + \bar r F_t$, substitute $F_t = V_t - K_t$, apply $Y - \bar r K = wL$, and divide by $L_t$.<div class="choice-defense">Correct path. $Y^n = Y + \bar r F = Y + \bar r(V - K) = (Y - \bar r K) + \bar r V = wL + \bar r V$. Per worker: $y^n = w + \bar r v$. In steady state, $w = w^*$ and $v = v^*$.</div></div></div><div class="choice" onclick="pick(17,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">Set $v_{t+1} = v_t = v^*$ in the wealth transition equation derived earlier and solve algebraically for the steady-state wealth level $v^*$ as a function of parameters.<div class="choice-defense">Produces $v^* = sw^*/(n - s\bar r)$, not $y^{n*} = w^* + \bar r v^*$. This is the steady-state of WEALTH, not of national income. Picked by students who confuse these distinct steady-state expressions.</div></div></div><div class="choice" onclick="pick(17,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">Equate the marginal product of capital to the world rate, $\bar r = \alpha B k^{\alpha-1}$, then invert to obtain the immediate-adjustment value of $k$.<div class="choice-defense">Produces $k^* = (\alpha B/\bar r)^{1/(1-\alpha)}$, the immediate-adjustment formula. Has nothing to do with the national-income identity. Picked by students who associate 'open economy' with the FOC step regardless of what's being derived.</div></div></div><div class="choice" onclick="pick(17,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">Differentiate the welfare ratio $x(\tilde r) = y^{n*}/y^*_c$ with respect to $\tilde r$ and set the derivative to zero to characterize the minimum.<div class="choice-defense">Produces the property that $\tilde r = 1$ is the minimum of $x$ — a result ABOUT the identity, not the identity itself. Picked by students who conflate proving an identity with analyzing its consequences.</div></div></div></div><div class="explanation"><p>The identity $y^{n*} = w^* + \bar r v^*$ decomposes national income into wage income (paid to labour from domestic production) plus interest income (earned on total national wealth). The decomposition emerges from rewriting $Y^n$ using the wealth definition $V = K + F$ and the production-function identity $Y = \bar r K + wL$. The other three derivations all live within the open-economy framework but produce DIFFERENT results.</p></div></div>
+<div class="question-card" id="q-18" data-correct="B" data-topic="Why k jumps instantly in the open economy" data-done="0"><div class="question-header"><span class="question-number">Q18</span><span class="question-style">Derivation · why</span></div><div class="question-stem"><p>In the open-economy Solow model, capital per worker $k_t$ satisfies $k_t = k^* = (\alpha B/\bar r)^{1/(1-\alpha)}$ in every period $t \geq 0$ — a constant. What mechanism makes this immediate-adjustment property hold?</p></div><button class="reveal-btn" type="button" onclick="reveal(18)">Reveal options</button><span class="reveal-hint">Try answering in your head first.</span><div class="choices"><div class="choice" onclick="pick(18,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">The domestic savings rate is sufficiently high that domestic savings alone can fund the entire desired capital stock $K^*$ in a single period.<div class="choice-defense">False — domestic savings alone cannot finance the entire capital stock in one period. Picked by students who think the jump is funded by domestic accumulation rather than capital imports.</div></div></div><div class="choice" onclick="pick(18,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">Perfect international capital mobility: any deviation between domestic MPK and $\bar r$ triggers instantaneous capital flows that close the gap in zero time.<div class="choice-defense">Correct. Mobile capital arbitrages any rate differential away within the period, pinning domestic MPK to $\bar r$ — which in turn pins $k$. This is the structural assumption doing the work.</div></div></div><div class="choice" onclick="pick(18,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">The Cobb-Douglas functional form forces capital per worker $k$ to be constant whenever the factor prices $r$ and $w$ are constant over time.<div class="choice-defense">Partial truth — Cobb-Douglas is convenient for solving the FOC, but the immediate-adjustment property doesn't depend on Cobb-Douglas specifically. With perfect mobility, $k$ adjusts instantly under any production function.</div></div></div><div class="choice" onclick="pick(18,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">The stability condition $s\bar r < n$ ensures that the capital intensity $k$ converges very quickly to its steady-state value $k^*$.<div class="choice-defense">Conflates two different convergence stories. $s\bar r < n$ is the stability condition for WEALTH ($v$), not capital ($k$). $k$ doesn't 'converge' in this model — it's pinned in period zero by the arbitrage condition.</div></div></div></div><div class="explanation"><p>The immediate-adjustment property is a CONSEQUENCE of the perfect capital mobility assumption, not of any functional form or saving behavior. With mobile capital, an MPK-$\bar r$ gap creates an arbitrage opportunity that gets exploited instantly: capital pours in (or out) until MPK equals $\bar r$. The Cobb-Douglas form just makes the resulting $k^*$ have a closed form; the qualitative property of jumping is universal under perfect mobility.</p></div></div>
+<div class="chain-block"><span class="chain-label">Scenario</span><div class="chain-setup"><p><strong>Setup.</strong> A closed economy in the basic Solow model (no technology, $\delta = 0$) has $\alpha = 0.3$, $n = 0.03$, and saving rate $s = 0.15$. Initially the economy is in autarky steady state. At $t = 0$, two policy changes occur simultaneously: (i) the savings rate rises to $s' = 0.30$, AND (ii) the capital account opens to free international capital mobility at world rate $\bar r = 0.03$. Use this setup for Q19 and Q20.</p></div><div class="question-card" id="q-19" data-correct="C" data-topic="Net foreign asset direction after combined policy shift" data-done="0"><div class="question-header"><span class="question-number">Q19</span><span class="question-style">Deep-short</span></div><div class="question-stem"><p>(Using the setup above.) Given the new parameters after the policy shift, will the country accumulate positive or negative net foreign assets in the long run?</p></div><button class="reveal-btn" type="button" onclick="reveal(19)">Reveal options</button><span class="reveal-hint">Try answering in your head first.</span><div class="choices"><div class="choice" onclick="pick(19,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">$f^* > 0$ (net creditor): even though numbers are close to the knife-edge, a slight numerical advantage tilts the country toward exporting capital abroad.<div class="choice-defense">Compelling because the numbers are close. But $r^*_c = 0.3 \cdot 0.03/0.30 = 0.03$ EXACTLY equals $\bar r$ — this is the knife-edge case, not a tilted creditor position. Picked by students who can't tolerate a 'no-flow' equilibrium.</div></div></div><div class="choice" onclick="pick(19,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">$f^* < 0$ (net debtor): the country's increased savings push wealth above what's productive domestically, forcing it to borrow from abroad on net.<div class="choice-defense">Reverses the logic completely. High savings would push wealth UP and the country toward creditor status, not debtor. Picked by students who confuse 'has lots of wealth' with 'borrows lots'.</div></div></div><div class="choice" onclick="pick(19,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">$f^* = 0$ exactly: the new autarky rate $r^*_c = \alpha n/s' = 0.3 \cdot 0.03/0.30 = 0.03$ equals $\bar r$, putting the country at the knife-edge.<div class="choice-defense">Correct. The combined policy shift puts the country precisely at $r^*_c = \bar r$, the knife-edge. Capital has no incentive to flow in either direction in steady state.</div></div></div><div class="choice" onclick="pick(19,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">$f^* > 0$ (net creditor): the high savings rate $s' = 0.30$ gives $r^*_c < \bar r$, so opening lets the country invest abroad at the higher world rate.<div class="choice-defense">Conceptually right direction but wrong calculation. $r^*_c = 0.03$ EQUALS $\bar r$, not less than it. The argument 'high savings → creditor' requires $r^*_c$ to actually fall below $\bar r$, which happens for $s' > 0.30$ but not at $s' = 0.30$ exactly.</div></div></div></div><div class="explanation"><p>This question forces the student to actually compute the new autarky rate after the savings-rate change, then compare it to $\bar r$. With $s' = 0.30$, $r^*_c = \alpha n/s' = 0.03$ — exactly the world rate. Equivalently, $s'/n = 10$ equals $\alpha/\bar r = 10$, so the strong-vs-weak-saver inequality is tight. The country is at the knife-edge: zero net foreign assets in steady state.</p></div></div><div class="question-card" id="q-20" data-correct="D" data-topic="What changes under simultaneous opening plus savings reform" data-done="0"><div class="question-header"><span class="question-number">Q20</span><span class="question-style">Boundary</span></div><div class="question-stem"><p>(Continuing the setup from Q19.) Compare the new long-run open-economy steady state to the original (pre-policy) closed-economy steady state. Which of the following is <strong>NOT</strong> a long-run consequence of the combined policy shift?</p></div><button class="reveal-btn" type="button" onclick="reveal(20)">Reveal options</button><span class="reveal-hint">Try answering in your head first.</span><div class="choices"><div class="choice" onclick="pick(20,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">Capital per worker $k$ rises, because $k^* = (\alpha B/\bar r)^{1/(1-\alpha)}$ with $\bar r = 0.03$ exceeds the original autarky value at $s = 0.15$, $n = 0.03$.<div class="choice-defense">This IS a consequence: $\alpha/\bar r = 10$ vs $s/n = 5$, so the new $k^*$ formula exceeds the old autarky $k^*_c$ formula. Picked as 'NOT a consequence' by students who don't run the comparison.</div></div></div><div class="choice" onclick="pick(20,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">Long-run national income per worker $y^{n*}$ rises, even though net foreign assets remain at zero, simply because the new state has higher domestic output.<div class="choice-defense">Subtle but IS a consequence. Even at the knife-edge ($f^* = 0$), $y^{n*}$ rises because the new $s' = 0.30$ pushes the country to a higher capital stock and hence higher output.</div></div></div><div class="choice" onclick="pick(20,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">Long-run wages $w^*$ change as a result of the policy shift, since the wage depends on the capital intensity $k$ and $k$ moves to a new level.<div class="choice-defense">IS a consequence: $w = (1-\alpha) B k^{\alpha}$ depends on $k$, and $k$ moves. Given A, $w$ rises along with $k$ in this particular scenario.</div></div></div><div class="choice" onclick="pick(20,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">The country's long-run net foreign asset position $f^*$ rises from 0 in autarky to a positive value reflecting accumulated savings abroad.<div class="choice-defense">Correct — this is NOT a consequence. From Q19, the new steady state has $f^* = 0$ (knife-edge), exactly the same as the autarky $f^* = 0$. So $f^*$ does NOT change. Picked by students who don't trust their Q19 answer.</div></div></div></div><div class="explanation"><p>The trick: the knife-edge property from Q19 ($f^* = 0$ in the new steady state) means net foreign assets DON'T change as a result of the combined policy. Both the original autarky and the new open-economy steady state have $f^* = 0$. Everything ELSE changes — $k$, $y$, $w$, $c$, $v$ — but the asset position stays at zero. This is the cleanest demonstration that 'opening the capital account' and 'becoming a creditor' are distinct events.</p></div></div></div>
+<div class="summary" id="summary">
+<h2>Quiz Complete</h2>
+<div class="score-big" id="final-score"></div>
+<div class="score-label" id="final-label"></div>
+<table class="results-table" id="results-table">
+<thead><tr><th>#</th><th>Topic</th><th>Correct</th><th>Yours</th><th></th></tr></thead>
+<tbody id="results-body"></tbody>
+</table>
+<div class="json-section">
+<label>Paste this into chat to update your learning state</label>
+<textarea class="json-box" id="json-export" readonly></textarea>
+</div>
+<div class="btn-row">
+<button class="btn" onclick="copyJson()">Copy JSON</button>
+<button class="btn btn-secondary" onclick="document.querySelectorAll('.explanation').forEach(e=>e.classList.add('visible'))">Show All Explanations</button>
+</div>
+</div>
+</div>
+<div class="copy-toast" id="copy-toast">Copied to clipboard</div>
+<script>
+const total=20;
+let answered=0,correct=0;
+const results=[];
+
+function setsEqual(a,b){
+  if(a.length!==b.length)return false;
+  const sa=new Set(a),sb=new Set(b);
+  for(const x of sa)if(!sb.has(x))return false;
+  return true;
+}
+
+/* Productive-failure: hide answer surfaces until user clicks reveal */
+function reveal(qid){
+  document.getElementById('q-'+qid).classList.add('revealed');
+}
+
+function pickTF(qid,letter,value){
+  const card=document.getElementById('q-'+qid);
+  if(card.dataset.done==='1')return;
+  const row=card.querySelector('.mtf-row[data-letter="'+letter+'"]');
+  row.dataset.pick=String(value);
+  row.querySelectorAll('.mtf-pick button').forEach(b=>{
+    b.classList.toggle('picked',b.dataset.value===String(value));
+  });
+  // Enable submit when every row has a pick
+  const rows=card.querySelectorAll('.mtf-row');
+  const allPicked=Array.from(rows).every(r=>r.dataset.pick!==undefined);
+  const btn=card.querySelector('.submit-btn');
+  if(btn)btn.disabled=!allPicked;
+}
+
+function submitMtf(qid){
+  const card=document.getElementById('q-'+qid);
+  if(card.dataset.done==='1')return;
+  const truth=JSON.parse(card.dataset.correct);  // {"A":true,"B":false,...}
+  const topic=card.dataset.topic||'';
+  const userPicks={};
+  let allRight=true;
+  card.querySelectorAll('.mtf-row').forEach(row=>{
+    const letter=row.dataset.letter;
+    const pick=row.dataset.pick==='true';
+    userPicks[letter]=pick;
+    const right=truth[letter]===pick;
+    row.classList.add(right?'correct-reveal':'wrong-reveal');
+    row.querySelectorAll('.mtf-pick button').forEach(b=>b.disabled=true);
+    if(!right)allRight=false;
+  });
+  card.querySelector('.submit-row').style.display='none';
+  // For LEARNING_STATE updates we treat the cluster as a single all-or-nothing item.
+  const correctStr=Object.entries(truth).map(([k,v])=>k+':'+(v?'T':'F')).join(' ');
+  const userStr=Object.entries(userPicks).map(([k,v])=>k+':'+(v?'T':'F')).join(' ');
+  commitAnswer(qid,userStr,correctStr,allRight,topic);
+}
+
+function commitAnswer(qid,userAnswer,correctAnswer,isCorrect,topic){
+  const card=document.getElementById('q-'+qid);
+  if(card.dataset.done==='1')return;
+  card.dataset.done='1';
+  card.querySelectorAll('.choice').forEach(c=>c.classList.add('disabled'));
+  if(isCorrect){card.classList.add('answered-correct');correct++}
+  else{card.classList.add('answered-wrong')}
+  card.querySelector('.explanation').classList.add('visible');
+  results.push({
+    id:qid,topic:topic,
+    correct_answer:Array.isArray(correctAnswer)?correctAnswer.join('+'):correctAnswer,
+    user_answer:Array.isArray(userAnswer)?(userAnswer.length?userAnswer.join('+'):'—'):userAnswer,
+    is_correct:isCorrect
+  });
+  answered++;
+  document.getElementById('prog-text').textContent=answered+' / '+total;
+  document.getElementById('prog-fill').style.width=(answered/total*100)+'%';
+  document.getElementById('score-text').textContent=correct+'/'+answered;
+  if(answered===total)showSummary();
+}
+
+/* Single-MCQ pick: click commits answer */
+function pick(qid,letter){
+  const card=document.getElementById('q-'+qid);
+  if(card.dataset.done==='1')return;
+  const correctLetter=card.dataset.correct;
+  const topic=card.dataset.topic||'';
+  card.querySelectorAll('.choice').forEach(c=>{
+    const l=c.dataset.letter;
+    if(l===correctLetter)c.classList.add('correct-reveal');
+    if(l===letter&&l!==correctLetter)c.classList.add('wrong-reveal');
+  });
+  commitAnswer(qid,letter,correctLetter,letter===correctLetter,topic);
+}
+
+/* Multi-select toggle: click toggles, submit commits */
+function toggle(qid,letter){
+  const card=document.getElementById('q-'+qid);
+  if(card.dataset.done==='1')return;
+  const choice=card.querySelector('.choice[data-letter="'+letter+'"]');
+  choice.classList.toggle('selected');
+  const anySel=card.querySelectorAll('.choice.selected').length>0;
+  const btn=card.querySelector('.submit-btn');
+  if(btn)btn.disabled=!anySel;
+}
+
+function submitMulti(qid){
+  const card=document.getElementById('q-'+qid);
+  if(card.dataset.done==='1')return;
+  const correctSet=JSON.parse(card.dataset.correct);
+  const topic=card.dataset.topic||'';
+  const selected=Array.from(card.querySelectorAll('.choice.selected'))
+    .map(c=>c.dataset.letter).sort();
+  const isCorrect=setsEqual(selected,correctSet);
+  card.querySelectorAll('.choice').forEach(c=>{
+    const l=c.dataset.letter;
+    const wasPicked=c.classList.contains('selected');
+    const isRight=correctSet.includes(l);
+    c.classList.remove('selected');
+    if(wasPicked&&isRight)c.classList.add('correct-reveal');
+    else if(wasPicked&&!isRight)c.classList.add('wrong-reveal');
+    else if(!wasPicked&&isRight)c.classList.add('missed-reveal');
+  });
+  card.querySelector('.submit-row').style.display='none';
+  commitAnswer(qid,selected,correctSet,isCorrect,topic);
+}
+
+function showSummary(){
+  const s=document.getElementById('summary');
+  s.style.display='block';
+  document.getElementById('final-score').textContent=correct+' / '+total;
+  const pct=Math.round(correct/total*100);
+  document.getElementById('final-label').textContent=
+    pct+'% — '+(pct>=80?'strong understanding':pct>=60?'good, review marked items':'review recommended');
+  const tbody=document.getElementById('results-body');
+  results.sort((a,b)=>a.id-b.id);
+  results.forEach(r=>{
+    const tr=document.createElement('tr');
+    tr.className=r.is_correct?'row-correct':'row-wrong';
+    tr.innerHTML='<td>Q'+r.id+'</td><td>'+r.topic+'</td><td>'+r.correct_answer+
+      '</td><td>'+r.user_answer+'</td><td>'+(r.is_correct?'✓':'✗')+'</td>';
+    tbody.appendChild(tr);
+  });
+  const answers={};
+  results.sort((a,b)=>a.id-b.id).forEach(r=>{answers['Q'+r.id]=r.user_answer});
+  const exportData={file:"module-2-conceptual_2026-05-26",score:correct+'/'+total,answers:answers};
+  document.getElementById('json-export').value=JSON.stringify(exportData);
+  s.scrollIntoView({behavior:'smooth'});
+}
+
+function copyJson(){
+  const box=document.getElementById('json-export');
+  box.select();
+  document.execCommand('copy');
+  const toast=document.getElementById('copy-toast');
+  toast.style.display='block';
+  setTimeout(()=>{toast.style.display='none'},1500);
+}
+
+document.addEventListener('DOMContentLoaded',()=>{
+  renderMathInElement(document.body,{delimiters:[
+    {left:"$$",right:"$$",display:true},
+    {left:"$",right:"$",display:false},
+    {left:"\\(",right:"\\)",display:false},
+    {left:"\\[",right:"\\]",display:true}
+  ]});
+});
+</script>
+</body>
+</html>

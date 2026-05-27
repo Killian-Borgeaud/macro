@@ -57,7 +57,63 @@ STYLE_LABELS = {
     "derivation-justify": "Derivation · justify step",
     "derivation-source": "Derivation · source",
     "derivation-why": "Derivation · why",
+    "mtf-cluster": "Multi true-false",
 }
+
+
+def _build_mtf_card(q):
+    """Render a multiple-true-false cluster: setup + N rows of statement + T/F buttons."""
+    qid = q["id"]
+    topic = _topic_attr(q)
+    setup = q.get("setup", "")
+    statements = q["statements"]
+    # data-correct: {"A": true, "B": false, ...}
+    truth = {s["letter"]: bool(s["true"]) for s in statements}
+    correct_attr = json.dumps(truth).replace('"', '&quot;')
+
+    rows = []
+    for s in statements:
+        letter = s["letter"]
+        text = s["text"]
+        defense = s.get("defense", "")
+        rows.append(
+            f'<div class="mtf-row" data-letter="{letter}">'
+            f'<div class="mtf-row-body">'
+            f'<span class="mtf-letter">{letter}</span>'
+            f'<span class="mtf-text">{text}</span>'
+            f'<div class="mtf-pick">'
+            f'<button type="button" data-value="true" '
+            f'onclick="pickTF({qid},\'{letter}\',true)">T</button>'
+            f'<button type="button" data-value="false" '
+            f'onclick="pickTF({qid},\'{letter}\',false)">F</button>'
+            f'</div>'
+            f'</div>'
+            f'<div class="mtf-defense">{defense}</div>'
+            f'</div>'
+        )
+    rows_html = "".join(rows)
+
+    explanation = q.get("explanation", "")
+    return (
+        f'<div class="question-card mtf" id="q-{qid}" '
+        f'data-correct="{correct_attr}" data-topic="{topic}" data-done="0">'
+        f'<div class="question-header">'
+        f'<span class="question-number">Q{qid}</span>'
+        f'<span class="question-style">{STYLE_LABELS["mtf-cluster"]}</span>'
+        f'</div>'
+        f'<div class="question-stem">{setup}</div>'
+        f'<button class="reveal-btn" type="button" onclick="reveal({qid})">'
+        f'Reveal statements</button>'
+        f'<span class="reveal-hint">Think through the setup first.</span>'
+        f'<div class="mtf-statements">{rows_html}</div>'
+        f'<div class="submit-row">'
+        f'<button type="button" class="submit-btn" disabled '
+        f'onclick="submitMtf({qid})">Submit</button>'
+        f'<span>Pick T or F for each statement.</span>'
+        f'</div>'
+        f'<div class="explanation">{explanation}</div>'
+        f'</div>'
+    )
 
 
 def _topic_attr(q):
@@ -104,6 +160,8 @@ def _build_derivation_html(steps, highlight, style):
 def _build_question_html(q):
     qid = q["id"]
     style = q.get("style", "")
+    if style == "mtf-cluster":
+        return _build_mtf_card(q)
     style_display = STYLE_LABELS.get(style, style)
     topic = _topic_attr(q)
 
@@ -179,6 +237,13 @@ def _build_question_html(q):
         if connection else ""
     )
 
+    reveal_label = "Reveal options" if not is_multi else "Reveal options"
+    reveal_block = (
+        f'<button class="reveal-btn" type="button" onclick="reveal({qid})">'
+        f'{reveal_label}</button>'
+        f'<span class="reveal-hint">Try answering in your head first.</span>'
+    )
+
     return (
         f'<div class="{" ".join(card_classes)}" id="q-{qid}" '
         f'data-correct="{correct_attr_html}" data-topic="{topic}" data-done="0">'
@@ -187,6 +252,7 @@ def _build_question_html(q):
         f'<span class="question-style">{style_display}</span>'
         f'</div>'
         f'<div class="question-stem">{stem_html}</div>'
+        f'{reveal_block}'
         f'<div class="choices">{choices_html}</div>'
         f'{submit_row}'
         f'<div class="explanation">{explanation}{conn_html}</div>'
