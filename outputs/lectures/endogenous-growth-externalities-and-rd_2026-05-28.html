@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lecture: Endogenous Growth — Externalities and R&D</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script>
+window.MacroFigures = window.MacroFigures || (function() {
+
+  function linspace(a, b, n) {
+    const out = [];
+    for (let i = 0; i < n; i++) out.push(a + (b - a) * i / (n - 1));
+    return out;
+  }
+
+  function compileExpr(expr, paramNames) {
+    return new Function('k', 'p',
+      'const {' + paramNames.join(',') + '} = p; return ' + expr + ';');
+  }
+
+  function compileScalarExpr(expr, paramNames) {
+    if (typeof expr === 'number') return () => expr;
+    if (typeof expr === 'string') {
+      return new Function('p',
+        'const {' + paramNames.join(',') + '} = p; return ' + expr + ';');
+    }
+    return () => null;
+  }
+
+  function findIntersection(xs, y1s, y2s) {
+    for (let i = 1; i < xs.length; i++) {
+      const d0 = y1s[i-1] - y2s[i-1];
+      const d1 = y1s[i] - y2s[i];
+      if (d0 === 0) return { x: xs[i-1], y: y1s[i-1] };
+      if (d0 * d1 < 0) {
+        const t = d0 / (d0 - d1);
+        return {
+          x: xs[i-1] + t * (xs[i] - xs[i-1]),
+          y: y1s[i-1] + t * (y1s[i] - y1s[i-1])
+        };
+      }
+    }
+    return null;
+  }
+
+  function findExtremum(xs, ys, kind) {
+    let idx = 0;
+    for (let i = 1; i < ys.length; i++) {
+      if (kind === 'max' ? ys[i] > ys[idx] : ys[i] < ys[idx]) idx = i;
+    }
+    return { x: xs[idx], y: ys[idx] };
+  }
+
+  function buildCurveData(curve, xs, params, paramNames) {
+    if (curve.type === 'time_series') {
+      // Discrete recursion: k_{t+1} = recursion(k_t, p), starting from initial.
+      const T = (curve.t_range && curve.t_range[1]) || 50;
+      const t0 = (curve.t_range && curve.t_range[0]) || 0;
+      const initFn = compileScalarExpr(curve.initial, paramNames);
+      const recFn = new Function('k', 'p',
+        'const {' + paramNames.join(',') + '} = p; return ' + curve.recursion + ';');
+      const ts = [t0], ks = [initFn(params)];
+      for (let t = t0 + 1; t <= T; t++) {
+        ks.push(recFn(ks[ks.length - 1], params));
+        ts.push(t);
+      }
+      return { x: ts, y: ks };
+    }
+    if (curve.type === 'piecewise') {
+      // [{when: "k < 10", expr: "..."}], else expr at end
+      const fns = curve.pieces.map(p => ({
+        when: p.when ? new Function('k', 'p',
+          'const {' + paramNames.join(',') + '} = p; return ' + p.when + ';') : null,
+        fn: compileExpr(p.expr, paramNames)
+      }));
+      return {
+        x: xs,
+        y: xs.map(k => {
+          for (const piece of fns) {
+            if (!piece.when || piece.when(k, params)) return piece.fn(k, params);
+          }
+          return null;
+        })
+      };
+    }
+    // default: type === 'expr'
+    const fn = compileExpr(curve.expr, paramNames);
+    return { x: xs, y: xs.map(k => fn(k, params)) };
+  }
+
+  function buildPanel(panel, params, paramNames, panelHostId) {
+    let xs;
+    // For panels containing only time_series curves, x_range may be omitted.
+    if (panel.x_range) {
+      xs = linspace(panel.x_range[0], panel.x_range[1], panel.n_points || 200);
+    } else {
+      xs = [];
+    }
+
+    const curveData = panel.curves.map(c => buildCurveData(c, xs, params, paramNames));
+
+    const traces = panel.curves.map((c, i) => ({
+      x: curveData[i].x, y: curveData[i].y,
+      name: c.name, mode: c.mode || 'lines',
+      line: { color: c.color, width: c.width || 1.6, dash: c.dash || 'solid' },
+      marker: { size: c.marker_size || 5, color: c.color, line: { color: 'white', width: 1 } }
+    }));
+
+    const shapes = [];
+    const annotations = [];
+    const readoutParts = [];
+
+    for (const m of (panel.markers || [])) {
+      let pt = null;
+      let line = null;
+
+      if (m.type === 'intersection') {
+        pt = findIntersection(curveData[m.curves[0]].x, curveData[m.curves[0]].y, curveData[m.curves[1]].y);
+      } else if (m.type === 'maximum' || m.type === 'minimum') {
+        const kind = m.type === 'maximum' ? 'max' : 'min';
+        pt = findExtremum(curveData[m.curve].x, curveData[m.curve].y, kind);
+      } else if (m.type === 'vertical_line') {
+        const x = compileScalarExpr(m.at, paramNames)(params);
+        line = { type: 'line', x0: x, x1: x, yref: 'paper', y0: 0, y1: 1,
+                 line: { color: m.color || '#5a7378', dash: m.dash || 'dash', width: 1 } };
+        if (m.label) annotations.push({
+          x: x, y: 0, xref: 'x', yref: 'paper', text: m.label,
+          showarrow: false, yshift: -18, font: { size: 11, color: '#111' }
+        });
+      } else if (m.type === 'horizontal_line') {
+        const y = compileScalarExpr(m.at, paramNames)(params);
+        line = { type: 'line', y0: y, y1: y, xref: 'paper', x0: 0, x1: 1,
+                 line: { color: m.color || '#5a7378', dash: m.dash || 'dash', width: 1 } };
+        if (m.label) annotations.push({
+          x: 1, y: y, xref: 'paper', yref: 'y', text: m.label,
+          showarrow: false, xshift: -8, yshift: -8, font: { size: 11, color: '#111' }
+        });
+      } else if (m.type === 'tangent_line') {
+        const x0 = compileScalarExpr(m.at, paramNames)(params);
+        const fn = compileExpr(panel.curves[m.curve].expr, paramNames);
+        const h = Math.max(0.001, Math.abs(x0) * 0.001);
+        const slope = (fn(x0 + h, params) - fn(x0 - h, params)) / (2 * h);
+        const y0v = fn(x0, params);
+        const xMin = panel.x_range[0], xMax = panel.x_range[1];
+        traces.push({
+          x: [xMin, xMax],
+          y: [y0v + slope * (xMin - x0), y0v + slope * (xMax - x0)],
+          mode: 'lines', name: m.label || 'tangent',
+          line: { color: m.color || '#16a34a', dash: 'dot', width: 2 }, showlegend: !!m.label
+        });
+        pt = { x: x0, y: y0v };
+      } else if (m.type === 'asymptote') {
+        const fn = compileExpr(panel.curves[m.curve].expr, paramNames);
+        const yInf = fn(1e9, params);
+        line = { type: 'line', y0: yInf, y1: yInf, xref: 'paper', x0: 0, x1: 1,
+                 line: { color: m.color || '#94a3b8', dash: 'dot', width: 1 } };
+        if (m.label) annotations.push({
+          x: 0.98, y: yInf, xref: 'paper', yref: 'y', text: m.label,
+          showarrow: false, xanchor: 'right', yshift: -8, font: { size: 11, color: '#666' }
+        });
+      } else if (m.type === 'area') {
+        // Shaded region between curves[0] and curves[1]
+        const ys1 = curveData[m.curves[0]].y;
+        const ys2 = curveData[m.curves[1]].y;
+        traces.push({
+          x: [...curveData[m.curves[0]].x, ...curveData[m.curves[0]].x.slice().reverse()],
+          y: [...ys1, ...ys2.slice().reverse()],
+          fill: 'toself', fillcolor: m.color || 'rgba(37,99,235,0.15)',
+          line: { width: 0 }, name: m.label || 'area', hoverinfo: 'skip',
+          showlegend: !!m.label
+        });
+      } else if (m.type === 'label_point') {
+        const x = compileScalarExpr(m.x, paramNames)(params);
+        const y = compileScalarExpr(m.y, paramNames)(params);
+        pt = { x, y };
+      }
+
+      if (pt) {
+        const pointTrace = {
+          x: [pt.x], y: [pt.y], mode: 'markers',
+          marker: { size: 8, color: m.color || '#003135', line: { color: 'white', width: 1.5 } },
+          name: m.label, showlegend: false,
+          hovertemplate: (m.label ? m.label + ' = ' : '') + '(%{x:.3f}, %{y:.3f})<extra></extra>'
+        };
+        // label_point markers render the label TEXT next to the dot; other marker
+        // types (intersection, max/min) write their label via annotations / guides.
+        if (m.type === 'label_point' && m.label) {
+          pointTrace.mode = 'markers+text';
+          pointTrace.text = [m.label];
+          pointTrace.textposition = m.textposition || 'top right';
+          pointTrace.textfont = {
+            size: 13, color: m.color || '#003135',
+            family: 'JetBrains Mono, ui-monospace, monospace', weight: 700
+          };
+        }
+        traces.push(pointTrace);
+        if (m.guide === 'vertical') {
+          shapes.push({ type: 'line', x0: pt.x, x1: pt.x, y0: 0, y1: pt.y,
+                        line: { color: '#5a7378', dash: 'dash', width: 1 } });
+        } else if (m.guide === 'horizontal') {
+          shapes.push({ type: 'line', xref: 'paper', x0: 0, x1: 1, y0: pt.y, y1: pt.y,
+                        line: { color: '#5a7378', dash: 'dash', width: 1 } });
+        } else if (m.guide === 'both') {
+          shapes.push({ type: 'line', x0: pt.x, x1: pt.x, y0: 0, y1: pt.y,
+                        line: { color: '#5a7378', dash: 'dash', width: 1 } });
+          shapes.push({ type: 'line', xref: 'paper', x0: 0, x1: 1, y0: pt.y, y1: pt.y,
+                        line: { color: '#5a7378', dash: 'dash', width: 1 } });
+        }
+        if (m.label && m.guide === 'vertical') annotations.push({
+          x: pt.x, y: 0, xref: 'x', yref: 'y', text: m.label + ' = ' + pt.x.toFixed(2),
+          showarrow: false, yshift: -18, font: { size: 11, color: '#111' }
+        });
+        readoutParts.push(panel.id + ': ' + (m.label || '?') +
+                          ' = ' + pt.x.toFixed(3) + ', y = ' + pt.y.toFixed(3));
+      }
+      if (line) shapes.push(line);
+    }
+
+    const layout = {
+      font: { family: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+              color: '#003135', size: 12 },
+      xaxis: { title: { text: panel.x_label, font: { size: 12, color: '#5a7378' } },
+               gridcolor: '#e6eef0', zerolinecolor: '#d4e1e4', linecolor: '#d4e1e4',
+               tickfont: { color: '#5a7378', size: 11 } },
+      yaxis: { title: { text: panel.y_label, font: { size: 12, color: '#5a7378' } },
+               gridcolor: '#e6eef0', zerolinecolor: '#d4e1e4', linecolor: '#d4e1e4',
+               tickfont: { color: '#5a7378', size: 11 } },
+      shapes: shapes, annotations: annotations,
+      margin: { t: 28, r: 20, b: 50, l: 60 },
+      title: panel.title ? { text: panel.title, font: { size: 13, color: '#024950' } } : undefined,
+      legend: { x: 0.02, y: 0.98, bgcolor: 'rgba(255,255,255,0.9)',
+                bordercolor: '#d4e1e4', borderwidth: 1, font: { size: 11, color: '#003135' } },
+      plot_bgcolor: '#ffffff', paper_bgcolor: '#ffffff'
+    };
+
+    Plotly.react(panelHostId, traces, layout, { responsive: true, displayModeBar: false });
+    return readoutParts;
+  }
+
+  function renderFigure(spec, hostId) {
+    const root = document.getElementById(hostId);
+    if (!root) { console.warn('Figure host not found:', hostId); return; }
+    const paramNames = Object.keys(spec.params);
+    const defaults = JSON.parse(JSON.stringify(spec.params));
+    const params = JSON.parse(JSON.stringify(spec.params));
+
+    const panels = spec.panels || [{
+      id: 'main', x_range: spec.x_range, n_points: spec.n_points,
+      x_label: spec.x_label, y_label: spec.y_label,
+      curves: spec.curves, markers: spec.markers
+    }];
+
+    function renderAll() {
+      const readoutLines = [];
+      panels.forEach((p, i) => {
+        const lines = buildPanel(p, params, paramNames, hostId + '-panel-' + i);
+        readoutLines.push(...lines);
+      });
+      const readoutEl = root.querySelector('.mf-readout');
+      if (readoutEl) readoutEl.textContent = readoutLines.join('   |   ');
+    }
+
+    // Wire sliders
+    (spec.sliders || []).forEach(s => {
+      const sl = root.querySelector('[data-slider="' + s.param + '"]');
+      const vsp = root.querySelector('[data-value="' + s.param + '"]');
+      if (sl) sl.addEventListener('input', e => {
+        params[s.param] = parseFloat(e.target.value);
+        if (vsp) vsp.textContent = params[s.param].toFixed(s.decimals || 2);
+        renderAll();
+      });
+    });
+
+    // Reset button
+    const resetBtn = root.querySelector('.mf-reset');
+    if (resetBtn) resetBtn.addEventListener('click', () => {
+      Object.assign(params, JSON.parse(JSON.stringify(defaults)));
+      (spec.sliders || []).forEach(s => {
+        const sl = root.querySelector('[data-slider="' + s.param + '"]');
+        const vsp = root.querySelector('[data-value="' + s.param + '"]');
+        if (sl) sl.value = defaults[s.param];
+        if (vsp) vsp.textContent = defaults[s.param].toFixed(s.decimals || 2);
+      });
+      renderAll();
+    });
+
+    renderAll();
+  }
+
+  return { renderFigure };
+})();
+</script>
+<style>
+:root{
+  --bg:#fdf6e3;
+  --card:#ffffff;
+  --border:#e6dcc4;
+  --text:#003135;
+  --muted:#5a7378;
+  --accent:#024950;
+  --accent-2:#0FA4AF;
+  --accent-bg:rgba(15,164,175,0.10);
+  --key:#964734;
+  --key-bg:rgba(150,71,52,0.07);
+  --box-fill:#003135;
+  --box-text:#e6f4f5;
+  --box-line:#0FA4AF;
+  --nav-w:220px;
+  --col-w:760px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background-color:var(--bg)}
+body{
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  color:var(--text);
+  line-height:1.7;
+  font-weight:400;
+  font-feature-settings:"cv11","ss01","ss03";
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+  /* Subtle paper grain: fractal noise tinted warm brown at low alpha */
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.45  0 0 0 0 0.35  0 0 0 0 0.20  0 0 0 0.06 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  background-repeat:repeat;
+  background-attachment:fixed;
+}
+.layout{display:block;min-height:100vh}
+nav{
+  width:var(--nav-w);
+  position:fixed;top:0;left:0;height:100vh;overflow-y:auto;
+  background:transparent;
+  border-right:1px solid var(--border);
+  padding:2.5rem 1.25rem;
+}
+nav h2{
+  font-size:.72rem;
+  text-transform:uppercase;
+  color:var(--muted);
+  margin-bottom:1.25rem;
+  letter-spacing:.12em;
+  font-weight:600;
+}
+nav a{
+  display:block;
+  padding:.45rem .6rem;
+  font-size:.84rem;
+  color:var(--muted);
+  text-decoration:none;
+  border-radius:5px;
+  margin-bottom:1px;
+  font-weight:400;
+  transition:color .15s, background .15s;
+}
+nav a:hover{color:var(--text);background:rgba(2,73,80,0.04)}
+nav a.active{color:var(--accent);background:var(--accent-bg);font-weight:500}
+main{
+  margin-left:var(--nav-w);
+  padding:4rem max(2rem, calc((100vw - var(--nav-w) - var(--col-w)) / 2)) 5rem;
+}
+h1{
+  font-size:2.5rem;
+  font-weight:300;
+  letter-spacing:-0.03em;
+  line-height:1.15;
+  margin-bottom:.6rem;
+  color:var(--text);
+}
+.meta{
+  color:var(--muted);
+  font-size:.85rem;
+  font-weight:400;
+  letter-spacing:.01em;
+  margin-bottom:3rem;
+  padding-bottom:1.25rem;
+  border-bottom:1px solid var(--border);
+}
+.section{margin-bottom:3.5rem}
+.section h2{
+  font-size:1.55rem;
+  font-weight:400;
+  letter-spacing:-0.02em;
+  color:var(--accent);
+  margin-bottom:1.25rem;
+  padding-bottom:.7rem;
+  border-bottom:1px solid var(--border);
+}
+.section h3{
+  font-size:1.05rem;
+  font-weight:500;
+  letter-spacing:-0.01em;
+  margin:1.75rem 0 .8rem;
+  color:var(--text);
+}
+.section p{margin-bottom:1.1rem;font-weight:400}
+.section ol,.section ul{margin:0 0 1.1rem 1.5rem}
+.section li{margin-bottom:.4rem}
+a{color:var(--accent-2);text-decoration:none;border-bottom:1px solid transparent;transition:border-color .15s}
+a:hover{border-bottom-color:var(--accent-2)}
+strong{font-weight:600;color:var(--text)}
+em{font-style:italic}
+/* HUD-style callouts: dark fill, light text, cyan tracer outline,
+   extension line out of one corner ending in a small square endpoint */
+.key-concept,.example{
+  position:relative;
+  background:var(--box-fill);
+  color:var(--box-text);
+  padding:1.4rem 1.65rem;
+  margin:2.25rem 0;
+  border-radius:0;
+  outline:1px solid var(--box-line);
+  outline-offset:4px;
+  font-weight:400;
+}
+.key-concept p,.example p{margin-bottom:.8rem}
+.key-concept p:last-child,.example p:last-child{margin-bottom:0}
+.key-concept strong{color:#e8826a;font-weight:600;letter-spacing:.02em}
+.example strong{color:var(--box-line);font-weight:600;letter-spacing:.02em}
+.key-concept code,.example code{
+  background:rgba(255,255,255,0.08);
+  color:var(--box-line);
+}
+.key-concept .katex,.example .katex{color:var(--box-text)}
+/* HUD tracer: 3 staggered bold strokes + an open square endpoint.
+   Uses mask-image so the stroke color = var(--box-line) and the rect
+   interior is genuinely transparent (page bg + texture show through). */
+.key-concept::before,.example::before{
+  content:'';
+  position:absolute;
+  width:74px;
+  height:60px;
+  pointer-events:none;
+  background-color:var(--box-line);
+  -webkit-mask-repeat:no-repeat;
+          mask-repeat:no-repeat;
+  -webkit-mask-position:center;
+          mask-position:center;
+}
+/* key-concept: tracer in the RIGHT gutter, lines extend rightward */
+.key-concept::before{
+  top:14px;
+  right:-82px;
+  -webkit-mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 74 60'><line x1='0' y1='9' x2='48' y2='9' stroke='black' stroke-width='3'/><line x1='0' y1='28' x2='22' y2='28' stroke='black' stroke-width='3'/><line x1='0' y1='47' x2='34' y2='47' stroke='black' stroke-width='3'/><rect x='56' y='4' width='10' height='10' fill='none' stroke='black' stroke-width='1.6'/></svg>");
+          mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 74 60'><line x1='0' y1='9' x2='48' y2='9' stroke='black' stroke-width='3'/><line x1='0' y1='28' x2='22' y2='28' stroke='black' stroke-width='3'/><line x1='0' y1='47' x2='34' y2='47' stroke='black' stroke-width='3'/><rect x='56' y='4' width='10' height='10' fill='none' stroke='black' stroke-width='1.6'/></svg>");
+}
+/* example: tracer in the LEFT gutter, lines extend leftward (mirrored) */
+.example::before{
+  bottom:14px;
+  left:-82px;
+  -webkit-mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 74 60'><line x1='26' y1='9' x2='74' y2='9' stroke='black' stroke-width='3'/><line x1='52' y1='28' x2='74' y2='28' stroke='black' stroke-width='3'/><line x1='40' y1='47' x2='74' y2='47' stroke='black' stroke-width='3'/><rect x='8' y='4' width='10' height='10' fill='none' stroke='black' stroke-width='1.6'/></svg>");
+          mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 74 60'><line x1='26' y1='9' x2='74' y2='9' stroke='black' stroke-width='3'/><line x1='52' y1='28' x2='74' y2='28' stroke='black' stroke-width='3'/><line x1='40' y1='47' x2='74' y2='47' stroke='black' stroke-width='3'/><rect x='8' y='4' width='10' height='10' fill='none' stroke='black' stroke-width='1.6'/></svg>");
+}
+.key-concept::after,.example::after{display:none}
+@media(max-width:1100px){
+  .key-concept::before,.example::before{display:none}
+}
+.graph-container{
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:8px;
+  padding:1.5rem;
+  margin:1.5rem 0;
+  text-align:center;
+}
+.graph-container svg{max-width:100%}
+table{
+  width:100%;
+  border-collapse:collapse;
+  margin:1.5rem 0;
+  background:var(--card);
+  border-radius:6px;
+  overflow:hidden;
+  border:1px solid var(--border);
+  font-size:.9rem;
+}
+th,td{padding:.7rem .9rem;border-bottom:1px solid var(--border);text-align:left}
+tr:last-child td{border-bottom:none}
+th{
+  background:var(--accent-bg);
+  font-weight:600;
+  color:var(--accent);
+  letter-spacing:.01em;
+}
+code{
+  background:#e6eef0;
+  color:var(--accent);
+  padding:.12rem .42rem;
+  border-radius:3px;
+  font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:.85em;
+  font-weight:500;
+}
+pre{
+  background:#003135;
+  color:#dceef0;
+  padding:1.25rem;
+  border-radius:8px;
+  overflow-x:auto;
+  margin:1.5rem 0;
+  font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:.82rem;
+  line-height:1.6;
+  font-weight:400;
+}
+pre code{background:none;color:inherit;padding:0;font-weight:400}
+.figure{
+  margin:1.75rem 0;
+  padding:1.25rem;
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:8px;
+  text-align:center;
+}
+.figure svg{max-width:100%}
+.figure figcaption{
+  margin-top:.75rem;
+  font-size:.85rem;
+  color:var(--muted);
+  line-height:1.6;
+  text-align:left;
+}
+.figure figcaption strong{color:var(--accent)}
+.katex{font-size:1.02em}
+.katex-display{margin:1.25rem 0;overflow-x:auto;overflow-y:hidden}
+
+.mf-figure { margin: 1.75rem 0; padding: 1.25rem; background: #ffffff;
+             border: 1px solid #b8dcd9; border-radius: 0; }
+.mf-figure h4 { margin: 0 0 0.8rem 0; font-size: 1rem; font-weight: 600;
+                color: #024950; letter-spacing: -0.01em; }
+.mf-panels { display: grid; gap: 1rem; }
+.mf-panels.cols-2 { grid-template-columns: 1fr 1fr; }
+@media (max-width: 720px) { .mf-panels.cols-2 { grid-template-columns: 1fr; } }
+.mf-panel { min-height: 380px; }
+.mf-sliders { display: grid; gap: 0.35rem; margin-top: 1.25rem; padding: 0;
+              background: transparent; border: none; }
+.mf-slider-row { display: grid; grid-template-columns: 160px 1fr 70px;
+                 align-items: center; gap: 0.9rem; }
+.mf-slider-row label { font-size: 0.76rem; color: #5a7378; font-weight: 400;
+                       letter-spacing: 0.01em; }
+.mf-slider-row input[type=range] {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 16px; background: transparent; margin: 0; padding: 0;
+  cursor: pointer;
+}
+.mf-slider-row input[type=range]::-webkit-slider-runnable-track {
+  height: 1px; background: #b8dcd9; border: none;
+}
+.mf-slider-row input[type=range]::-moz-range-track {
+  height: 1px; background: #b8dcd9; border: none;
+}
+.mf-slider-row input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  height: 9px; width: 9px; border-radius: 50%;
+  background: #0FA4AF; border: none; margin-top: -4px;
+  cursor: pointer; transition: transform .12s, background .12s;
+}
+.mf-slider-row input[type=range]::-moz-range-thumb {
+  height: 9px; width: 9px; border-radius: 50%;
+  background: #0FA4AF; border: none;
+  cursor: pointer; transition: transform .12s, background .12s;
+}
+.mf-slider-row input[type=range]:hover::-webkit-slider-thumb {
+  background: #024950; transform: scale(1.25);
+}
+.mf-slider-row input[type=range]:hover::-moz-range-thumb {
+  background: #024950; transform: scale(1.25);
+}
+.mf-slider-row .mf-value { font-family: 'JetBrains Mono', ui-monospace, monospace;
+                           text-align: right; color: #024950; font-weight: 400;
+                           font-size: 0.76rem; }
+.mf-slider-row .mf-value::before { content: ''; }
+.mf-reset { background: transparent; border: none;
+            padding: 0.35rem 0; margin-top: 0.4rem; cursor: pointer; font-size: 0.72rem;
+            color: #5a7378; justify-self: start; letter-spacing: 0.05em;
+            text-transform: uppercase; font-family: inherit;
+            border-bottom: 1px solid transparent; transition: color .15s, border-color .15s; }
+.mf-reset:hover { color: #024950; border-bottom-color: #0FA4AF; }
+.mf-readout { font-family: 'JetBrains Mono', ui-monospace, monospace;
+              font-size: 0.74rem; color: #964734; font-weight: 400;
+              margin-top: 0.6rem; padding: 0.4rem 0;
+              border-top: 1px dashed #b8dcd9; min-height: 1rem;
+              letter-spacing: 0.01em; }
+.mf-caption { font-size: 0.84rem; color: #5a7378; line-height: 1.6;
+              margin-top: 1rem; padding: 0.75rem 0 0;
+              border-top: 1px solid #b8dcd9; }
+.mf-caption strong { color: #024950; font-weight: 600; letter-spacing: 0.01em; }
+
+@media(max-width:900px){
+  nav{display:none}
+  main{margin-left:0;padding:2rem 1.25rem 3rem}
+  h1{font-size:1.7rem}
+}
+</style>
+</head>
+<body>
+<div class="layout">
+<nav>
+<h2>Contents</h2>
+<a href="#sec-big-picture">1. The Big Picture</a><a href="#sec-objects">2. The Objects We Will Be Manipulating</a><a href="#sec-mechanics">3. The Core Mechanics</a><a href="#sec-properties">4. Properties and Proofs</a><a href="#sec-examples">5. Worked Examples</a><a href="#sec-traps">6. Connections and Common Traps</a><a href="#sec-summary">7. Summary</a>
+</nav>
+<main>
+<h1>Lecture: Endogenous Growth — Externalities and R&D</h1>
+<div class="meta">Macroeconomics III — Module 4 — 2026-05-28</div>
+<div class="section" id="sec-big-picture"><h2>1. The Big Picture</h2><p>Here is a question that the Solow models we have built so far cannot answer. In every Solow variant — basic, open, with technology, with human capital — the long-run growth rate of GDP per worker is pinned down by the growth rate of some technology variable $A_t$. Without growth in $A_t$, GDP per worker stagnates in the long run. But where does $A_t$ come from? In all of those models, the answer was: it just grows. We posited a rule, $A_{t+1} = (1+g) A_t$, with $g$ exogenous, and went on with our day.</p><p>That is not a satisfying answer if you actually want to understand why some countries grow and others do not, or what economic policy could possibly do about it. If the long-run growth rate is just a parameter, then policy is helpless: a government cannot raise $g$ because $g$ is not connected to anything we can change. So the natural next step — and the entire subject of this lecture — is to ask: can we build a model where the growth rate of $A_t$ emerges from the model itself, depending on parameters we might actually influence?</p><p>That is what an <strong>endogenous growth model</strong> does. It takes the technological growth rate out of the exogenous-parameter box and puts it inside the model, as something that depends on saving rates, research effort, population size, and the technical structure of how new ideas get made. Once growth is endogenous, structural policy has long-run consequences. A higher saving rate, a higher research share, or a faster-growing population can — depending on the model — permanently raise the rate of growth, not just the level.</p><p>There are two broad ways to do this, and we will study both:</p><p><strong>The externality route (Chapter 8).</strong> Keep the standard production function $Y = K^\alpha (AL)^{1-\alpha}$, but let $A$ depend on the aggregate capital stock through a spillover: $A_t = K_t^\phi$. The mechanism is &quot;learning by doing&quot; — workers handling more capital acquire skills that benefit not only their employer but every firm they might subsequently work for. No one intends to produce technological progress; it happens as an unintended by-product of capital accumulation.</p><p><strong>The R&amp;D route (Chapter 9).</strong> Split the economy into two sectors. One produces final goods. The other produces <em>ideas</em> — literally taking labour and the existing stock of knowledge as inputs and yielding new technology as output. Now technological progress is deliberate: someone chooses to allocate a fraction of the workforce to research, and that allocation determines how fast $A_t$ grows.</p><p>The two stories produce some remarkably similar predictions and some sharply different ones. Both can generate &quot;truly endogenous&quot; growth (a permanent growth rate without needing exogenous progress), and both can generate &quot;semi-endogenous&quot; growth (a growth rate that depends on population growth). Both predict an empirically problematic <em>scale effect</em> — bigger economies should grow faster, which we do not really see. The lecture will work through each carefully, derive the key formulas, and ask which version (if any) actually fits the data. By the end, you should be able to explain at exam length why Cozzi keeps asking about Romer's equations — they sit at the centre of an unresolved debate about what the past 200 years of growth actually was.</p></div><div class="section" id="sec-objects"><h2>2. The Objects We Will Be Manipulating</h2><p>Before any algebra, let us be careful about the symbols. Endogenous-growth models notoriously reuse letters and slightly redefine objects from chapter to chapter, and a lot of confusion comes from not knowing whether $A$ means the same thing today as it did last week.</p><h3>2.1 Notation table</h3><p>Throughout this lecture we use the conventions below. Where the textbook or slides use a different symbol, we silently translate.</p><table><thead><tr><th>Symbol</th><th>Meaning</th></tr></thead><tbody><tr><td>$K_t, L_t, Y_t$</td><td>aggregate capital, labour, output in period $t$</td></tr><tr><td>$k_t = K_t/L_t$, $y_t = Y_t/L_t$</td><td>per-worker capital, output (lowercase = per worker)</td></tr><tr><td>$\tilde k_t = K_t/(A_t L_t)$, $\tilde y_t = Y_t/(A_t L_t)$</td><td>per <em>effective</em> worker (tilde = scaled by technology)</td></tr><tr><td>$A_t$</td><td>labour-augmenting technology level (an input the firm takes as given)</td></tr><tr><td>$\alpha$</td><td>Cobb-Douglas capital exponent. Reserved.</td></tr><tr><td>$\phi$</td><td>elasticity of $A_t$ w.r.t. its driver — aggregate $K$ in Ch 8, existing $A$ in Ch 9. Reserved.</td></tr><tr><td>$\lambda$</td><td>elasticity of R&amp;D output w.r.t. R&amp;D labour input (&quot;stepping-on-toes&quot;). Ch 9 only.</td></tr><tr><td>$\rho$</td><td>productivity parameter in R&amp;D production function. Ch 9 only.</td></tr><tr><td>$s$</td><td>saving (investment) rate, $0 &lt; s &lt; 1$</td></tr><tr><td>$s_R$</td><td>R&amp;D share — fraction of total labour employed in R&amp;D, $0 &lt; s_R &lt; 1$. Ch 9 only.</td></tr><tr><td>$L_{Y,t}, L_{A,t}$</td><td>labour in final-goods and R&amp;D sectors; $L_{Y,t} = (1-s_R) L_t$, $L_{A,t} = s_R L_t$</td></tr><tr><td>$n, \delta$</td><td>population growth, depreciation rates</td></tr><tr><td>$g_t$</td><td>technological growth rate, $g_t = (A_{t+1} - A_t)/A_t$ — <em>endogenous</em> in this lecture</td></tr><tr><td>$X^*$</td><td>steady-state value of $X$</td></tr></tbody></table><p>One trap to flag immediately. The symbol $\phi$ does double duty: in Chapter 8 it is the elasticity of <em>labour-augmenting productivity</em> with respect to <em>aggregate capital</em> ($A = K^\phi$); in Chapter 9 it is the elasticity of <em>new ideas</em> with respect to the <em>existing stock of knowledge</em> ($\Delta A = \rho A^\phi L_A^\lambda$). The two roles play structurally identical games — both lead to the same trichotomy $\phi &lt; 1$ / $\phi = 1$ / $\phi &gt; 1$ — which is why the textbook can get away with reusing the letter. But the underlying economic story is different, so keep them separate in your head.</p><h3>2.2 The two production functions side by side</h3><p>Here is what the two endogenous-growth models put at their core. The differences are surgical, but they generate completely different mechanisms.</p><div class='key-concept'><strong>Externality model (Ch 8) — production function at the firm.</strong> Each individual firm has $$Y_t^d = (K_t^d)^\alpha (A_t L_t^d)^{1-\alpha}$$ with the firm treating $A_t$ as given (it cannot influence aggregates). The externality says $$A_t = K_t^\phi, \quad \phi \ge 0,$$ where $K_t$ is <em>aggregate</em> capital. In equilibrium $K_t^d = K_t$ and $L_t^d = L_t$, so substituting gives the <strong>aggregate</strong> production function $$Y_t = K_t^{\alpha + \phi(1-\alpha)} L_t^{1-\alpha}.$$</div><p>Reading the symbols. $Y_t^d, K_t^d, L_t^d$ are the firm's <em>demand</em> for output, capital, and labour — what it chooses. $A_t L_t^d$ is &quot;effective labour&quot;: actual labour scaled up by the productivity multiplier $A_t$. The firm sees $A_t$ as a parameter, but society creates $A_t$ through $K_t$.</p><div class='key-concept'><strong>R&amp;D model (Ch 9) — two sectors.</strong> Final goods are produced by $$Y_t = K_t^\alpha (A_t L_{Y,t})^{1-\alpha}$$ using only the fraction $L_{Y,t} = (1-s_R) L_t$ of labour that is <em>not</em> in research. The R&amp;D sector produces new technology according to $$A_{t+1} - A_t = \rho A_t^\phi L_{A,t}^\lambda, \quad L_{A,t} = s_R L_t,$$ which says: new ideas this period equal a productivity constant $\rho$, times the existing knowledge base $A_t^\phi$, times the effort of researchers $L_{A,t}^\lambda$.</div><p>Reading the new symbols. $L_{A,t}$ is researcher labour. The exponent $\phi$ on $A_t$ captures the &quot;standing on shoulders&quot; effect — past ideas help create new ideas — when $\phi &gt; 0$. If $\phi &lt; 0$ instead, the easy ideas get found first and new ideas become harder (&quot;fishing out&quot;). The exponent $\lambda$ on $L_{A,t}$ handles &quot;stepping on toes&quot;: when $\lambda &lt; 1$, doubling researchers does not double the rate of discovery, because two researchers may rediscover the same idea. We will mostly take $0 &lt; \phi &lt; 1$ and $0 &lt; \lambda \le 1$.</p><p>Notice in <strong>Figure 1</strong> how the externality flows in each model. In Chapter 8 the loop is silent: capital accumulation by all firms aggregates into $K_t$, which feeds back into every individual firm's productivity $A_t$, but no one intended this. In Chapter 9 the loop is deliberate: labour is allocated to research, research produces ideas, and ideas raise $A_t$ for both sectors.</p><div class='figure' id='fig-externality-loop'><svg viewBox='0 0 480 280' xmlns='http://www.w3.org/2000/svg' font-family='sans-serif' font-size='12'><rect x='30' y='30' width='180' height='90' fill='#eff6ff' stroke='#2563eb' stroke-width='2' rx='6'/><text x='120' y='55' text-anchor='middle' font-weight='bold' fill='#1e40af'>Firm level (Ch 8)</text><text x='120' y='80' text-anchor='middle'>$Y^d = (K^d)^\alpha (A L^d)^{1-\alpha}$</text><text x='120' y='102' text-anchor='middle' font-style='italic' fill='#555'>$A$ is taken as given</text><rect x='270' y='30' width='180' height='90' fill='#fef2f2' stroke='#dc2626' stroke-width='2' rx='6'/><text x='360' y='55' text-anchor='middle' font-weight='bold' fill='#b91c1c'>Aggregate (Ch 8)</text><text x='360' y='80' text-anchor='middle'>$A = K^\phi$</text><text x='360' y='102' text-anchor='middle' font-style='italic' fill='#555'>society's spillover</text><path d='M 210 70 Q 240 70 270 70' fill='none' stroke='#666' stroke-width='1.5' marker-end='url(#arr1)'/><path d='M 270 100 Q 240 100 210 100' fill='none' stroke='#666' stroke-width='1.5' marker-end='url(#arr1)'/><text x='240' y='62' text-anchor='middle' font-size='10' fill='#555'>$K^d$ adds to $K$</text><text x='240' y='118' text-anchor='middle' font-size='10' fill='#555'>$K$ sets $A$</text><rect x='30' y='160' width='180' height='90' fill='#f0fdf4' stroke='#16a34a' stroke-width='2' rx='6'/><text x='120' y='185' text-anchor='middle' font-weight='bold' fill='#15803d'>R&amp;D sector (Ch 9)</text><text x='120' y='210' text-anchor='middle'>$\Delta A = \rho A^\phi L_A^\lambda$</text><text x='120' y='232' text-anchor='middle' font-style='italic' fill='#555'>$L_A = s_R L$ researchers</text><rect x='270' y='160' width='180' height='90' fill='#fefce8' stroke='#ca8a04' stroke-width='2' rx='6'/><text x='360' y='185' text-anchor='middle' font-weight='bold' fill='#a16207'>Final goods (Ch 9)</text><text x='360' y='210' text-anchor='middle'>$Y = K^\alpha (A L_Y)^{1-\alpha}$</text><text x='360' y='232' text-anchor='middle' font-style='italic' fill='#555'>$L_Y = (1-s_R) L$</text><path d='M 210 195 Q 240 195 270 195' fill='none' stroke='#666' stroke-width='1.5' marker-end='url(#arr1)'/><text x='240' y='189' text-anchor='middle' font-size='10' fill='#555'>new $A$ flows in</text><defs><marker id='arr1' viewBox='0 0 10 10' refX='8' refY='5' markerWidth='6' markerHeight='6' orient='auto'><path d='M 0 0 L 10 5 L 0 10 z' fill='#666'/></marker></defs></svg><figcaption><strong>Figure 1.</strong> Two ways to make $A$ endogenous. Top row, Chapter 8: each firm takes $A$ as given, but society's aggregate $K$ — built by all firms together — silently determines $A$ through $A = K^\phi$. The feedback is unintended. Bottom row, Chapter 9: a fraction $s_R$ of labour is deliberately allocated to research, which produces new $A$ that flows into final-goods production. The mechanism is intentional. Both produce growth in $A$ from model parameters, but only Chapter 9 has anyone &quot;trying&quot;.</figcaption></div><h3>2.3 Why the firm sees $A$ as exogenous — the replication argument</h3><p>It is worth pausing on something we just slid past: in both models, the individual firm treats $A_t$ as given. Why? Because each firm is a small slice of the aggregate. One firm's choice of $K^d$ has a negligible effect on aggregate $K$, and therefore a negligible effect on $A = K^\phi$. The firm cannot internalise the spillover.</p><p>This matters technically. It means the firm faces constant returns to scale in its <em>rival</em> inputs $K$ and $L$ — the production function is $Y^d = (K^d)^\alpha (AL^d)^{1-\alpha}$ with exponents summing to $\alpha + (1-\alpha) = 1$. So the textbook profit-maximising firm with perfect competition still works fine. But at the aggregate level — where we substitute $A = K^\phi$ and add up all firms' inputs — exponents sum to $\alpha + \phi(1-\alpha) + (1-\alpha) = 1 + \phi(1-\alpha)$, which is <em>greater than 1</em> when $\phi &gt; 0$. The society has increasing returns to scale. This contradiction — CRS for the firm, IRS for the economy — is exactly what is needed to keep perfect competition alive while still generating endogenous growth. We will see why in §3.</p></div><div class="section" id="sec-mechanics"><h2>3. The Core Mechanics</h2><p>Now we want to see the machines actually turning. We will work through both models in sequence, starting with the Chapter-8 externality model in detail (because much of the algebra carries over) and then introducing the Chapter-9 R&amp;D dynamics.</p><h3>3.1 Factor prices in the externality model — the firm's view</h3><p>Where do wages and the rental rate come from? Under perfect competition each firm pays each factor its marginal product. The firm sees $A_t$ as given (the externality argument from §2.3), so the marginal products it cares about are the partial derivatives of its <em>individual</em> production function $Y_t^d = (K_t^d)^\alpha (A_t L_t^d)^{1-\alpha}$ with respect to $K_t^d$ and $L_t^d$, treating $A_t$ as a constant.</p><p>Differentiate w.r.t. $K_t^d$. Using the chain rule on a power:</p><p>$$r_t = \frac{\partial Y_t^d}{\partial K_t^d} = \alpha (K_t^d)^{\alpha-1} (A_t L_t^d)^{1-\alpha}.$$</p><p>And w.r.t. $L_t^d$:</p><p>$$w_t = \frac{\partial Y_t^d}{\partial L_t^d} = (1-\alpha) (K_t^d)^\alpha A_t^{1-\alpha} (L_t^d)^{-\alpha} = (1-\alpha) A_t^{1-\alpha} \left(\frac{K_t^d}{L_t^d}\right)^\alpha.$$</p><p>Now impose market clearing: $K_t^d = K_t$ and $L_t^d = L_t$. The factor prices become</p><p>$$r_t = \alpha A_t^{1-\alpha} \left(\frac{K_t}{L_t}\right)^{\alpha-1}, \qquad w_t = (1-\alpha) A_t^{1-\alpha} \left(\frac{K_t}{L_t}\right)^\alpha.$$</p><p>One pretty consequence drops out for free. Multiply $r_t$ by $K_t$ and use the aggregate production function $Y_t = K_t^\alpha (A_t L_t)^{1-\alpha}$ (which holds when we substitute $K_t^d = K_t$, before we plug in the externality $A = K^\phi$ for the cross-section experiment):</p><p>$$r_t K_t = \alpha A_t^{1-\alpha} \left(\frac{K_t}{L_t}\right)^{\alpha-1} K_t = \alpha K_t^\alpha (A_t L_t)^{1-\alpha} = \alpha Y_t.$$</p><p>So capital's income share is $r_t K_t / Y_t = \alpha$, exactly as in the basic Solow model. Likewise $w_t L_t / Y_t = 1-\alpha$. The factor shares are pinned by Cobb-Douglas exponents, regardless of the externality. This is Euler's theorem for homogeneous-of-degree-1 functions: a firm with CRS pays out exactly $\alpha Y$ to capital and $(1-\alpha) Y$ to labour, with nothing left over for pure profit. That is why we can keep perfect competition alive even when the <em>aggregate</em> production function shows IRS — the externality $A = K^\phi$ is precisely the bit no one is paid for, because no individual firm can claim credit for it.</p><h3>3.2 The aggregate production function and the three regimes of $\phi$</h3><p>Now substitute $A_t = K_t^\phi$ into the aggregate production function $Y_t = K_t^\alpha (A_t L_t)^{1-\alpha}$. Pulling $A_t^{1-\alpha} = K_t^{\phi(1-\alpha)}$ out:</p><p>$$Y_t = K_t^\alpha \cdot K_t^{\phi(1-\alpha)} \cdot L_t^{1-\alpha} = K_t^{\alpha + \phi(1-\alpha)} L_t^{1-\alpha}.$$</p><p>The aggregate exponent on capital is $\alpha + \phi(1-\alpha)$. The sum of all aggregate exponents is $\alpha + \phi(1-\alpha) + (1-\alpha) = 1 + \phi(1-\alpha)$. Because $\alpha &lt; 1$, this sum exceeds 1 whenever $\phi &gt; 0$ — confirming that the aggregate exhibits IRS. So now ask: how do returns to <em>capital alone</em> behave?</p><p>That depends entirely on $\phi$. There are three qualitatively different worlds, summarised below.</p><div class='figure' id='fig-three-cases'><svg viewBox='0 0 540 240' xmlns='http://www.w3.org/2000/svg' font-family='sans-serif' font-size='12'><rect x='10' y='20' width='160' height='200' fill='#f0fdf4' stroke='#16a34a' stroke-width='2' rx='6'/><text x='90' y='42' text-anchor='middle' font-weight='bold' fill='#15803d'>$\phi &lt; 1$</text><text x='90' y='62' text-anchor='middle' font-size='10' font-style='italic' fill='#555'>weak spillover</text><line x1='30' y1='80' x2='150' y2='80' stroke='#15803d' stroke-width='1'/><text x='90' y='100' text-anchor='middle' font-size='11'>$\alpha+\phi(1-\alpha) &lt; 1$</text><text x='90' y='120' text-anchor='middle' font-size='11'>diminishing $\to K$</text><text x='90' y='148' text-anchor='middle' font-weight='bold' font-size='11'>SEMI-endogenous</text><text x='90' y='170' text-anchor='middle' font-size='10'>convergence to k̃*</text><text x='90' y='188' text-anchor='middle' font-size='10'>$g_{se} = (1+n)^{\phi/(1-\phi)}-1$</text><text x='90' y='208' text-anchor='middle' font-size='10' font-style='italic' fill='#555'>needs $n &gt; 0$</text><rect x='180' y='20' width='160' height='200' fill='#eff6ff' stroke='#2563eb' stroke-width='2' rx='6'/><text x='260' y='42' text-anchor='middle' font-weight='bold' fill='#1e40af'>$\phi = 1$ (AK)</text><text x='260' y='62' text-anchor='middle' font-size='10' font-style='italic' fill='#555'>strong spillover</text><line x1='200' y1='80' x2='320' y2='80' stroke='#1e40af' stroke-width='1'/><text x='260' y='100' text-anchor='middle' font-size='11'>$\alpha+\phi(1-\alpha) = 1$</text><text x='260' y='120' text-anchor='middle' font-size='11'>constant $\to K$</text><text x='260' y='148' text-anchor='middle' font-weight='bold' font-size='11'>TRULY endogenous</text><text x='260' y='170' text-anchor='middle' font-size='10'>no steady state</text><text x='260' y='188' text-anchor='middle' font-size='10'>$g_e = sA - \delta$</text><text x='260' y='208' text-anchor='middle' font-size='10' font-style='italic' fill='#dc2626'>scale effect!</text><rect x='350' y='20' width='180' height='200' fill='#fef2f2' stroke='#dc2626' stroke-width='2' rx='6'/><text x='440' y='42' text-anchor='middle' font-weight='bold' fill='#b91c1c'>$\phi &gt; 1$</text><text x='440' y='62' text-anchor='middle' font-size='10' font-style='italic' fill='#555'>too-strong spillover</text><line x1='370' y1='80' x2='510' y2='80' stroke='#b91c1c' stroke-width='1'/><text x='440' y='100' text-anchor='middle' font-size='11'>$\alpha+\phi(1-\alpha) &gt; 1$</text><text x='440' y='120' text-anchor='middle' font-size='11'>increasing $\to K$</text><text x='440' y='148' text-anchor='middle' font-weight='bold' font-size='11'>EXPLOSIVE growth</text><text x='440' y='170' text-anchor='middle' font-size='10'>growth rate $\uparrow$ over time</text><text x='440' y='188' text-anchor='middle' font-size='10' font-style='italic' fill='#b91c1c'>counterfactual</text><text x='440' y='208' text-anchor='middle' font-size='10'>(we exclude)</text></svg><figcaption><strong>Figure 2.</strong> The three regimes of the externality. The capital exponent in the aggregate production function is $\alpha + \phi(1-\alpha)$. When $\phi &lt; 1$ this stays under 1 — diminishing returns to capital alone — so accumulating capital faster than population eventually slows growth to a finite steady-state rate. When $\phi = 1$ the exponent hits exactly 1 — constant returns to capital — and there is no &quot;growth brake&quot;: capital pulls itself up by its bootstraps forever. When $\phi &gt; 1$ the brake reverses and growth accelerates, which we never observe; we exclude this case.</figcaption></div><h3>3.3 The transition equation for $\tilde k$ (semi-endogenous, $\phi &lt; 1$)</h3><p>We now do the analysis carefully for $\phi &lt; 1$. The Solow analytic trick — divide everything by a growth factor so you get an autonomous system — needs a careful adjustment, because $A_t$ is no longer growing at an exogenous rate. We define</p><p>$$\tilde k_t \equiv \frac{K_t}{A_t L_t}, \qquad \tilde y_t \equiv \frac{Y_t}{A_t L_t}.$$</p><p>These are the &quot;per-effective-worker&quot; ratios. The point is that <em>they</em> will converge to constants in steady state, even though $K/L$ and $Y/L$ themselves keep growing (because $A_t$ grows).</p><p>From $Y_t = K_t^\alpha (A_t L_t)^{1-\alpha}$, divide both sides by $A_t L_t$ and rearrange:</p><p>$$\tilde y_t = \frac{K_t^\alpha (A_t L_t)^{1-\alpha}}{A_t L_t} = \left(\frac{K_t}{A_t L_t}\right)^\alpha = \tilde k_t^\alpha.$$</p><p>So in per-effective-worker terms the production function is just $\tilde y = \tilde k^\alpha$, exactly as in the general Solow model. The externality vanishes from this expression — but it has not actually gone away. It is hiding in the fact that $A_t$ is endogenous, and we will see it return shortly.</p><p>Capital accumulates as usual: $K_{t+1} = s Y_t + (1-\delta) K_t$. We want a transition equation in $\tilde k$ alone. Starting from the definition $\tilde k_{t+1} = K_{t+1}/(A_{t+1} L_{t+1})$:</p><p>$$\tilde k_{t+1} = \frac{s Y_t + (1-\delta) K_t}{A_{t+1} L_{t+1}} = \frac{K_t}{A_{t+1} L_{t+1}}\left(s \frac{Y_t}{K_t} + (1-\delta)\right).$$</p><p>The factor $Y_t/K_t$ in per-effective-worker terms is $\tilde y_t / \tilde k_t = \tilde k_t^{\alpha-1}$. The factor $K_t/(A_{t+1} L_{t+1})$ needs work — we have $K_t$ (not $K_{t+1}$) in the numerator but $A_{t+1} L_{t+1}$ in the denominator. Write it as $K_t/(A_t L_t) \cdot (A_t L_t)/(A_{t+1} L_{t+1})$:</p><p>$$\frac{K_t}{A_{t+1} L_{t+1}} = \tilde k_t \cdot \frac{A_t}{A_{t+1}} \cdot \frac{L_t}{L_{t+1}} = \frac{\tilde k_t}{(1+g_t)(1+n)}$$</p><p>where $1+g_t \equiv A_{t+1}/A_t$ and $1+n = L_{t+1}/L_t$. Putting it together:</p><p>$$\tilde k_{t+1} = \frac{\tilde k_t}{(1+g_t)(1+n)}\left(s \tilde k_t^{\alpha-1} + (1-\delta)\right). \quad (\star)$$</p><p>This is <em>almost</em> a transition equation, but $g_t$ is itself endogenous and depends on $K_{t+1}/K_t$ through $A = K^\phi$. Using the externality:</p><p>$$\frac{A_{t+1}}{A_t} = \left(\frac{K_{t+1}}{K_t}\right)^\phi, \qquad \text{so } 1+g_t = \left(\frac{K_{t+1}}{K_t}\right)^\phi.$$</p><p>And $K_{t+1}/K_t = s Y_t/K_t + (1-\delta) = s \tilde k_t^{\alpha-1} + (1-\delta)$. So</p><p>$$1+g_t = \left(s \tilde k_t^{\alpha-1} + (1-\delta)\right)^\phi.$$</p><p>Substitute this back into $(\star)$ and divide:</p><p>$$\tilde k_{t+1} = \frac{\tilde k_t}{1+n}\left(s \tilde k_t^{\alpha-1} + (1-\delta)\right)^{1-\phi}. \quad (\star\star)$$</p><p>This is the transition equation. It is a first-order difference equation in $\tilde k_t$ alone. Notice the consistency check: setting $\phi = 0$ gives the basic Solow transition equation $\tilde k_{t+1} = (s \tilde k_t^\alpha + (1-\delta)\tilde k_t)/(1+n)$ — multiply $\tilde k_t$ in and confirm. So the externality model nests Solow as $\phi \to 0$, as it should.</p><div class='figure' id='fig-transition-ksimsem'><div class="mf-figure" id="fig-transition-ksimsem"><div class="mf-panels "><div id="fig-transition-ksimsem-panel-0" class="mf-panel"></div></div><div class="mf-readout"></div><div class="mf-sliders"><div class="mf-slider-row"><label>externality φ</label><input type="range" data-slider="phi" min="0.0" max="0.95" step="0.05" value="0.6"><span class="mf-value">= <span data-value="phi">0.60</span></span></div><div class="mf-slider-row"><label>saving rate s</label><input type="range" data-slider="s" min="0.05" max="0.4" step="0.01" value="0.15"><span class="mf-value">= <span data-value="s">0.15</span></span></div><div class="mf-slider-row"><label>population growth n</label><input type="range" data-slider="n" min="0.001" max="0.04" step="0.001" value="0.01"><span class="mf-value">= <span data-value="n">0.010</span></span></div><div class="mf-slider-row"><label>depreciation δ</label><input type="range" data-slider="delta" min="0.02" max="0.2" step="0.01" value="0.1"><span class="mf-value">= <span data-value="delta">0.10</span></span></div><div class="mf-slider-row"><label>capital share α</label><input type="range" data-slider="alpha" min="0.1" max="0.7" step="0.01" value="0.33"><span class="mf-value">= <span data-value="alpha">0.33</span></span></div><button type="button" class="mf-reset">Reset to defaults</button></div><p class="mf-caption"><strong>Figure 3. Transition curve for the semi-endogenous externality model.</strong> Drag φ toward 1: the transition curve flattens, the steady-state k̃* shifts, and convergence slows dramatically. At φ near 1 the curve approaches the 45° line — no steady state in the limit (the AK case).</p><script>(function(){var spec={"id": "fig-transition-ksimsem", "title": "Figure 3. Transition curve for the semi-endogenous externality model", "caption": "Drag \u03c6 toward 1: the transition curve flattens, the steady-state k\u0303* shifts, and convergence slows dramatically. At \u03c6 near 1 the curve approaches the 45\u00b0 line \u2014 no steady state in the limit (the AK case).", "params": {"alpha": 0.33, "phi": 0.6, "s": 0.15, "n": 0.01, "delta": 0.1}, "panels": [{"id": "main", "x_range": [0.05, 6], "n_points": 200, "x_label": "k\u0303_t (per-effective-worker capital)", "y_label": "k\u0303_{t+1}", "curves": [{"type": "expr", "name": "transition", "expr": "(k / (1 + n)) * Math.pow(s * Math.pow(k, alpha - 1) + (1 - delta), 1 - phi)", "color": "#2563eb", "width": 3}, {"type": "expr", "name": "45\u00b0", "expr": "k", "color": "#16a34a", "width": 2, "dash": "dash"}], "markers": [{"type": "intersection", "label": "k\u0303*", "curves": [0, 1], "color": "#111", "guide": "vertical"}]}], "sliders": [{"param": "phi", "min": 0.0, "max": 0.95, "step": 0.05, "label": "externality \u03c6", "decimals": 2}, {"param": "s", "min": 0.05, "max": 0.4, "step": 0.01, "label": "saving rate s", "decimals": 2}, {"param": "n", "min": 0.001, "max": 0.04, "step": 0.001, "label": "population growth n", "decimals": 3}, {"param": "delta", "min": 0.02, "max": 0.2, "step": 0.01, "label": "depreciation \u03b4", "decimals": 2}, {"param": "alpha", "min": 0.1, "max": 0.7, "step": 0.01, "label": "capital share \u03b1", "decimals": 2}]};var hostId="fig-transition-ksimsem";function go(){if(!window.MacroFigures){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.MacroFigures not defined. Did FIGURE_JS load before this snippet?</div>");return;}if(!window.Plotly){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.Plotly not loaded.</div>");return;}try{window.MacroFigures.renderFigure(spec,hostId);}catch(e){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Render error: "+e.message+"</div>");}}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",go);}else{go();}})();</script></div><figcaption><strong>Figure 3.</strong> The transition curve $(\star\star)$ for the semi-endogenous externality model. It passes through the origin, is everywhere increasing, and crosses the 45° line at a unique positive $\tilde k^*$. Drag $\phi$ upward toward 1: notice the curve flattens — its slope at $\tilde k^*$ approaches one, which means convergence becomes painfully slow. That is the foreshadowing of the AK case, where $\phi=1$ and the curve never reaches the 45° line at all.</figcaption></div><h3>3.4 Switching to the R&amp;D model (Chapter 9)</h3><p>The Chapter-8 externality model gets endogenous growth from an <em>unintentional</em> spillover. The Chapter-9 model gets it from an <em>intentional</em> production process: someone deliberately spends labour to produce ideas. This is a model-variant switch, and we need to be explicit about what changes.</p><p><strong>What is new.</strong> The economy now has two sectors. Final goods use $L_{Y,t}$ workers; R&amp;D uses $L_{A,t}$ workers; and $L_{Y,t} + L_{A,t} = L_t$. The fraction of total labour devoted to R&amp;D is a behavioural parameter $s_R \in (0,1)$, so $L_{A,t} = s_R L_t$ and $L_{Y,t} = (1-s_R) L_t$. The labour-augmenting variable $A_t$ no longer comes from a capital externality. Instead, R&amp;D produces new ideas: $$A_{t+1} - A_t = \rho A_t^\phi L_{A,t}^\lambda.$$</p><p><strong>What is now assumed.</strong> Capital does not enter the R&amp;D sector (researchers think, they don't build factories). The R&amp;D share $s_R$ is taken as exogenous — we are not modelling who chooses it or why. The exponents satisfy $0 \le \phi \le 1$ (we will treat both $\phi &lt; 1$ and $\phi = 1$) and $0 &lt; \lambda \le 1$.</p><p>The interpretations of $\phi$ and $\lambda$ are worth a moment, because the algebra hinges on them.</p><div class='example'><strong>What is $\phi$ measuring?</strong> The elasticity of new ideas with respect to existing ones. Two competing forces: <em>standing on shoulders</em> says past discoveries make new ones easier ($\phi &gt; 0$, possibly $\phi = 1$ in Romer's original 1990 model). <em>Fishing out</em> says the easy ideas get found first and the well runs dry ($\phi &lt; 0$). We assume $\phi &gt; 0$ throughout. <strong>What is $\lambda$ measuring?</strong> The elasticity of new ideas with respect to research labour. If $\lambda = 1$, doubling researchers doubles the rate of discovery — there are no duplicated efforts. If $\lambda &lt; 1$, two researchers may rediscover the same idea (&quot;stepping on toes&quot;), so doubling researchers less than doubles output.</div><p>The full R&amp;D-based model now consists of six equations: (i) the final-goods production function $Y_t = K_t^\alpha (A_t L_{Y,t})^{1-\alpha}$; (ii) the R&amp;D production function above; (iii) capital accumulation $K_{t+1} = s Y_t + (1-\delta) K_t$; (iv) labour growth $L_{t+1} = (1+n) L_t$; (v) the labour split $L_{Y,t} + L_{A,t} = L_t$; (vi) the R&amp;D share $L_{A,t} = s_R L_t$. The state variables are $K_t$, $L_t$, and $A_t$. The new behavioural parameter is $s_R$.</p><div class='figure' id='fig-romer-flow'><svg viewBox='0 0 480 240' xmlns='http://www.w3.org/2000/svg' font-family='sans-serif' font-size='12'><rect x='180' y='20' width='120' height='50' fill='#f1f5f9' stroke='#475569' stroke-width='2' rx='6'/><text x='240' y='42' text-anchor='middle' font-weight='bold'>total labour $L_t$</text><text x='240' y='60' text-anchor='middle' font-size='10' font-style='italic' fill='#555'>grows at rate $n$</text><path d='M 210 70 L 100 110' fill='none' stroke='#666' stroke-width='1.5' marker-end='url(#arr2)'/><path d='M 270 70 L 380 110' fill='none' stroke='#666' stroke-width='1.5' marker-end='url(#arr2)'/><text x='130' y='90' font-size='10' fill='#555'>$(1-s_R)$ goes to...</text><text x='320' y='90' font-size='10' fill='#555'>$s_R$ goes to...</text><rect x='30' y='115' width='140' height='60' fill='#fefce8' stroke='#ca8a04' stroke-width='2' rx='6'/><text x='100' y='138' text-anchor='middle' font-weight='bold' fill='#a16207'>Final goods</text><text x='100' y='158' text-anchor='middle' font-size='11'>$Y = K^\alpha (A L_Y)^{1-\alpha}$</text><rect x='310' y='115' width='140' height='60' fill='#f0fdf4' stroke='#16a34a' stroke-width='2' rx='6'/><text x='380' y='138' text-anchor='middle' font-weight='bold' fill='#15803d'>R&amp;D sector</text><text x='380' y='158' text-anchor='middle' font-size='11'>$\Delta A = \rho A^\phi L_A^\lambda$</text><path d='M 310 165 L 175 165' fill='none' stroke='#dc2626' stroke-width='2' marker-end='url(#arr2)' stroke-dasharray='4,3'/><text x='240' y='180' text-anchor='middle' font-size='10' fill='#dc2626'>new $A_t$ feeds back to both sectors</text><path d='M 100 175 L 100 215' fill='none' stroke='#666' stroke-width='1.5' marker-end='url(#arr2)'/><text x='100' y='208' text-anchor='middle' font-size='10' fill='#555'>$\to$ saved at rate $s$, builds $K$</text><defs><marker id='arr2' viewBox='0 0 10 10' refX='8' refY='5' markerWidth='6' markerHeight='6' orient='auto'><path d='M 0 0 L 10 5 L 0 10 z' fill='#666'/></marker></defs></svg><figcaption><strong>Figure 4.</strong> The R&amp;D model's flow. Total labour splits: fraction $1-s_R$ makes final goods, fraction $s_R$ does R&amp;D. Final goods get saved (rate $s$) into capital. R&amp;D generates new technology $A_t$, which raises productivity in <em>both</em> sectors (the dashed red arrow). The non-rivalry of ideas is the reason a single $A_t$ can feed both sectors at once.</figcaption></div><h3>3.5 The independent dynamics of $g_t$ in Romer</h3><p>One feature makes the R&amp;D model surprisingly tractable: the dynamics of the technology growth rate $g_t$ are completely independent of the rest of the economy. They depend only on parameters and on $g_t$ itself. Once we solve for the path of $g_t$, the capital-and-output dynamics fall out as a one-way-coupled second piece.</p><p>Why so clean? Because R&amp;D uses no capital. Look at $A_{t+1} - A_t = \rho A_t^\phi L_{A,t}^\lambda$, divide both sides by $A_t$:</p><p>$$g_t = \rho A_t^{\phi-1} L_{A,t}^\lambda = \rho A_t^{\phi-1} (s_R L_t)^\lambda.$$</p><p>This expresses $g_t$ as a function of just $A_t$ and $L_t$ (and constant parameters $\rho, \phi, \lambda, s_R$). To get a transition equation in $g_t$ alone, write the same expression for period $t+1$ and divide:</p><p>$$\frac{g_{t+1}}{g_t} = \left(\frac{A_{t+1}}{A_t}\right)^{\phi-1} \left(\frac{L_{t+1}}{L_t}\right)^\lambda = (1+g_t)^{\phi-1} (1+n)^\lambda.$$</p><p>Solving:</p><p>$$g_{t+1} = (1+n)^\lambda (1+g_t)^{\phi-1} g_t. \quad (\diamond)$$</p><p>This is the transition equation for the technological growth rate. It is a first-order difference equation in $g_t$ alone — and it does not involve $K, Y, k,$ or anything else. The economic intuition is that R&amp;D production only requires labour and existing knowledge, so the growth-of-knowledge dynamics close on themselves. Capital can sit on the sidelines while $g_t$ evolves.</p><p>One useful sanity check. Set $\phi = 1$ (so $(1+g_t)^{\phi-1} = 1$). Then $(\diamond)$ reduces to $g_{t+1} = (1+n)^\lambda g_t$. With $n = 0$ this gives $g_{t+1} = g_t$ — a constant growth rate, immediately. That foreshadows the strictly endogenous regime we will study in §4. Set $\phi &lt; 1$ and $n &gt; 0$ instead, and the dynamics get more interesting — that is the semi-endogenous Romer case, and we will see it converges to a finite positive $g_{se}$.</p></div><div class="section" id="sec-properties"><h2>4. Properties and Proofs</h2><p>We have the machinery. Now we ask: what does it predict, and why?</p><h3>4.1 Steady state of the semi-endogenous externality model</h3><p>A steady state in the per-effective-worker system is a value $\tilde k^*$ at which $\tilde k_{t+1} = \tilde k_t = \tilde k^*$. From the transition equation $(\star\star)$ in §3.3, setting both sides equal to $\tilde k^*$:</p><p>$$\tilde k^* = \frac{\tilde k^*}{1+n}\left(s (\tilde k^*)^{\alpha-1} + (1-\delta)\right)^{1-\phi}.$$</p><p>Cancel $\tilde k^*$ from both sides (the trivial solution $\tilde k^* = 0$ is unstable; we want the positive one) and raise to the power $1/(1-\phi)$:</p><p>$$1+n = \left(s (\tilde k^*)^{\alpha-1} + (1-\delta)\right)^{1-\phi} \;\Leftrightarrow\; (1+n)^{1/(1-\phi)} = s (\tilde k^*)^{\alpha-1} + (1-\delta).$$</p><p>Solve for $(\tilde k^*)^{\alpha-1}$:</p><p>$$s (\tilde k^*)^{\alpha-1} = (1+n)^{1/(1-\phi)} - (1-\delta) \;\Leftrightarrow\; (\tilde k^*)^{1-\alpha} = \frac{s}{(1+n)^{1/(1-\phi)} - (1-\delta)}.$$</p><p>Raise to $1/(1-\alpha)$:</p><div class='key-concept'><strong>Steady-state per-effective-worker capital (semi-endogenous Ch 8):</strong> $$\tilde k^* = \left(\frac{s}{(1+n)^{1/(1-\phi)} - (1-\delta)}\right)^{\!1/(1-\alpha)}.$$ Then $\tilde y^* = (\tilde k^*)^\alpha$.</div><p>The structure should look familiar: it is the basic-Solow steady-state formula $\tilde k^* = (s/(n+\delta))^{1/(1-\alpha)}$ in disguise. The new piece is the denominator $(1+n)^{1/(1-\phi)} - (1-\delta)$ replacing $n+\delta$. To see they coincide in the basic-Solow limit, set $\phi = 0$: then $(1+n)^{1/(1-0)} - (1-\delta) = (1+n) - 1 + \delta = n + \delta$. Yes — they match.</p><p>For $\phi$ between 0 and 1, the denominator $(1+n)^{1/(1-\phi)} - (1-\delta)$ exceeds $n+\delta$. This means $\tilde k^*$ is <em>smaller</em> than it would be in a comparable Solow model. The spillover, while it ultimately helps the level of $y$, eats into the per-effective-worker steady state because $A_t$ now grows faster (we will see how fast in a moment), so the effective workforce expands faster, diluting $\tilde k$.</p><h3>4.2 The semi-endogenous growth rate (Ch 8)</h3><p>Capital per effective worker is constant at $\tilde k^*$ in steady state, by construction. But the things we actually care about — $k_t = K_t/L_t$ and $y_t = Y_t/L_t$ — are not constant; they grow at the same rate as $A_t$. So the steady-state growth rate of GDP per worker equals the steady-state growth rate of $A_t$. That is what we now compute.</p><p>In steady state, $\tilde k_{t+1}/\tilde k_t = 1$. From the definition $\tilde k = K/(AL)$:</p><p>$$1 = \frac{\tilde k_{t+1}}{\tilde k_t} = \frac{K_{t+1}}{K_t} \cdot \frac{A_t}{A_{t+1}} \cdot \frac{L_t}{L_{t+1}} = \frac{K_{t+1}/K_t}{(1+g_t)(1+n)}.$$</p><p>So in steady state $K_{t+1}/K_t = (1+g_t)(1+n)$. Combined with the externality result $1+g_t = (K_{t+1}/K_t)^\phi$ from §3.3, we get</p><p>$$1 + g_t = \left((1+g_t)(1+n)\right)^\phi.$$</p><p>Solve. Raise both sides to $1/\phi$, then rearrange:</p><p>$$(1+g_t)^{1/\phi} = (1+g_t)(1+n) \;\Leftrightarrow\; (1+g_t)^{1/\phi - 1} = 1+n \;\Leftrightarrow\; (1+g_t)^{(1-\phi)/\phi} = 1+n.$$</p><p>Raise to $\phi/(1-\phi)$:</p><div class='key-concept'><strong>Semi-endogenous growth rate (externality model, Ch 8):</strong> $$1 + g_{se} = (1+n)^{\phi/(1-\phi)} \;\Leftrightarrow\; g_{se} = (1+n)^{\phi/(1-\phi)} - 1 \approx \frac{\phi}{1-\phi} \cdot n.$$ The approximation uses $\ln(1+x) \approx x$ for small $x$.</div><p>This is the result that gives the model its name. The growth rate of GDP per worker is positive <em>if and only if $n &gt; 0$</em> — population growth is required to sustain economic growth. The reason: with $\phi &lt; 1$, the aggregate production function still has diminishing returns to capital alone, so accumulating capital faster than labour will eventually slow down (just like in basic Solow). To utilise the increasing returns at the aggregate level, you need both capital and labour to keep growing. Capital scales itself through saving, but labour must grow exogenously through population growth.</p><p>The policy implication that pops out is striking and uncomfortable: <em>to raise long-run growth, raise the population growth rate</em>. We will return to whether the data actually support that in §6.</p><p><em>Beyond exam scope, but useful:</em> the golden-rule saving rate in this model is $s^{**} = \alpha + \phi(1-\alpha)$ — strictly larger than the basic-Solow value $\alpha$, because the spillover means the social return to capital exceeds the private return, so socially you want to save more. The formula $g_{se} = (1+n)^{\phi/(1-\phi)} - 1$ also tells you that as $\phi$ rises toward 1, the exponent $\phi/(1-\phi)$ blows up, and tiny population growth rates translate into huge income growth rates. The textbook calibration with $\phi \approx 0.5\text{–}0.75$ and $n \approx 0.5\%$ yields $g_{se}$ in the 0.5%–1.5% range, which is at least the right order of magnitude.</p><h3>4.3 Switching to the AK model (φ = 1, n = 0)</h3><p>We now study the regime where the externality is strong enough to remove diminishing returns altogether. This is a model-variant switch — let us be explicit.</p><p><strong>Named switch.</strong> We move from the semi-endogenous externality model ($\phi &lt; 1$, $n &gt; 0$) to the &quot;AK&quot; model ($\phi = 1$, $n = 0$).</p><p><strong>What changed.</strong> The aggregate exponent on capital is now $\alpha + \phi(1-\alpha) = \alpha + (1-\alpha) = 1$. The aggregate production function becomes constant-returns in capital alone, which kills convergence. The per-effective-worker analysis breaks down (several denominators become zero when $\phi = 1$), so we re-derive everything in raw per-worker terms.</p><p><strong>What is now assumed.</strong> Constant population $L_t = L$ (we set $n = 0$ to avoid an exploding economy — you can see why by setting $\phi = 1$ in the $g_t$ transition equation $(\diamond)$: $g_{t+1} = (1+n)^\lambda g_t$, which grows geometrically when $n &gt; 0$). The condition $\phi = 1$ is an <em>approximation</em> of the case $\phi$ slightly less than 1, where convergence becomes infinitely slow and the steady state of §4.1 becomes uninteresting.</p><p>With $\phi = 1$, the externality becomes $A_t = K_t$. Substituting into the aggregate production function $Y_t = K_t^\alpha (A_t L)^{1-\alpha}$:</p><p>$$Y_t = K_t^\alpha (K_t \cdot L)^{1-\alpha} = K_t^{\alpha + (1-\alpha)} L^{1-\alpha} = K_t \cdot L^{1-\alpha}.$$</p><p>Define the constant $A \equiv L^{1-\alpha}$ (capital-letter $A$, no subscript — distinct from the time-varying $A_t$). Then</p><p>$$Y_t = A K_t,$$</p><p>which is the famous &quot;AK&quot; production function. Dividing by $L$ (constant):</p><p>$$y_t = A k_t, \qquad k_t \equiv K_t/L.$$</p><p>The capital accumulation equation $K_{t+1} = s Y_t + (1-\delta) K_t$ in per-worker terms gives</p><p>$$k_{t+1} = s A k_t + (1-\delta) k_t = (1 + sA - \delta) k_t.$$</p><p>Subtract $k_t$ to get the Solow equation:</p><p>$$\frac{k_{t+1} - k_t}{k_t} = sA - \delta.$$</p><div class='key-concept'><strong>Truly endogenous growth rate (AK model):</strong> $$g_e = sA - \delta.$$ This holds provided $sA &gt; \delta$, so $g_e &gt; 0$. The growth rates of capital per worker, output per worker, and consumption per worker are all equal to $g_e$, forever — no convergence to a steady state level.</div><p>Notice what happened. Because the aggregate production function is linear in capital, there is no &quot;growth brake&quot;: an extra unit of capital adds a constant $sA - \delta$ to next period's capital, no matter how big the existing stock is. The Solow argument that drove growth to zero — diminishing returns to capital eventually crushed the marginal output of additional capital — no longer applies. Capital pulls itself up by its bootstraps.</p><p>The structural policy implication is more dramatic than in Solow: a higher $s$ now permanently raises the <em>growth rate</em>, not just the level. So does a lower $\delta$. If you believe this model, savings policy is a long-run growth lever, not a level lever.</p><div class='figure' id='fig-ak-diagram'><div class="mf-figure" id="fig-ak-diagram"><div class="mf-panels "><div id="fig-ak-diagram-panel-0" class="mf-panel"></div></div><div class="mf-readout"></div><div class="mf-sliders"><div class="mf-slider-row"><label>saving rate s</label><input type="range" data-slider="s" min="0.05" max="0.5" step="0.01" value="0.2"><span class="mf-value">= <span data-value="s">0.20</span></span></div><div class="mf-slider-row"><label>TFP level A = L^(1-α)</label><input type="range" data-slider="A" min="0.5" max="2.0" step="0.05" value="1.0"><span class="mf-value">= <span data-value="A">1.00</span></span></div><div class="mf-slider-row"><label>depreciation δ</label><input type="range" data-slider="delta" min="0.02" max="0.3" step="0.01" value="0.1"><span class="mf-value">= <span data-value="delta">0.10</span></span></div><button type="button" class="mf-reset">Reset to defaults</button></div><p class="mf-caption"><strong>Figure 5. AK Solow diagram (φ = 1, n = 0).</strong> Both saving per worker (sAk) and break-even investment (δk) are straight lines through the origin. The gap between them is g_e × k — the growth in k, which scales linearly with k. No intersection means no steady state: k grows forever at rate g_e = sA - δ.</p><script>(function(){var spec={"id": "fig-ak-diagram", "title": "Figure 5. AK Solow diagram (\u03c6 = 1, n = 0)", "caption": "Both saving per worker (sAk) and break-even investment (\u03b4k) are straight lines through the origin. The gap between them is g_e \u00d7 k \u2014 the growth in k, which scales linearly with k. No intersection means no steady state: k grows forever at rate g_e = sA - \u03b4.", "params": {"s": 0.2, "A": 1.0, "delta": 0.1}, "panels": [{"id": "main", "x_range": [0.1, 20], "n_points": 100, "x_label": "capital per worker, k", "y_label": "per worker", "curves": [{"type": "expr", "name": "s\u00b7A\u00b7k (saving)", "expr": "s * A * k", "color": "#2563eb", "width": 3}, {"type": "expr", "name": "\u03b4\u00b7k (break-even)", "expr": "delta * k", "color": "#dc2626", "width": 3}, {"type": "expr", "name": "A\u00b7k (output)", "expr": "A * k", "color": "#16a34a", "width": 2, "dash": "dash"}], "markers": []}], "sliders": [{"param": "s", "min": 0.05, "max": 0.5, "step": 0.01, "label": "saving rate s", "decimals": 2}, {"param": "A", "min": 0.5, "max": 2.0, "step": 0.05, "label": "TFP level A = L^(1-\u03b1)", "decimals": 2}, {"param": "delta", "min": 0.02, "max": 0.3, "step": 0.01, "label": "depreciation \u03b4", "decimals": 2}]};var hostId="fig-ak-diagram";function go(){if(!window.MacroFigures){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.MacroFigures not defined. Did FIGURE_JS load before this snippet?</div>");return;}if(!window.Plotly){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.Plotly not loaded.</div>");return;}try{window.MacroFigures.renderFigure(spec,hostId);}catch(e){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Render error: "+e.message+"</div>");}}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",go);}else{go();}})();</script></div><figcaption><strong>Figure 5.</strong> The AK Solow diagram. Both &quot;saving per worker&quot; $sAk$ and &quot;break-even investment&quot; $\delta k$ are <em>straight lines through the origin</em>, because there are no diminishing returns to $k$ in this model. The vertical gap between them is $(sA - \delta) k = g_e \cdot k$ — the growth in $k$, which scales linearly with $k$. There is no intersection (no steady state), and the gap grows in absolute terms forever. Drag $s$: the saving line rotates upward, the gap widens, growth permanently accelerates.</figcaption></div><h3>4.4 The semi-endogenous Romer growth rate</h3><p>Back to the R&amp;D-based model. We had the transition equation for $g_t$ from §3.5: $g_{t+1} = (1+n)^\lambda (1+g_t)^{\phi-1} g_t$. We assume $0 &lt; \phi &lt; 1$ and $n &gt; 0$.</p><p>A steady state for $g_t$ is a value $g_{se}$ where $g_{t+1} = g_t = g_{se}$. Substituting:</p><p>$$g_{se} = (1+n)^\lambda (1+g_{se})^{\phi-1} g_{se}.$$</p><p>Divide both sides by $g_{se}$ (the trivial $g_{se} = 0$ is unstable; we want the positive one) and rearrange:</p><p>$$1 = (1+n)^\lambda (1+g_{se})^{\phi-1} \;\Leftrightarrow\; (1+g_{se})^{1-\phi} = (1+n)^\lambda.$$</p><p>Raise to $1/(1-\phi)$:</p><div class='key-concept'><strong>Semi-endogenous Romer growth rate:</strong> $$1 + g_{se} = (1+n)^{\lambda/(1-\phi)} \;\Leftrightarrow\; g_{se} = (1+n)^{\lambda/(1-\phi)} - 1 \approx \frac{\lambda}{1-\phi} \cdot n.$$</div><p>This is structurally identical to the Chapter-8 semi-endogenous rate — both say long-run growth requires population growth, both have the same flavour of exponent. The only difference is that the multiplier is $\lambda/(1-\phi)$ rather than $\phi/(1-\phi)$, reflecting that in Romer the &quot;productive input&quot; driving growth is research labour rather than aggregate capital.</p><p>Notice what is conspicuously <em>missing</em> from this formula: $s$, $s_R$, $\rho$. The long-run growth rate of technology does not depend on the saving rate, the R&amp;D share, or the productivity of R&amp;D. These shift the <em>level</em> of the growth path but not its slope. The argument is the same as for the saving rate in basic Solow: a higher $s_R$ puts more researchers on the job today, but in the long run $A_t$ will be at a higher absolute level (a level effect), still growing at the same rate $g_{se}$ pinned down by $n, \lambda, \phi$.</p><div class='figure' id='fig-g-transition'><div class="mf-figure" id="fig-g-transition"><div class="mf-panels "><div id="fig-g-transition-panel-0" class="mf-panel"></div></div><div class="mf-readout"></div><div class="mf-sliders"><div class="mf-slider-row"><label>population growth n</label><input type="range" data-slider="n" min="0.0" max="0.04" step="0.001" value="0.01"><span class="mf-value">= <span data-value="n">0.010</span></span></div><div class="mf-slider-row"><label>standing-on-shoulders φ</label><input type="range" data-slider="phi" min="0.1" max="0.95" step="0.05" value="0.5"><span class="mf-value">= <span data-value="phi">0.50</span></span></div><div class="mf-slider-row"><label>research-labour elasticity λ</label><input type="range" data-slider="lambda" min="0.3" max="1.0" step="0.05" value="1.0"><span class="mf-value">= <span data-value="lambda">1.00</span></span></div><button type="button" class="mf-reset">Reset to defaults</button></div><p class="mf-caption"><strong>Figure 6. Romer g_t transition curve (semi-endogenous, φ < 1).</strong> The transition equation for the technology growth rate. Passes through origin with slope (1+n)^λ > 1, so g_t > 0 is unstable upward — knowledge starts accumulating. Crosses the 45° line at g_se = (1+n)^(λ/(1-φ)) - 1 from above, so g_se is stable. Drag φ toward 1: g_se shoots up. Drag n to zero: g_se collapses.</p><script>(function(){var spec={"id": "fig-g-transition", "title": "Figure 6. Romer g_t transition curve (semi-endogenous, \u03c6 < 1)", "caption": "The transition equation for the technology growth rate. Passes through origin with slope (1+n)^\u03bb > 1, so g_t > 0 is unstable upward \u2014 knowledge starts accumulating. Crosses the 45\u00b0 line at g_se = (1+n)^(\u03bb/(1-\u03c6)) - 1 from above, so g_se is stable. Drag \u03c6 toward 1: g_se shoots up. Drag n to zero: g_se collapses.", "params": {"n": 0.01, "phi": 0.5, "lambda": 1.0}, "panels": [{"id": "main", "x_range": [0.0, 0.1], "n_points": 200, "x_label": "g_t (technology growth rate)", "y_label": "g_{t+1}", "curves": [{"type": "expr", "name": "g_{t+1}(g_t)", "expr": "Math.pow(1 + n, lambda) * Math.pow(1 + k, phi - 1) * k", "color": "#2563eb", "width": 3}, {"type": "expr", "name": "45\u00b0", "expr": "k", "color": "#16a34a", "width": 2, "dash": "dash"}], "markers": [{"type": "intersection", "label": "g_se", "curves": [0, 1], "color": "#111", "guide": "vertical"}]}], "sliders": [{"param": "n", "min": 0.0, "max": 0.04, "step": 0.001, "label": "population growth n", "decimals": 3}, {"param": "phi", "min": 0.1, "max": 0.95, "step": 0.05, "label": "standing-on-shoulders \u03c6", "decimals": 2}, {"param": "lambda", "min": 0.3, "max": 1.0, "step": 0.05, "label": "research-labour elasticity \u03bb", "decimals": 2}]};var hostId="fig-g-transition";function go(){if(!window.MacroFigures){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.MacroFigures not defined. Did FIGURE_JS load before this snippet?</div>");return;}if(!window.Plotly){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.Plotly not loaded.</div>");return;}try{window.MacroFigures.renderFigure(spec,hostId);}catch(e){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Render error: "+e.message+"</div>");}}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",go);}else{go();}})();</script></div><figcaption><strong>Figure 6.</strong> The Romer $g_t$ transition curve $g_{t+1} = (1+n)^\lambda (1+g_t)^{\phi-1} g_t$. Passes through the origin with slope $(1+n)^\lambda &gt; 1$ at the origin (so $g_t = 0$ is unstable upward — knowledge starts to accumulate), crosses the 45° line at $g_{se} = (1+n)^{\lambda/(1-\phi)} - 1$ from above (so $g_{se}$ is a stable steady state). Drag $\phi$ toward 1: the curve flattens, $g_{se}$ shoots up. Drag $n$ to zero: $g_{se}$ collapses to zero — the semi-endogenous engine dies if population stops growing.</figcaption></div><h3>4.5 Switching to strictly endogenous Romer (φ = 1, n = 0)</h3><p><strong>Named switch.</strong> We move from semi-endogenous Romer ($\phi &lt; 1$, $n &gt; 0$) to strictly endogenous Romer ($\phi = 1$, $n = 0$).</p><p><strong>What changed.</strong> The exponent on existing knowledge $A_t$ in the R&amp;D production function is now exactly 1. This kills the &quot;diminishing returns to knowledge in producing knowledge&quot; effect, so a constant research labour input can now sustain a constant positive growth rate (rather than growth fading to zero).</p><p><strong>What is now assumed.</strong> Constant population $L_t = L$ (we set $n = 0$ — otherwise the growth rate would explode, as you can see by setting $\phi = 1$ in $(\diamond)$: $g_{t+1} = (1+n)^\lambda g_t$, which grows geometrically when $n &gt; 0$). The labour force in R&amp;D is constant at $L_A = s_R L$.</p><p>With $\phi = 1$, the R&amp;D production function simplifies. Divide $A_{t+1} - A_t = \rho A_t \cdot L_A^\lambda$ by $A_t$:</p><p>$$g_t = \rho L_A^\lambda = \rho (s_R L)^\lambda.$$</p><p>This is constant — no $A_t$ on the right anymore. Hence:</p><div class='key-concept'><strong>Strictly endogenous Romer growth rate:</strong> $$g_e = \rho (s_R L)^\lambda \qquad (\phi = 1, \, n = 0).$$ Constant for all $t$, with $A_{t+1} = (1+g_e) A_t$. In the long run capital per worker and output per worker also grow at $g_e$.</div><p>Three things to notice about this formula.</p><p><strong>First, it depends on $s_R$ positively.</strong> Pour more labour into research, get faster growth. Forever. This is the result that makes structural policy seem so powerful in Romer's world: a subsidy to R&amp;D could permanently raise the long-run growth rate.</p><p><strong>Second, it depends on $L$ positively.</strong> A larger total population yields a higher growth rate (because more people means more researchers at any given $s_R$). This is the famous <em>scale effect</em>, and it is the model's most uncomfortable prediction empirically. The 20th-century United States quadrupled its population while its growth rate stayed flat at ~2%. China surged in population without showing decades of accelerating growth. We will say more about this in §6.</p><p><strong>Third, it does not depend on $s$ (the saving rate for physical capital).</strong> That seems wrong — in the AK model from §4.3, $s$ raised the growth rate; surely R&amp;D and saving should both matter? The textbook addresses this honestly: in this model, the R&amp;D share $s_R$ is exogenous. In a fully-micro-founded Romer model (Romer 1990 in his original article), $s_R$ would be endogenously chosen by profit-maximising firms, and a higher saving rate would lower the real interest rate, raise the present value of patent monopoly profits, and increase $s_R$ — making saving indirectly growth-promoting after all. The macro model we are studying abstracts from that channel.</p><p>The strictly endogenous Romer model also has convergence at the capital-and-output level: the growth rate of $A_t$ is constant immediately, but $k_t$ and $y_t$ approach their balanced-growth path gradually (just like in basic Solow with exogenous $g$). So if you start below the balanced path, you grow temporarily faster than $g_e$ until you reach it. This is conditional convergence in the Romer style.</p></div><div class="section" id="sec-examples"><h2>5. Worked Examples</h2><p>Formulas in the abstract are easy to nod at. Let us put real numbers in.</p><h3>5.1 Bolboaca's calibration of the semi-endogenous externality model</h3><p>The exercise session uses the following baseline:</p><div class='example'><strong>Parameters:</strong> $\alpha = 0.33$, $\phi = 0.6$, $\delta = 0.10$, $s = 0.15$, $n = 0.01$, $L_0 = 1$, initial $k_0 = 1$.</div><p>First the semi-endogenous growth rate from §4.2:</p><p>$$g_{se} = (1+n)^{\phi/(1-\phi)} - 1 = (1.01)^{0.6/0.4} - 1 = (1.01)^{1.5} - 1.$$</p><p>Computing $(1.01)^{1.5}$: $\ln(1.01) \approx 0.00995$, so $1.5 \cdot 0.00995 = 0.01493$, and $e^{0.01493} \approx 1.01504$. So $g_{se} \approx 0.01504$, i.e. roughly 1.50% per year. That makes sense: $\phi/(1-\phi) = 1.5$ amplifies the population growth into a faster technology growth.</p><p>Now the steady-state per-effective-worker capital from §4.1. We need $(1+n)^{1/(1-\phi)} = (1.01)^{1/0.4} = (1.01)^{2.5}$. Computing: $2.5 \cdot 0.00995 = 0.02488$, and $e^{0.02488} \approx 1.02519$. So the denominator $(1+n)^{1/(1-\phi)} - (1-\delta) = 1.02519 - 0.90 = 0.12519$. Then</p><p>$$\tilde k^* = \left(\frac{0.15}{0.12519}\right)^{1/0.67} = (1.19818)^{1.4925}.$$</p><p>Computing: $\ln(1.19818) \approx 0.1808$, $1.4925 \cdot 0.1808 = 0.2700$, $e^{0.2700} \approx 1.3101$. So $\tilde k^* \approx 1.3101$, and $\tilde y^* = (1.3101)^{0.33} \approx 1.0893$.</p><p>So with this calibration, per-effective-worker capital settles at roughly 1.31 and per-effective-worker output at roughly 1.09. These are the long-run values that <em>do not move</em> in steady state, even though the raw $k_t = K_t/L_t$ and $y_t = Y_t/L_t$ are growing at $g_{se} \approx 1.5\%$ per year forever.</p><h3>5.2 What happens if the saving rate jumps from 0.15 to 0.25?</h3><p>In the Bolboaca simulation, $s$ rises permanently from 0.15 to 0.25 at period 10. What changes?</p><p>The growth rate $g_{se}$ does <em>not</em> change. Look at the formula: $g_{se}$ depends only on $n$ and $\phi$, not on $s$. So the long-run growth rate is the same 1.50%.</p><p>What does change is the level. The new steady-state per-effective-worker capital becomes</p><p>$$\tilde k^*_{\text{new}} = \left(\frac{0.25}{0.12519}\right)^{1.4925} = (1.9970)^{1.4925}.$$</p><p>Computing: $\ln(1.9970) \approx 0.6916$, $1.4925 \cdot 0.6916 = 1.0322$, $e^{1.0322} \approx 2.8067$. So $\tilde k^*_{\text{new}} \approx 2.807$ — more than double the original 1.31. And $\tilde y^*_{\text{new}} = (2.807)^{0.33} \approx 1.402$, up from 1.089.</p><p>The transition between the two steady states is the interesting part. In the period right after the shock, the growth rate of $y_t$ jumps up — not to a new permanent value, but transitorily, because capital is now accumulating faster than its long-run growth rate. As $\tilde k_t$ approaches its new value $\tilde k^*_{\text{new}}$, the growth rate falls back toward $g_{se}$.</p><p>This is the qualitative pattern Bolboaca's plots show: a sharp temporary spike in the growth rate of $y_t$, then a long, slow descent back to the underlying $g_{se}$. The fact that $g_{se}$ is unaffected by the level shock is the most important content here — it is what distinguishes a level effect (Solow-style) from a rate effect (AK-style).</p><h3>5.3 The empirical record</h3><p>The endogenous-growth model with $\phi = 1$ predicts that a higher saving rate gives a higher long-run growth rate. Cross-country data offer a sharp test. <strong>Figure 7</strong> shows the famous Chapter-8 scatterplot pattern: across roughly 65 countries between 1960 and 2000, average investment rates and average growth rates of GDP per worker are clearly positively correlated. The OLS line slopes up. The Bernanke-Gürkaynak follow-up (their 2001 NBER paper) does the same exercise with the growth rate of the productivity variable $A_t$ — recovered via growth accounting — and finds an even cleaner positive relationship.</p><div class='figure' id='fig-empirics-investment'><div class="mf-figure" id="fig-empirics-investment"><div class="mf-panels "><div id="fig-empirics-investment-panel-0" class="mf-panel"></div></div><div class="mf-readout"></div><div class="mf-sliders"><div class="mf-slider-row"><label>implied A (slope)</label><input type="range" data-slider="A" min="0.05" max="0.3" step="0.01" value="0.2"><span class="mf-value">= <span data-value="A">0.20</span></span></div><div class="mf-slider-row"><label>depreciation δ (intercept)</label><input type="range" data-slider="delta" min="0.0" max="0.08" step="0.005" value="0.03"><span class="mf-value">= <span data-value="delta">0.030</span></span></div><button type="button" class="mf-reset">Reset to defaults</button></div><p class="mf-caption"><strong>Figure 7. Cross-country g vs s — schematic.</strong> Schematic of the cross-country positive correlation between average investment rate and average growth rate. The blue line shows the implied AK growth rate g_e = sA - δ. Bernanke-Gürkaynak (2001) reproduce the same positive pattern using growth-accounting-recovered g_A on the y-axis — that version is harder to rationalise with exogenous-growth Solow.</p><script>(function(){var spec={"id": "fig-empirics-investment", "title": "Figure 7. Cross-country g vs s \u2014 schematic", "caption": "Schematic of the cross-country positive correlation between average investment rate and average growth rate. The blue line shows the implied AK growth rate g_e = sA - \u03b4. Bernanke-G\u00fcrkaynak (2001) reproduce the same positive pattern using growth-accounting-recovered g_A on the y-axis \u2014 that version is harder to rationalise with exogenous-growth Solow.", "params": {"A": 0.2, "delta": 0.03}, "panels": [{"id": "main", "x_range": [0.05, 0.4], "n_points": 100, "x_label": "average investment rate, s", "y_label": "growth rate of GDP per worker, g", "curves": [{"type": "expr", "name": "AK prediction g = sA - \u03b4", "expr": "k * A - delta", "color": "#2563eb", "width": 3}], "markers": [{"type": "label_point", "label": "USA", "x": "0.21", "y": "0.018", "color": "#dc2626"}, {"type": "label_point", "label": "JPN", "x": "0.33", "y": "0.034", "color": "#dc2626"}, {"type": "label_point", "label": "ZAR", "x": "0.06", "y": "-0.014", "color": "#dc2626"}, {"type": "label_point", "label": "DEU", "x": "0.24", "y": "0.023", "color": "#dc2626"}, {"type": "label_point", "label": "BRA", "x": "0.20", "y": "0.012", "color": "#dc2626"}]}], "sliders": [{"param": "A", "min": 0.05, "max": 0.3, "step": 0.01, "label": "implied A (slope)", "decimals": 2}, {"param": "delta", "min": 0.0, "max": 0.08, "step": 0.005, "label": "depreciation \u03b4 (intercept)", "decimals": 3}]};var hostId="fig-empirics-investment";function go(){if(!window.MacroFigures){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.MacroFigures not defined. Did FIGURE_JS load before this snippet?</div>");return;}if(!window.Plotly){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.Plotly not loaded.</div>");return;}try{window.MacroFigures.renderFigure(spec,hostId);}catch(e){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Render error: "+e.message+"</div>");}}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",go);}else{go();}})();</script></div><figcaption><strong>Figure 7.</strong> Schematic of the Chapter-8 empirical workhorse: a cross-country scatterplot of average annual growth rate $g_i$ against average investment rate $s_i$, with the OLS regression line. The positive slope is exactly what an AK-style endogenous-growth model predicts ($g_e = sA - \delta$ is increasing in $s$). What it does <em>not</em> predict — and what Bernanke and Gürkaynak document with a similar plot using $g_{A,i}$ — is the same positive correlation when you replace $g_i$ with the growth rate of technology recovered by growth accounting. The labelled points are illustrative country positions (USA, JPN, DEU, BRA, ZAR); drag the slider to see the implied $g_e$ at a chosen $s$.</figcaption></div><p>Why does this matter? Because in exogenous-growth Solow models, a higher saving rate raises the <em>level</em> of $y_t$ in the long run but not its growth rate. So if you found a positive cross-country correlation between $s$ and $g$, you could explain it as <em>transitory</em> — high-savings countries are catching up. The Bernanke-Gürkaynak version blocks that escape, because if it were just transitory Solow, $g_{A,i}$ should be uncorrelated with $s_i$ (in Solow $g_A$ is exogenous, so independent of saving). The data show $g_{A,i}$ and $s_i$ are positively related. That is hard for Solow to explain and easy for endogenous growth to explain — which is why the textbook authors take this as the single strongest empirical argument for endogenous growth theory.</p></div><div class="section" id="sec-traps"><h2>6. Connections and Common Traps</h2><p>The two models we have built make sharply different predictions in places, and the empirical record discriminates between them in ways the exam expects you to know. This section pulls together the loose ends.</p><h3>6.1 The scale effect — the most damaging critique</h3><p>Both the AK model and the strictly endogenous Romer model predict that a larger labour force gives a higher long-run growth rate. In AK, the growth rate is $g_e = sA - \delta$ with $A = L^{1-\alpha}$ — so a larger $L$ raises $A$ and hence $g_e$. In Romer ($\phi = 1$), $g_e = \rho (s_R L)^\lambda$ — larger $L$ directly raises the growth rate.</p><p>This is the <strong>scale effect</strong>, and it is empirically catastrophic. Three problems:</p><p><strong>(i) Across countries.</strong> Larger countries do not systematically grow faster. China and India have not historically grown faster than Switzerland in per-capita terms (until very recently, and for unrelated reasons).</p><p><strong>(ii) Over time within a country.</strong> The US population roughly quadrupled in the 20th century. The growth rate of US GDP per worker stayed roughly constant at ~2%. If the model were right, growth should have accelerated dramatically.</p><p><strong>(iii) The number of researchers.</strong> Charles Jones (1995) documented that the number of scientists and engineers in R&amp;D in the developed world has grown enormously since 1950, while productivity growth has been roughly flat or even declining. If $g_e = \rho (s_R L)^\lambda$ is right, productivity growth should have accelerated with the researcher count. It did not.</p><p>The defenders of strictly endogenous growth have responses — for instance, &quot;maybe the model is not country-by-country but for the whole developed world&quot; — but in the textbook's eyes (and Jones's), the scale effect is the central reason to be sceptical of $\phi = 1$. The natural escape is to take $\phi$ less than 1, returning to the semi-endogenous case where the scale effect vanishes (the growth rate depends only on $n, \lambda, \phi$ — not on $L$ directly).</p><h3>6.2 Population growth vs economic growth — the other empirical problem</h3><p>The semi-endogenous models (both Ch 8 and Ch 9) predict $g \approx \phi n / (1-\phi)$ or $\lambda n / (1-\phi)$ — long-run growth requires population growth. So in cross-section we expect: higher-$n$ countries should grow faster.</p><p>The data say the opposite. Cross-country scatterplots of growth-of-GDP-per-worker against labour-force-growth show a clear <em>negative</em> relationship. The countries with the fastest population growth — many African economies — have the slowest economic growth. The countries with the slowest population growth — Western Europe, Japan — have moderate-to-strong growth. This is the opposite of what semi-endogenous growth predicts.</p><p>The textbook's defenses are honest about being defenses, not refutations: (a) the model is for the developed world as a whole, not country-by-country, so cross-country data may not be informative; (b) over the very long run (200+ years), population growth and economic growth in the West did happen <em>together</em>, which is consistent with the semi-endogenous story; (c) if convergence is very slow, what we see today is a transitional path, and lower-population-growth countries are temporarily growing faster than their steady state would suggest. None of these is fully convincing.</p><h3>6.3 Hemi-endogenous growth — Jones's escape route</h3><p>Charles Jones proposed a third interpretation. Take $\phi &lt; 1$ (so no scale effect, no knife-edge), but assume $n = 0$ — so semi-endogenous growth from population would die. Then assume the research share $s_R$ is <em>growing slowly</em> over time. The textbook reports OECD GERD/GDP ratios doubling roughly every 100 years.</p><p>This is a model-variant switch — let us be explicit.</p><p><strong>Named switch.</strong> We move from semi-endogenous Romer (constant $s_R$, $n &gt; 0$) to hemi-endogenous growth (constant population $n = 0$, slowly growing $s_R$).</p><p><strong>What changed.</strong> Population is now constant. The research share $s_R$ is no longer a parameter but a slowly-growing variable: $s_{R,t+1} = (1 + g_{s_R}) s_{R,t}$ for some small $g_{s_R}$ (Jones's calibration: ~0.7% per year, doubling every century).</p><p><strong>What is now assumed.</strong> $\phi &lt; 1$ (no knife-edge, no scale effect). The growth of $s_R$ is exogenous to the model — we do not explain why $s_R$ grows. We just observe it does, historically.</p><p>To find the implied technology growth rate, repeat the §3.5 derivation with $s_R$ now varying. From $g_t = \rho A_t^{\phi-1} (s_{R,t} L)^\lambda$, take the ratio at $t+1$ and $t$ (with $L$ constant):</p><p>$$\frac{g_{t+1}}{g_t} = \left(\frac{A_{t+1}}{A_t}\right)^{\phi-1} \left(\frac{s_{R,t+1}}{s_{R,t}}\right)^\lambda = (1+g_t)^{\phi-1} (1+g_{s_R})^\lambda.$$</p><p>Setting $g_{t+1} = g_t = g_{he}$ (the hemi-endogenous steady-state rate):</p><p>$$1 = (1+g_{he})^{\phi-1} (1+g_{s_R})^\lambda \;\Leftrightarrow\; (1+g_{he})^{1-\phi} = (1+g_{s_R})^\lambda.$$</p><div class='key-concept'><strong>Hemi-endogenous growth rate:</strong> $$g_{he} = (1+g_{s_R})^{\lambda/(1-\phi)} - 1 \approx \frac{\lambda}{1-\phi} \cdot g_{s_R}.$$ Same multiplier as semi-endogenous, but driven by the growth rate of the R&amp;D share rather than the population growth rate.</div><p>With Jones's calibration ($g_{s_R} \approx 0.7\%$, $\lambda/(1-\phi) \approx 2$), this gives $g_{he} \approx 1.4\%$ — strikingly close to the empirical 1.5–2% growth rate observed in the West over the past 200 years. Hemi-endogenous growth &quot;explains&quot; the historical record without invoking either a scale effect or population-driven growth.</p><div class='figure' id='fig-hemi-endo'><div class="mf-figure" id="fig-hemi-endo"><div class="mf-panels "><div id="fig-hemi-endo-panel-0" class="mf-panel"></div></div><div class="mf-readout"></div><div class="mf-sliders"><div class="mf-slider-row"><label>growth of s_R per year</label><input type="range" data-slider="g_sR" min="0.0" max="0.02" step="0.001" value="0.007"><span class="mf-value">= <span data-value="g_sR">0.007</span></span></div><div class="mf-slider-row"><label>standing-on-shoulders φ</label><input type="range" data-slider="phi" min="0.1" max="0.9" step="0.05" value="0.5"><span class="mf-value">= <span data-value="phi">0.50</span></span></div><div class="mf-slider-row"><label>research-labour elasticity λ</label><input type="range" data-slider="lambda" min="0.3" max="1.0" step="0.05" value="1.0"><span class="mf-value">= <span data-value="lambda">1.00</span></span></div><div class="mf-slider-row"><label>initial g_0</label><input type="range" data-slider="g0" min="0.005" max="0.04" step="0.001" value="0.014"><span class="mf-value">= <span data-value="g0">0.014</span></span></div><button type="button" class="mf-reset">Reset to defaults</button></div><p class="mf-caption"><strong>Figure 8. Hemi-endogenous growth: g_t paths under constant vs growing s_R.</strong> Both panels assume φ < 1 and n = 0. Blue: s_R is constant — g_t fades toward zero. Red: s_R grows at rate g_sR — g_t sustains at the hemi-endogenous rate g_he ≈ λ g_sR / (1-φ). Drag g_sR: a 0.7% growth in research share (Jones's calibration) produces ~1.4% growth in technology when λ/(1-φ) = 2.</p><script>(function(){var spec={"id": "fig-hemi-endo", "title": "Figure 8. Hemi-endogenous growth: g_t paths under constant vs growing s_R", "caption": "Both panels assume \u03c6 < 1 and n = 0. Blue: s_R is constant \u2014 g_t fades toward zero. Red: s_R grows at rate g_sR \u2014 g_t sustains at the hemi-endogenous rate g_he \u2248 \u03bb g_sR / (1-\u03c6). Drag g_sR: a 0.7% growth in research share (Jones's calibration) produces ~1.4% growth in technology when \u03bb/(1-\u03c6) = 2.", "params": {"phi": 0.5, "lambda": 1.0, "g_sR": 0.007, "g0": 0.014}, "panels": [{"id": "main", "x_range": [0, 200], "n_points": 200, "x_label": "time t (years)", "y_label": "technology growth rate g_t", "curves": [{"type": "time_series", "name": "s_R constant (g_sR = 0)", "initial": "g0", "recursion": "k * Math.pow(1 + k, phi - 1)", "t_range": [0, 200], "color": "#2563eb", "width": 3}, {"type": "time_series", "name": "s_R growing", "initial": "g0", "recursion": "k * Math.pow(1 + g_sR, lambda) * Math.pow(1 + k, phi - 1)", "t_range": [0, 200], "color": "#dc2626", "width": 3}], "markers": [{"type": "horizontal_line", "label": "g_he target", "at": "Math.pow(1 + g_sR, lambda / (1 - phi)) - 1", "color": "#94a3b8", "dash": "dash"}]}], "sliders": [{"param": "g_sR", "min": 0.0, "max": 0.02, "step": 0.001, "label": "growth of s_R per year", "decimals": 3}, {"param": "phi", "min": 0.1, "max": 0.9, "step": 0.05, "label": "standing-on-shoulders \u03c6", "decimals": 2}, {"param": "lambda", "min": 0.3, "max": 1.0, "step": 0.05, "label": "research-labour elasticity \u03bb", "decimals": 2}, {"param": "g0", "min": 0.005, "max": 0.04, "step": 0.001, "label": "initial g_0", "decimals": 3}]};var hostId="fig-hemi-endo";function go(){if(!window.MacroFigures){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.MacroFigures not defined. Did FIGURE_JS load before this snippet?</div>");return;}if(!window.Plotly){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.Plotly not loaded.</div>");return;}try{window.MacroFigures.renderFigure(spec,hostId);}catch(e){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Render error: "+e.message+"</div>");}}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",go);}else{go();}})();</script></div><figcaption><strong>Figure 8.</strong> Two scenarios for technology growth $g_t$ under $\phi &lt; 1$ and $n = 0$. Blue: $s_R$ constant — $g_t$ falls toward zero, because with $\phi &lt; 1$ a constant research labour input cannot sustain growth. Red: $s_R$ doubling every 100 years — $g_t$ sustains at $g_{he} \approx 1.4\%$, because the slow but steady growth in research share keeps providing fresh effective inputs. The hemi-endogenous interpretation says the past 200 years of growth are the red line, but eventually the research share hits its ceiling (you cannot have more than 100% of labour in R&amp;D), at which point growth must cease. &quot;Mankind could be very rich by then.&quot;</figcaption></div><h3>6.4 Side-by-side: externality vs R&amp;D</h3><p>The two models share more than they differ — both deliver the same $\phi &lt; 1$ vs $\phi = 1$ trichotomy, both produce scale effects, both have semi-endogenous and truly endogenous variants. The differences are mostly about the <em>story</em> they tell, not the algebra. The figure below catalogues them.</p><div class='figure' id='fig-ext-vs-rd'><svg viewBox='0 0 540 360' xmlns='http://www.w3.org/2000/svg' font-family='sans-serif' font-size='11'><rect x='10' y='10' width='260' height='340' fill='#eff6ff' stroke='#2563eb' stroke-width='2' rx='6'/><rect x='280' y='10' width='250' height='340' fill='#f0fdf4' stroke='#16a34a' stroke-width='2' rx='6'/><text x='140' y='35' text-anchor='middle' font-weight='bold' fill='#1e40af' font-size='13'>Externality (Ch 8)</text><text x='405' y='35' text-anchor='middle' font-weight='bold' fill='#15803d' font-size='13'>R&amp;D / Romer (Ch 9)</text><line x1='20' y1='50' x2='260' y2='50' stroke='#1e40af' stroke-width='1'/><line x1='290' y1='50' x2='520' y2='50' stroke='#15803d' stroke-width='1'/><text x='30' y='70' font-weight='bold' font-size='10'>Source of growth:</text><text x='30' y='86' font-size='10'>unintentional spillover</text><text x='30' y='100' font-size='10'>from aggregate K</text><text x='300' y='70' font-weight='bold' font-size='10'>Source of growth:</text><text x='300' y='86' font-size='10'>deliberate R&amp;D effort</text><text x='300' y='100' font-size='10'>by researchers</text><text x='30' y='125' font-weight='bold' font-size='10'>Mechanism:</text><text x='30' y='141' font-size='10'>learning by doing</text><text x='30' y='155' font-size='10'>A = K^phi</text><text x='300' y='125' font-weight='bold' font-size='10'>Mechanism:</text><text x='300' y='141' font-size='10'>R&amp;D production process</text><text x='300' y='155' font-size='10'>dA = rho A^phi L_A^lambda</text><text x='30' y='180' font-weight='bold' font-size='10'>Policy levers:</text><text x='30' y='196' font-size='10'>s (level only, semi-endo)</text><text x='30' y='210' font-size='10'>s (rate, in AK)</text><text x='300' y='180' font-weight='bold' font-size='10'>Policy levers:</text><text x='300' y='196' font-size='10'>s_R (level only, semi-endo)</text><text x='300' y='210' font-size='10'>s_R (rate, strictly endo)</text><text x='30' y='235' font-weight='bold' font-size='10'>Microeconomics:</text><text x='30' y='251' font-size='10'>perfect competition fine —</text><text x='30' y='265' font-size='10'>spillover is free</text><text x='300' y='235' font-weight='bold' font-size='10'>Microeconomics:</text><text x='300' y='251' font-size='10'>requires monopoly +</text><text x='300' y='265' font-size='10'>patents (suppressed here)</text><text x='30' y='290' font-weight='bold' font-size='10'>Scale effect:</text><text x='30' y='306' font-size='10'>yes in AK (A = L^(1-alpha))</text><text x='300' y='290' font-weight='bold' font-size='10'>Scale effect:</text><text x='300' y='306' font-size='10'>yes in strictly endo (g_e prop L^lambda)</text><text x='30' y='328' font-weight='bold' font-size='10'>Convergence:</text><text x='30' y='344' font-size='10'>no in AK; yes in semi-endo</text><text x='300' y='328' font-weight='bold' font-size='10'>Convergence:</text><text x='300' y='344' font-size='10'>yes (both variants)</text></svg><figcaption><strong>Figure 9.</strong> Side-by-side comparison of the two endogenous-growth families. Key differences: where the spillover comes from (capital vs research labour), what policy levers exist ($s$ vs $s_R$), and whether you need a microeconomic theory of monopoly (Romer does, Chapter 8 does not). The structural similarities — both have the $\phi$-trichotomy, both have a scale effect at $\phi = 1$ — are stronger than the differences.</figcaption></div><h3>6.5 What the exam tends to ask</h3><p>From the past-exam compilation, Module 4 (R&amp;D, endogenous growth) is rising in frequency — it appeared 4 times in 5 exams (2023 + both undated + Undated 2). Two patterns to expect.</p><p><strong>Pattern 1: &quot;State the main equations of the Romer model + economic explanation.&quot;</strong> This appeared in both undated exams. The expected answer: write down the six-equation model (production functions for final goods and R&amp;D, capital accumulation, labour growth, labour split, R&amp;D share), state the $g_t$ transition equation, derive $g_{se}$ or $g_e$ depending on which regime, and explain in prose why technology grows endogenously when ideas are non-rival and labour can be redirected to research.</p><p><strong>Pattern 2: &quot;Explain the distinction between endogenous and semi-endogenous growth.&quot;</strong> This appeared in Undated 1. The expected answer: contrast $\phi &lt; 1$ (semi-endogenous, growth requires $n &gt; 0$, no scale effect) with $\phi = 1$ (truly endogenous, growth without $n$, but suffers scale effect). The differentiator at the top end is naming Jones (1995) and the hemi-endogenous interpretation as a third route.</p><p>One reliable trap: students confuse the $\phi$ in Chapter 8 (capital externality) with the $\phi$ in Chapter 9 (R&amp;D's elasticity w.r.t. existing knowledge). They are structurally analogous but economically distinct. Cozzi rewards students who name the difference.</p></div><div class="section" id="sec-summary"><h2>7. Summary</h2><p>The Solow models we built earlier explained how capital accumulates given a technology growth rate, but never explained the technology growth rate itself. Module 4 closes that gap. Two routes:</p><p><strong>The externality route (Ch 8).</strong> $A_t = K_t^\phi$ — productivity depends on aggregate capital. CRS at the firm, IRS at the aggregate. Three regimes: $\phi &lt; 1$ semi-endogenous (growth requires $n &gt; 0$), $\phi = 1$ AK truly endogenous (constant growth from saving alone, with a scale effect), $\phi &gt; 1$ explosive (excluded).</p><p><strong>The R&amp;D route (Ch 9).</strong> A fraction $s_R$ of labour produces new ideas: $\Delta A = \rho A^\phi L_A^\lambda$. Same trichotomy, this time driven by $\phi$'s role in &quot;standing on shoulders&quot; vs &quot;fishing out&quot;. Strictly endogenous ($\phi = 1$): $g_e = \rho (s_R L)^\lambda$. Suffers a scale effect.</p><p><strong>A third interpretation (Jones, hemi-endogenous).</strong> $\phi &lt; 1$, $n = 0$, but $s_R$ slowly growing. Gives growth $g_{he} \approx \lambda g_{s_R}/(1-\phi)$, no scale effect, no need for population growth. Plausibly matches the 200-year record. Must end one day when $s_R$ hits its ceiling.</p><h3>Formula reference</h3><table><thead><tr><th>Quantity</th><th>Formula</th><th>Where</th></tr></thead><tbody><tr><td>Aggregate PF (externality)</td><td>$Y_t = K_t^{\alpha+\phi(1-\alpha)} L_t^{1-\alpha}$</td><td>§3.2</td></tr><tr><td>Factor share (capital)</td><td>$rK/Y = \alpha$</td><td>§3.1</td></tr><tr><td>Steady-state $\tilde k^*$ (semi-endo Ch 8)</td><td>$\tilde k^* = (s / ((1+n)^{1/(1-\phi)} - (1-\delta)))^{1/(1-\alpha)}$</td><td>§4.1</td></tr><tr><td>Semi-endogenous growth rate (Ch 8)</td><td>$g_{se} = (1+n)^{\phi/(1-\phi)} - 1$</td><td>§4.2</td></tr><tr><td>AK growth rate</td><td>$g_e = sA - \delta$, $A = L^{1-\alpha}$</td><td>§4.3</td></tr><tr><td>R&amp;D production function</td><td>$\Delta A = \rho A^\phi (s_R L)^\lambda$</td><td>§3.4</td></tr><tr><td>$g_t$ transition (Romer)</td><td>$g_{t+1} = (1+n)^\lambda (1+g_t)^{\phi-1} g_t$</td><td>§3.5</td></tr><tr><td>Semi-endogenous Romer growth rate</td><td>$g_{se} = (1+n)^{\lambda/(1-\phi)} - 1$</td><td>§4.4</td></tr><tr><td>Strictly endogenous Romer growth rate</td><td>$g_e = \rho (s_R L)^\lambda$</td><td>§4.5</td></tr><tr><td>Hemi-endogenous growth rate</td><td>$g_{he} = (1+g_{s_R})^{\lambda/(1-\phi)} - 1$</td><td>§6.3</td></tr></tbody></table><h3>The big three takeaways</h3><p><strong>(i)</strong> Endogenous growth means the long-run growth rate of GDP per worker depends on model parameters, so structural policy has long-run consequences. This is the whole point.</p><p><strong>(ii)</strong> The three regimes ($\phi &lt; 1$ semi-endogenous, $\phi = 1$ truly endogenous, $\phi &gt; 1$ excluded) appear in both Chapter 8 and Chapter 9, with different stories but the same mathematics. Know which lever ($s$, $s_R$, $n$) matters in which regime.</p><p><strong>(iii)</strong> Empirically, the data are uncomfortable for every variant. The positive investment-vs-growth correlation supports AK / strictly endogenous; the absence of a scale effect contradicts them. The semi-endogenous models avoid the scale effect but predict a positive population-growth-economic-growth correlation, which the data contradict. The hemi-endogenous interpretation threads the needle but is essentially Jones's interpretive overlay rather than a clean prediction.</p><p>Module 5 picks up exactly here, refining the R&amp;D model to remove the scale effect while keeping growth endogenous in a stronger sense than hemi-endogenous. That is where Cozzi's own published work lives — and where the exam questions about &quot;no scale effects&quot; come from.</p></div>
+</main>
+</div>
+<script>
+renderMathInElement(document.body,{delimiters:[{left:"$$",right:"$$",display:true},{left:"$",right:"$",display:false},{left:"\\(",right:"\\)",display:false},{left:"\\[",right:"\\]",display:true}]});
+const obs=new IntersectionObserver(entries=>{entries.forEach(e=>{if(e.isIntersecting){document.querySelectorAll("nav a").forEach(a=>a.classList.remove("active"));const a=document.querySelector(`nav a[href="#${e.target.id}"]`);if(a)a.classList.add("active")}})},{threshold:0.3});
+document.querySelectorAll(".section").forEach(s=>obs.observe(s));
+</script>
+</body>
+</html>

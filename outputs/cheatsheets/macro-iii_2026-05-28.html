@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Macroeconomics III — Exam Cheat Sheet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+<style>
+:root{
+  --bg:#fdf6e3;
+  --card:#ffffff;
+  --border:#e6dcc4;
+  --text:#003135;
+  --muted:#5a7378;
+  --accent:#024950;
+  --accent-2:#0FA4AF;
+  --accent-bg:rgba(15,164,175,0.10);
+  --key:#964734;
+  --key-bg:rgba(150,71,52,0.08);
+  --box-fill:#003135;
+  --box-text:#e6f4f5;
+  --box-line:#0FA4AF;
+  --nav-w:240px;
+  --col-w:820px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background-color:var(--bg)}
+body{
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  color:var(--text);
+  line-height:1.65;
+  font-weight:400;
+  font-feature-settings:"cv11","ss01","ss03";
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.45  0 0 0 0 0.35  0 0 0 0 0.20  0 0 0 0.06 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  background-repeat:repeat;
+  background-attachment:fixed;
+}
+.layout{display:block;min-height:100vh}
+nav{
+  width:var(--nav-w);
+  position:fixed;top:0;left:0;height:100vh;overflow-y:auto;
+  background:transparent;
+  border-right:1px solid var(--border);
+  padding:2.5rem 1.25rem;
+}
+nav h2{
+  font-size:.7rem;
+  text-transform:uppercase;
+  color:var(--muted);
+  margin-bottom:1rem;
+  letter-spacing:.12em;
+  font-weight:600;
+}
+nav a{
+  display:block;
+  padding:.35rem .6rem;
+  font-size:.78rem;
+  color:var(--muted);
+  text-decoration:none;
+  border-radius:5px;
+  margin-bottom:1px;
+  font-weight:400;
+  transition:color .15s, background .15s;
+}
+nav a:hover{color:var(--text);background:rgba(2,73,80,0.04)}
+nav a.active{color:var(--accent);background:var(--accent-bg);font-weight:500}
+nav .nav-section-label{
+  font-size:.62rem;
+  text-transform:uppercase;
+  color:var(--muted);
+  letter-spacing:.1em;
+  margin:1rem 0 .35rem .6rem;
+  font-weight:600;
+  opacity:.7;
+}
+main{
+  margin-left:var(--nav-w);
+  padding:3rem max(1.5rem, calc((100vw - var(--nav-w) - var(--col-w)) / 2)) 4rem;
+}
+h1{
+  font-size:2.3rem;
+  font-weight:300;
+  letter-spacing:-0.03em;
+  line-height:1.15;
+  margin-bottom:.4rem;
+  color:var(--text);
+}
+.meta{
+  color:var(--muted);
+  font-size:.8rem;
+  letter-spacing:.01em;
+  margin-bottom:2.5rem;
+  padding-bottom:1rem;
+  border-bottom:1px solid var(--border);
+}
+
+/* ── Section ─────────────────────────────────────────────────────────── */
+.section{
+  margin-bottom:3.5rem;
+}
+.section-header{
+  display:flex;
+  justify-content:space-between;
+  align-items:baseline;
+  gap:1rem;
+  margin-bottom:1rem;
+  padding-bottom:.7rem;
+  border-bottom:1px solid var(--border);
+  flex-wrap:wrap;
+}
+.section-num{
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+  font-size:.75rem;
+  font-weight:600;
+  color:var(--accent-2);
+  letter-spacing:.06em;
+}
+.section h2{
+  font-size:1.5rem;
+  font-weight:400;
+  letter-spacing:-0.02em;
+  color:var(--accent);
+  flex:1;
+}
+.section-tag{
+  font-size:.65rem;
+  color:var(--muted);
+  letter-spacing:.12em;
+  text-transform:uppercase;
+}
+
+/* Elevator pitch (the "this model is FOR" framing) */
+.pitch{
+  background:rgba(255,255,255,0.4);
+  border-left:2px solid var(--accent-2);
+  padding:.8rem 1.1rem;
+  margin:0 0 1.25rem;
+  font-size:.95rem;
+  font-style:italic;
+  color:var(--text);
+}
+.pitch strong{color:var(--accent);font-style:normal;font-weight:600}
+
+/* Slide images embedded */
+.slide-block{
+  margin:1.25rem 0;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+}
+.slide-block img{
+  max-width:100%;
+  height:auto;
+  border:1px solid var(--border);
+  background:#fff;
+}
+.slide-caption{
+  margin-top:.4rem;
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+  font-size:.7rem;
+  color:var(--muted);
+  letter-spacing:.04em;
+  text-align:center;
+}
+.slide-group{
+  display:grid;
+  gap:.8rem;
+  margin:1.25rem 0;
+}
+.slide-group.cols-2{grid-template-columns:1fr 1fr}
+.slide-group.cols-3{grid-template-columns:repeat(3,1fr)}
+@media(max-width:760px){.slide-group.cols-2,.slide-group.cols-3{grid-template-columns:1fr}}
+
+/* Skeleton derivation (numbered algebraic steps) */
+.skeleton{
+  background:rgba(255,255,255,0.5);
+  border:1px solid var(--border);
+  padding:1rem 1.2rem;
+  margin:1.25rem 0;
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+  font-size:.88rem;
+}
+.skeleton-title{
+  font-size:.7rem;
+  font-weight:600;
+  color:var(--accent);
+  letter-spacing:.1em;
+  text-transform:uppercase;
+  margin-bottom:.6rem;
+  font-family:'Inter',sans-serif;
+}
+.skeleton-step{
+  display:grid;
+  grid-template-columns:2.5rem 1fr 1fr;
+  gap:.8rem;
+  align-items:baseline;
+  padding:.25rem 0;
+  line-height:1.5;
+}
+.skeleton-step .step-num{
+  color:var(--muted);
+  font-size:.7rem;
+  font-weight:500;
+}
+.skeleton-step .step-math{color:var(--text)}
+.skeleton-step .step-why{
+  color:var(--muted);
+  font-style:italic;
+  font-size:.82rem;
+  font-family:'Inter',sans-serif;
+}
+
+/* Mock answer (Cozzi-style prose) */
+.mock-answer{
+  margin:1.25rem 0;
+}
+.mock-answer-title{
+  font-size:.7rem;
+  font-weight:600;
+  color:var(--accent);
+  letter-spacing:.1em;
+  text-transform:uppercase;
+  margin-bottom:.55rem;
+  padding-bottom:.3rem;
+  border-bottom:1px solid var(--accent-bg);
+}
+.mock-answer p{margin-bottom:.7rem;font-size:.95rem;line-height:1.7}
+.mock-answer p:last-child{margin-bottom:0}
+.mock-answer em{font-style:italic}
+.mock-answer strong{color:var(--accent);font-weight:600}
+
+/* Key result HUD callouts */
+.key-result{
+  background:var(--box-fill);
+  color:var(--box-text);
+  padding:.8rem 1.15rem;
+  margin:.9rem 0;
+  outline:1px solid var(--box-line);
+  outline-offset:3px;
+  font-size:.92rem;
+}
+.key-result .katex{color:var(--box-text)}
+.key-result strong{color:var(--box-line);font-weight:600}
+
+/* Pitfalls (light) */
+.pitfalls{
+  background:var(--key-bg);
+  border-left:2px solid var(--key);
+  padding:.6rem .9rem;
+  margin:1rem 0;
+  font-size:.85rem;
+}
+.pitfalls-title{
+  font-size:.65rem;
+  font-weight:600;
+  color:var(--key);
+  letter-spacing:.1em;
+  text-transform:uppercase;
+  margin-bottom:.35rem;
+}
+.pitfalls ul{margin:0 0 0 1.2rem;padding:0}
+.pitfalls li{margin-bottom:.25rem;color:var(--text)}
+
+/* Reference table (notation, glossary, etc.) */
+table.ref{
+  width:100%;
+  border-collapse:collapse;
+  margin:1rem 0;
+  font-size:.88rem;
+}
+table.ref th,table.ref td{
+  padding:.5rem .8rem;
+  border-bottom:1px solid var(--border);
+  text-align:left;
+  vertical-align:top;
+}
+table.ref th{
+  background:var(--accent-bg);
+  font-weight:600;
+  color:var(--accent);
+  font-size:.7rem;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+}
+table.ref tr:hover td{background:rgba(15,164,175,0.04)}
+table.ref code{
+  background:var(--accent-bg);
+  color:var(--accent);
+  padding:.08rem .3rem;
+  border-radius:2px;
+  font-family:'JetBrains Mono',monospace;
+  font-size:.85em;
+}
+
+/* Cross-cutting comparison cards */
+.compare-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));
+  gap:.8rem;
+  margin:1.25rem 0;
+}
+.compare-card{
+  background:rgba(255,255,255,0.6);
+  border:1px solid var(--border);
+  padding:.85rem 1rem;
+  font-size:.88rem;
+}
+.compare-card-title{
+  font-size:.7rem;
+  font-weight:600;
+  color:var(--accent);
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  margin-bottom:.4rem;
+  padding-bottom:.25rem;
+  border-bottom:1px solid var(--accent-bg);
+}
+.compare-card p{margin-bottom:.4rem;line-height:1.55}
+.compare-card p:last-child{margin-bottom:0}
+
+/* Answer structure card (top reference) */
+.structure-card{
+  background:var(--box-fill);
+  color:var(--box-text);
+  padding:1.2rem 1.5rem;
+  margin:1.25rem 0;
+  outline:1px solid var(--box-line);
+  outline-offset:3px;
+}
+.structure-card h3{
+  font-size:.7rem;
+  font-weight:600;
+  color:var(--box-line);
+  letter-spacing:.1em;
+  text-transform:uppercase;
+  margin-bottom:.7rem;
+}
+.structure-card ol{
+  margin:0 0 0 1.4rem;
+  font-size:.92rem;
+  line-height:1.7;
+}
+.structure-card li{margin-bottom:.35rem}
+.structure-card strong{color:var(--box-line);font-weight:600}
+
+.katex{font-size:1em}
+.katex-display{margin:.6rem 0;overflow-x:auto;overflow-y:hidden}
+
+@media(max-width:900px){
+  nav{display:none}
+  main{margin-left:0;padding:2rem 1rem 3rem}
+  h1{font-size:1.7rem}
+}
+</style>
+</head>
+<body>
+<div class="layout">
+<nav>
+<h2>Contents</h2>
+<div class="nav-section-label">Reference</div><a href="#sec-reference">Notation & 4-Part Answer Structure</a><div class="nav-section-label">Module spine</div><a href="#sec-m1-basic-solow">M1 — Basic Solow</a><a href="#sec-m2-general-solow">M2 — General Solow w/ Tech Progress</a><a href="#sec-m3-mrw">M3 — MRW (Human Capital)</a><a href="#sec-m3-land-oil">M3 — Solow with Land & Oil</a><a href="#sec-m4-endogenous">M4 — Endogenous Growth (Externalities + R&D)</a><a href="#sec-m5-no-scale-cozzi">M5 — No-Scale Endogenous + Cozzi (2017) Hybrid</a><a href="#sec-m6-efficiency-wages">M6 — Efficiency Wages</a><div class="nav-section-label">Cross-cutting</div><a href="#sec-cross-convergence">Cross-cutting — Convergence Speeds Compared</a><a href="#sec-cross-golden-rule">Cross-cutting — Golden Rule Across Models</a><a href="#sec-cross-rd">Cross-cutting — R&D Model Variants</a><a href="#sec-simulation-template">Cross-cutting — Simulation Algorithm Template</a><div class="nav-section-label">Reference</div><a href="#sec-empirical-glossary">Empirical Numbers & Glossary</a><a href="#sec-question-map">Past Exam Question Types → Where to Look</a>
+</nav>
+<main>
+<h1>Macroeconomics III — Exam Cheat Sheet</h1>
+<div class="meta">HSG · Spring 2026 · Prof. Cozzi · distilled from 6 modules + 5 past exams</div>
+<div class="section" id="sec-reference"><div class="section-header"><span class="section-num">§ 00</span><h2>Notation & 4-Part Answer Structure</h2><span class="section-tag">reference</span></div><div class="pitch"><strong>Read this first.</strong> Notation that stays constant across the whole document, and the 4-part canonical structure Cozzi expects in every essay answer.</div><table class="ref"><thead><tr><th>Symbol</th><th>Meaning</th></tr></thead><tbody><tr><td>$K, L, Y$</td><td>Aggregate capital, labor, output</td></tr><tr><td>$k = K/L,\; y = Y/L$</td><td>Per-worker (lowercase = per worker)</td></tr><tr><td>$\tilde k = K/(AL),\; \tilde y = Y/(AL)$</td><td>Per effective worker (tildes only when labor-augmenting tech is in play)</td></tr><tr><td>$\alpha$</td><td>Cobb-Douglas capital exponent / capital income share. <em>Reserved.</em></td></tr><tr><td>$\phi$</td><td>MRW human-capital exponent. <em>Reserved.</em></td></tr><tr><td>$n, g, \delta$</td><td>Population growth, labor-augmenting tech growth, depreciation</td></tr><tr><td>$s$</td><td>Saving rate (basic Solow). $s_K, s_H$ for MRW. $s_R, s_E$ for R&amp;D / oil extraction.</td></tr><tr><td>$r, \bar r$</td><td>Domestic interest rate (endogenous in closed economy); world rate (exogenous in open economy)</td></tr><tr><td>$B$ vs $A$</td><td>$B$ = Hicks-neutral TFP (in $Y = BK^\alpha L^{1-\alpha}$); $A$ = labor-augmenting tech (in $Y = K^\alpha (AL)^{1-\alpha}$). Never mix.</td></tr><tr><td>$X^*,\; X^{**}$</td><td>Steady state, Golden Rule</td></tr><tr><td>$\bar X$</td><td>World average (multi-country / open economy)</td></tr><tr><td>$\lambda$</td><td>Convergence speed (rate at which $\ln k - \ln k^*$ contracts per period)</td></tr><tr><td>$L_A$</td><td>Researchers (R&amp;D labor) in Romer model</td></tr></tbody></table><div class="structure-card"><h3>The 4-part essay structure Cozzi expects</h3><ol><li><strong>Introduction</strong> — what question this model answers; why we care (~1 paragraph).</li><li><strong>Sketch the model</strong> — assumptions and key equations (the technical half; algebra woven into prose, not labor-by-labor).</li><li><strong>Consequences</strong> — what the model implies: comparative statics, steady-state predictions, BGP behavior.</li><li><strong>Intuition / main points</strong> — the <em>economic story</em>. Include a diagram if applicable. This is the differentiator between 4/6 and 6/6.</li></ol></div></div>
+<div class="section" id="sec-m1-basic-solow"><div class="section-header"><span class="section-num">§ 01</span><h2>M1 — Basic Solow</h2><span class="section-tag">module 1</span></div><div class="pitch"><strong>What the model is for.</strong> Explain cross-country income dispersion via capital accumulation alone, taking technology as given. Predicts levels of $y^*$, not long-run growth rates. The foundation everything else extends.</div><div class="slide-group cols-2"><div class="slide-block"><img src="../../Material/modules/module 1/Lecture 1c.pages/p023.png" alt="Lecture 1c p23 — CONCLUSIONS BASED ON THE BASIC SOLOW MODEL (Cozzi's own answer skeleton)"><div class="slide-caption">Lecture 1c p23 — CONCLUSIONS BASED ON THE BASIC SOLOW MODEL (Cozzi's own answer skeleton)</div></div><div class="slide-block"><img src="../../Material/modules/module 1/Lecture 1c.pages/p021.png" alt="Lecture 1c p21 — Modified Solow diagram: $sBk^\alpha$ vs $(n+\delta)k$, intersection at $k^*$"><div class="slide-caption">Lecture 1c p21 — Modified Solow diagram: $sBk^\alpha$ vs $(n+\delta)k$, intersection at $k^*$</div></div></div><div class="skeleton"><div class="skeleton-title">Steady-state $k^*$</div><div class="skeleton-step"><span class="step-num">(1)</span><span class="step-math">$sBk^\alpha = (n+\delta)k$</span><span class="step-why">set $\Delta k = 0$</span></div><div class="skeleton-step"><span class="step-num">(2)</span><span class="step-math">$sBk^{\alpha-1} = n+\delta$</span><span class="step-why">divide by $k$</span></div><div class="skeleton-step"><span class="step-num">(3)</span><span class="step-math">$k^{1-\alpha} = sB/(n+\delta)$</span><span class="step-why">invert exponent (sign flip)</span></div><div class="skeleton-step"><span class="step-num">(4)</span><span class="step-math">$k^* = \left(sB/(n+\delta)\right)^{1/(1-\alpha)}$</span><span class="step-why">raise to $1/(1-\alpha)$</span></div></div><div class="key-result"><strong>Result.</strong> $k^* = (sB/(n+\delta))^{1/(1-\alpha)}$, $y^* = B^{1/(1-\alpha)}(s/(n+\delta))^{\alpha/(1-\alpha)}$</div><div class="key-result"><strong>Result.</strong> $r^* = \alpha(n+\delta)/s$ — independent of $B$</div><div class="key-result"><strong>Result.</strong> $s^{**} = \alpha$ is the Golden Rule saving rate (maximizes steady-state consumption per worker)</div><div class="key-result"><strong>Result.</strong> Convergence speed: $\lambda = (1-\alpha)(n+\delta) \approx 5\text{-}6\%$/year (basic Solow with $\alpha=1/3$, $n+\delta=0.06$)</div><div class="mock-answer"><div class="mock-answer-title">Mock answer (Cozzi tone)</div><p><em>Introduction.</em> The basic Solow model explains differences in income levels across countries through a parsimonious account of capital accumulation, taking technology as exogenously given. Its central insight is that an economy converges to a steady state determined by structural parameters — saving rate, population growth, depreciation — rather than by initial conditions.</p><p><em>Sketch.</em> Let production be Cobb-Douglas, $Y_t = BK_t^\alpha L_t^{1-\alpha}$, with constant returns to scale and competitive factor markets. Capital evolves according to $K_{t+1} = sY_t + (1-\delta)K_t$, and labor grows at rate $n$. Substituting into per-worker variables gives the Solow equation $\Delta k_t \approx sBk_t^\alpha - (n+\delta)k_t$, where actual investment per worker $sBk_t^\alpha$ must equal break-even investment $(n+\delta)k_t$ at the steady state.</p><p><em>Consequences.</em> Setting $\Delta k = 0$ gives $k^* = (sB/(n+\delta))^{1/(1-\alpha)}$ and $y^* = B^{1/(1-\alpha)}(s/(n+\delta))^{\alpha/(1-\alpha)}$. Long-run growth of $y$ is zero — the model predicts levels, not growth rates. The steady-state rental rate $r^* = \alpha(n+\delta)/s$ is independent of $B$, a quantitatively sharp prediction. Convergence to $k^*$ is monotonic from any positive initial $k_0$, driven by diminishing returns to capital.</p><p><em>Intuition.</em> What this tells us is that high-saving, low-fertility countries should be richer at the steady state, and convergence is <em>conditional</em> on parameters — not absolute. Empirically, the model gets the direction right (richer countries do save more, have lower $n$) but it underpredicts the magnitude of cross-country dispersion of $y^*$, and it predicts a convergence speed near 5-6% per year when the data show closer to 2%. These two empirical failures — the rate-of-convergence puzzle and the investment-rate-effect puzzle — are what motivates the human-capital augmentation of Mankiw, Romer, and Weil (1992).</p></div><div class="pitfalls"><div class="pitfalls-title">Quick pitfalls</div><ul><li>$r^*$ is independent of $B$, not $\alpha$ — easy to confuse under time pressure.</li><li>Basic Solow predicts <em>zero</em> per-capita growth at steady state. Don't write that it predicts a positive long-run growth rate.</li></ul></div></div>
+<div class="section" id="sec-m2-general-solow"><div class="section-header"><span class="section-num">§ 02</span><h2>M2 — General Solow w/ Tech Progress</h2><span class="section-tag">module 2</span></div><div class="pitch"><strong>What this extension is for.</strong> Basic Solow predicts zero growth, but the data show persistent positive growth in $y$. Adding labor-augmenting technological progress at rate $g$ rescues the model: along the balanced growth path, $k$, $y$, $c$, $w$ all grow at $g$, while $r$ stays constant — matching the Kaldor facts.</div><div class="slide-group cols-2"><div class="slide-block"><img src="../../Material/modules/module 2/Lecture 2b.pages/p029.png" alt="Lecture 2b p29 — CONCLUSIONS, THE GENERAL SOLOW MODEL (4-bullet skeleton)"><div class="slide-caption">Lecture 2b p29 — CONCLUSIONS, THE GENERAL SOLOW MODEL (4-bullet skeleton)</div></div><div class="slide-block"><img src="../../Material/modules/module 2/Lecture 2b.pages/p024.png" alt="Lecture 2b p24 — Empirical convergence regression (65 countries, 1960-2003)"><div class="slide-caption">Lecture 2b p24 — Empirical convergence regression (65 countries, 1960-2003)</div></div></div><div class="skeleton"><div class="skeleton-title">Steady-state $\tilde k^*$ in per-effective-worker form</div><div class="skeleton-step"><span class="step-num">(1)</span><span class="step-math">$Y = K^\alpha (AL)^{1-\alpha}$</span><span class="step-why">labor-augmenting tech specification</span></div><div class="skeleton-step"><span class="step-num">(2)</span><span class="step-math">$\tilde y = \tilde k^\alpha$</span><span class="step-why">divide by $AL$</span></div><div class="skeleton-step"><span class="step-num">(3)</span><span class="step-math">$\Delta \tilde k \approx s\tilde k^\alpha - (n+g+\delta)\tilde k$</span><span class="step-why">effective-worker dilution now includes $g$</span></div><div class="skeleton-step"><span class="step-num">(4)</span><span class="step-math">$\tilde k^* = (s/(n+g+\delta))^{1/(1-\alpha)}$</span><span class="step-why">same algebra as basic Solow with $n+\delta \to n+g+\delta$</span></div></div><div class="key-result"><strong>Result.</strong> Along the BGP, $k_t$, $y_t$, $c_t$, $w_t$ grow at rate $g$; $\tilde k$, $\tilde y$, $r$ are constant.</div><div class="key-result"><strong>Result.</strong> Convergence: $\lambda = (1-\alpha)(n+g+\delta) \approx 5\text{-}6\%$/year (still too fast vs data).</div><div class="key-result"><strong>Result.</strong> Open-economy: $V = K + F$, $\text{CA} = S - I = \dot F$ (current account = net foreign investment).</div><div class="key-result"><strong>Result.</strong> Open-economy stability: $s\bar r < n$ (with $\bar r$ exogenous world rate).</div><div class="mock-answer"><div class="mock-answer-title">Mock answer (Cozzi tone)</div><p><em>Introduction.</em> Basic Solow predicts zero per-capita growth at steady state, which contradicts the most basic stylized fact: per-worker output grows steadily over the long run. The general Solow model rescues this by adding exogenous labor-augmenting technological progress, allowing the economy to settle on a balanced growth path rather than a fixed steady state.</p><p><em>Sketch.</em> Production becomes $Y_t = K_t^\alpha (A_t L_t)^{1-\alpha}$, with $A_{t+1} = (1+g)A_t$. Expressing in per-effective-worker variables $\tilde k = K/(AL)$, the law of motion is $\Delta \tilde k \approx s\tilde k^\alpha - (n+g+\delta)\tilde k$, structurally identical to basic Solow with the augmented dilution term $n+g+\delta$. Solving gives $\tilde k^* = (s/(n+g+\delta))^{1/(1-\alpha)}$.</p><p><em>Consequences.</em> Along the balanced growth path, $\tilde k$ and $\tilde y$ are constant, but $k_t = A_t \tilde k^*$ and $y_t = A_t \tilde y^*$ grow at the rate of technology $g$. The real wage $w_t$ also grows at $g$, while the rental rate $r$ stays constant — exactly the Kaldor facts. Convergence to the BGP is governed by $\lambda = (1-\alpha)(n+g+\delta)$, which with standard calibration gives 5-6% per year. Empirically convergence is observed at roughly 2% per year, so a magnitude problem persists. In the open-economy version, an additional accounting identity $\text{CA} = S - I$ links the current account to the gap between national savings and investment.</p><p><em>Intuition.</em> The general Solow model performs quite well qualitatively: it generates positive per-capita growth, predicts conditional convergence, and matches the Kaldor facts on factor shares and the constancy of $r$. But the empirical problem is one of magnitudes — both the steady-state elasticities of $y^*$ with respect to $s$ and $n+\delta$ are too small, and convergence is too fast. Crucially, the growth rate $g$ is left unexplained: the model takes technology as a black box. This unsatisfying feature is what later motivates the endogenous-growth literature.</p></div><div class="pitfalls"><div class="pitfalls-title">Quick pitfalls</div><ul><li>Use $\tilde k$ (per effective worker) only when labor-augmenting tech is in play. Don't mix with basic-Solow $k$ inside the same derivation.</li><li>$\text{CA} = S - I$ is an <em>identity</em>, not a behavioral equilibrium condition. Don't argue from it as if it were.</li></ul></div></div>
+<div class="section" id="sec-m3-mrw"><div class="section-header"><span class="section-num">§ 03</span><h2>M3 — MRW (Human Capital)</h2><span class="section-tag">module 3</span></div><div class="pitch"><strong>What MRW is for.</strong> A single parameter change — replacing $\alpha$ with $\alpha + \phi$ as the broad-capital exponent — closes the rate-of-convergence puzzle and the investment-rate-effect puzzle <em>simultaneously</em>. The whole point of M3.</div><div class="slide-group cols-2"><div class="slide-block"><img src="../../Material/modules/module 3/Lecture 3a.pages/p031.png" alt="Lecture 3a p31 — CONCLUSIONS MRW (6-bullet skeleton, THE answer template)"><div class="slide-caption">Lecture 3a p31 — CONCLUSIONS MRW (6-bullet skeleton, THE answer template)</div></div><div class="slide-block"><img src="../../Material/modules/module 3/Lecture 3a.pages/p017.png" alt="Lecture 3a p17 — Phase diagram for the Solow model with human capital"><div class="slide-caption">Lecture 3a p17 — Phase diagram for the Solow model with human capital</div></div></div><div class="skeleton"><div class="skeleton-title">Steady-state $\tilde k^*, \tilde h^*$</div><div class="skeleton-step"><span class="step-num">(1)</span><span class="step-math">$Y = K^\alpha H^\phi (AL)^{1-\alpha-\phi}$</span><span class="step-why">Cobb-Douglas with two accumulable factors</span></div><div class="skeleton-step"><span class="step-num">(2)</span><span class="step-math">$\Delta \tilde k = s_K \tilde k^\alpha \tilde h^\phi - (n+g+\delta)\tilde k$</span><span class="step-why">law of motion for physical capital per effective worker</span></div><div class="skeleton-step"><span class="step-num">(3)</span><span class="step-math">$\Delta \tilde h = s_H \tilde k^\alpha \tilde h^\phi - (n+g+\delta)\tilde h$</span><span class="step-why">symmetric law for human capital</span></div><div class="skeleton-step"><span class="step-num">(4)</span><span class="step-math">$\tilde k^* = \left(s_K^{1-\phi} s_H^\phi / (n+g+\delta)\right)^{1/(1-\alpha-\phi)}$</span><span class="step-why">solve the two-equation system at $\Delta \tilde k = \Delta \tilde h = 0$</span></div></div><div class="key-result"><strong>Result.</strong> $\tilde y^* = (s_K^\alpha s_H^\phi)^{1/(1-\alpha-\phi)} / (n+g+\delta)^{(\alpha+\phi)/(1-\alpha-\phi)}$</div><div class="key-result"><strong>Result.</strong> Elasticity of $\tilde y^*$ w.r.t. $s_K$ is $\alpha/(1-\alpha-\phi) \approx 1$ when $\alpha+\phi \approx 0.66$ (vs $\approx 0.5$ in basic Solow)</div><div class="key-result"><strong>Result.</strong> Convergence: $\lambda \approx (1-\alpha-\phi)(n+g+\delta) \approx 2\%$/year — matches data</div><div class="key-result"><strong>Result.</strong> Golden Rule: $s_K^{**} = \alpha$, $s_H^{**} = \phi$</div><div class="key-result"><strong>Result.</strong> Empirical fit: $R^2$ rises from 0.63 (basic Solow) to 0.79 (MRW); slope estimates 0.59 and 0.93</div><div class="mock-answer"><div class="mock-answer-title">Mock answer (Cozzi tone)</div><p><em>Introduction.</em> Mankiw, Romer, and Weil (1992) propose a brilliant fix to the empirical failures of the basic Solow model. They observe that human capital — embodied in workers via schooling, training, and health — accumulates like physical capital and earns its own factor return. Adding it as a separate accumulable input lets a single parameter change close two empirical puzzles at once.</p><p><em>Sketch.</em> Production becomes $Y = K^\alpha H^\phi (AL)^{1-\alpha-\phi}$ with $\alpha + \phi + (1-\alpha-\phi) = 1$, preserving constant returns to scale across the three factors. Two separate saving rates govern the accumulation of $K$ and $H$, giving the coupled law of motion $\Delta \tilde k = s_K \tilde k^\alpha \tilde h^\phi - (n+g+\delta)\tilde k$ and a symmetric equation for $\tilde h$. There is no simple diagrammatic argument for convergence in this two-variable system; one must rely on a phase-plane argument or numerical simulation. Steady-state $\tilde k^*$ and $\tilde h^*$ are obtained by setting both changes to zero and solving the resulting system.</p><p><em>Consequences.</em> The crucial result is that the broad-capital exponent $\alpha + \phi$ now controls both the steady-state elasticities and the rate of convergence. Empirically MRW estimate $\alpha + \phi \approx 0.66$, which simultaneously raises the elasticity of $\tilde y^*$ with respect to $s_K$ to roughly 1 (matching the cross-country regression slope) and lowers the predicted convergence speed to $\lambda \approx (1-\alpha-\phi)(n+g+\delta) \approx 2\%$ per year — matching the data. The Golden Rule extends naturally: $s_K^{**} = \alpha$, $s_H^{**} = \phi$.</p><p><em>Intuition.</em> The deep insight is that the same parameter $1 - \alpha - \phi$ wears two hats — it controls the elasticity of $\tilde y^*$ to investment <em>and</em> the speed of convergence. By making accumulable capital broader (adding $H$), MRW reduce $1 - \alpha - \phi$ from $\approx 0.67$ to $\approx 0.34$, which scales both empirical predictions toward the observed magnitudes. It is reassuring to find that one structural modification fixes both puzzles. What remains unexplained is why countries have such different saving rates $s_K, s_H$ — and why technology still grows exogenously. These open questions motivate Module 4.</p></div><div class="pitfalls"><div class="pitfalls-title">Quick pitfalls</div><ul><li>$\phi$ here is the human-capital exponent in MRW, <em>not</em> a CES parameter or any other Greek-letter reuse.</li><li>The full system is two-dimensional in $(\tilde k, \tilde h)$; you cannot draw a single-line Solow diagram. Use a phase diagram if asked for a graphical argument.</li></ul></div></div>
+<div class="section" id="sec-m3-land-oil"><div class="section-header"><span class="section-num">§ 04</span><h2>M3 — Solow with Land & Oil</h2><span class="section-tag">module 3</span></div><div class="pitch"><strong>What this extension is for.</strong> Introduce <em>non-reproducible</em> factors (fixed land $X$ and a depleting stock of oil $R$) to revisit classical pessimism. Growth becomes a tug-of-war between technology pushing $y$ up and population dilution + depletion pulling it down.</div><div class="slide-group cols-2"><div class="slide-block"><img src="../../Material/modules/module 3/Lecture 3b.pages/p023.png" alt="Lecture 3b p23 — CONCLUSION (3-bullet summing-up: growth optimism / pessimism / conditional)"><div class="slide-caption">Lecture 3b p23 — CONCLUSION (3-bullet summing-up: growth optimism / pessimism / conditional)</div></div><div class="slide-block"><img src="../../Material/modules/module 3/Lecture 3b.pages/p020.png" alt="Lecture 3b p20 — Growth rate under balanced growth (the three-drag formula)"><div class="slide-caption">Lecture 3b p20 — Growth rate under balanced growth (the three-drag formula)</div></div></div><div class="skeleton"><div class="skeleton-title">Steady-state growth rate $g^y$ under BGP</div><div class="skeleton-step"><span class="step-num">(1)</span><span class="step-math">$Y_t = K_t^\alpha (A_t L_t)^\beta X^\kappa E_t^\varepsilon$</span><span class="step-why">with $\alpha + \beta + \kappa + \varepsilon = 1$</span></div><div class="skeleton-step"><span class="step-num">(2)</span><span class="step-math">$R_{t+1} = (1-s_E) R_t$, $E_t = s_E R_t$</span><span class="step-why">oil depletes geometrically</span></div><div class="skeleton-step"><span class="step-num">(3)</span><span class="step-math">Take logs, differentiate, impose BGP</span><span class="step-why">linearize around the balanced growth path</span></div><div class="skeleton-step"><span class="step-num">(4)</span><span class="step-math">$g^y = \dfrac{\beta g - (\kappa + \varepsilon)(n + s_E)}{\beta + \kappa + \varepsilon}$ (modulo simplification)</span><span class="step-why">three drags vs technology push</span></div></div><div class="key-result"><strong>Result.</strong> $g^y$ numerator: $\beta g$ (technology push) vs $(\kappa + \varepsilon)(n + s_E)$ (dilution + depletion drags)</div><div class="key-result"><strong>Result.</strong> Classical (Malthusian) case: drags dominate, $g^y < 0$ — long-run per-capita decline</div><div class="key-result"><strong>Result.</strong> Modern case: technology dominates, $g^y > 0$ — growth despite finite resources</div><div class="key-result"><strong>Result.</strong> Cozzi's calibration (p21): $\alpha=0.2$, $\beta=0.6$, $\kappa=\varepsilon=0.1$, $s_E=0.005$, $n=0.01$, $g=0.02$ $\Rightarrow g^y \approx 1.5\%$/year</div><div class="mock-answer"><div class="mock-answer-title">Mock answer (Cozzi tone)</div><p><em>Introduction.</em> The Solow model with land and natural resources revisits the classical Malthusian worry that finite resources must eventually constrain economic growth. By distinguishing reproducible inputs (capital) from non-reproducible ones (fixed land, depleting oil), the model lets us derive precisely when technology dominates the resource drag and when it does not.</p><p><em>Sketch.</em> Aggregate output is $Y_t = K_t^\alpha (A_t L_t)^\beta X^\kappa E_t^\varepsilon$ with the exponents summing to one, ensuring constant returns across all four inputs. Land $X$ is fixed; oil reserves $R_t$ deplete at extraction rate $s_E$, so $R_{t+1} = (1-s_E)R_t$ and current extraction is $E_t = s_E R_t$. Labor-augmenting technology grows at rate $g$ as before. The state variables are $K_t, A_t, L_t, R_t$, and the system can be reduced to a transition curve in $z = K/Y$.</p><p><em>Consequences.</em> Linearizing around the balanced growth path yields the steady-state growth rate $g^y = (\beta g - (\kappa+\varepsilon)(n+s_E))/(\beta+\kappa+\varepsilon)$. The numerator captures the central tug-of-war: technology growth scaled by labor's share $\beta$ pushes per-capita output up; population dilution of fixed land and oil depletion both push it down. Cozzi's calibration with $\beta=0.6$, $\kappa=\varepsilon=0.1$, $g=2\%$, $n=1\%$, $s_E=0.5\%$ delivers $g^y \approx 1.5\%$ per year — modest but positive.</p><p><em>Intuition.</em> The interesting result is that whether long-run per-capita growth is positive or negative depends entirely on a parametric race. In the classical case — low $g$, high $n$, high extraction $s_E$ — drags dominate and we recover Malthusian decline. In the modern case — high tech progress, low population growth, slow extraction — growth wins and per-capita output rises steadily despite finite resources. The model is reassuring for Western economies with declining population and rapid technology, but offers no guarantee for high-fertility, resource-dependent economies. To simulate, iterate the four state variables $K, A, L, R$ period by period, compute $Y$, $y$, $c$ at each step, and plot the resulting paths over $T = 100$ periods.</p></div><div class="pitfalls"><div class="pitfalls-title">Quick pitfalls</div><ul><li>The exponents must sum to 1 to preserve constant returns. If you drop one factor, redistribute its weight; don't change the production-function structure.</li><li>Oil depletion enters <em>twice</em> in $g^y$: directly via $\varepsilon s_E$ and indirectly via population dilution of the oil stock ($\varepsilon n$).</li></ul></div></div>
+<div class="section" id="sec-m4-endogenous"><div class="section-header"><span class="section-num">§ 05</span><h2>M4 — Endogenous Growth (Externalities + R&D)</h2><span class="section-tag">module 4</span></div><div class="pitch"><strong>What this module is for.</strong> Endogenize the growth rate of technology. Two flavors: productive externalities (Romer 1986 — knowledge as a by-product of capital accumulation) and explicit R&D (Romer 1990 — researchers produce ideas). Both deliver sustained growth without exogenous $g$.</div><div class="slide-group cols-2"><div class="slide-block"><img src="../../Material/modules/module 4/Lecture 4a.pages/p027.png" alt="Lecture 4a p27 — CONCLUSIONS (semi-endogenous vs truly-endogenous trade-off)"><div class="slide-caption">Lecture 4a p27 — CONCLUSIONS (semi-endogenous vs truly-endogenous trade-off)</div></div><div class="slide-block"><img src="../../Material/modules/module 4/Lecture 4b.pages/p013.png" alt="Lecture 4b p13 — THE COMPLETE MODEL (R&D Romer macromodel equations)"><div class="slide-caption">Lecture 4b p13 — THE COMPLETE MODEL (R&D Romer macromodel equations)</div></div></div><div class="skeleton"><div class="skeleton-title">R&D Romer model core equations</div><div class="skeleton-step"><span class="step-num">(1)</span><span class="step-math">$Y = K^\alpha (A L_Y)^{1-\alpha}$</span><span class="step-why">production with labor in goods sector $L_Y$</span></div><div class="skeleton-step"><span class="step-num">(2)</span><span class="step-math">$\Delta A = \lambda L_A^\phi A^\theta$</span><span class="step-why">ideas production; researchers $L_A$, parameters $\lambda, \phi, \theta$</span></div><div class="skeleton-step"><span class="step-num">(3)</span><span class="step-math">$L_Y + L_A = L$, $K_{t+1} = sY_t + (1-\delta)K_t$</span><span class="step-why">labor allocation + capital accumulation</span></div><div class="skeleton-step"><span class="step-num">(4)</span><span class="step-math">BGP: $g_A = \lambda L_A^\phi A^{\theta-1}$</span><span class="step-why">growth of technology depends on researcher scale and idea-stock externality</span></div></div><div class="key-result"><strong>Result.</strong> <strong>Semi-endogenous</strong> ($\theta < 1$): $g_A = \lambda n / (1 - \theta)$ — growth scales with <em>population growth</em>, not levels. Policy raises levels but not long-run growth.</div><div class="key-result"><strong>Result.</strong> <strong>Truly endogenous</strong> ($\theta = 1$): $g_A = \lambda L_A$ — growth scales with research <em>levels</em>. Predicts scale effect (large countries grow faster), empirically false.</div><div class="key-result"><strong>Result.</strong> <strong>Externality version</strong> (Romer 1986): $A_t = K_t^\eta$, growth depends on aggregate $K$ accumulation via spillover.</div><div class="key-result"><strong>Result.</strong> Scale-effect critique (Jones 1995): the truly-endogenous prediction is testable, and the data reject it.</div><div class="mock-answer"><div class="mock-answer-title">Mock answer (Cozzi tone)</div><p><em>Introduction.</em> The endogenous-growth literature endogenizes the rate of technological progress that the Solow model takes as exogenous. Two distinct mechanisms emerged: knowledge as an externality of capital accumulation (Romer 1986), and an explicit research sector that produces ideas (Romer 1990). Both predict that economic policy can affect long-run growth, not merely income levels.</p><p><em>Sketch.</em> In the R&D version, output is $Y = K^\alpha (AL_Y)^{1-\alpha}$, where $L_Y$ is labor in the goods sector. A separate ideas-production technology $\Delta A = \lambda L_A^\phi A^\theta$ converts researcher labor $L_A$ into new ideas, with $\phi \le 1$ capturing duplication ("stepping on toes") and $\theta$ capturing the idea-stock externality ("standing on shoulders"). The total labor constraint is $L_Y + L_A = L$. Combined with standard capital accumulation $K_{t+1} = sY_t + (1-\delta)K_t$, this gives a complete general-equilibrium system.</p><p><em>Consequences.</em> On the balanced growth path, the growth rate of technology is $g_A = \lambda L_A^\phi A^{\theta-1}$, which differs sharply between two regimes. In the truly-endogenous case $\theta = 1$, growth is $g_A = \lambda L_A$ — proportional to the number of researchers in levels. This predicts a scale effect: larger economies should grow faster. In the semi-endogenous case $\theta < 1$, $g_A = \lambda n / (1-\theta)$ — growth scales with population <em>growth</em>, not population levels. Policy in this regime affects the level of the BGP path but not its slope.</p><p><em>Intuition.</em> The economic story behind these models is the non-rivalry of ideas: once an idea exists, it can be used by everyone simultaneously, generating increasing returns at the social level. This mechanism naturally produces sustained growth without exogenous technology. The empirical scale effect, however, is sharply rejected by the data — large countries (China, India) do not grow systematically faster than small ones (Switzerland, Singapore). This empirical failure is the central motivation for the no-scale-effect refinements of Module 5.</p></div><div class="pitfalls"><div class="pitfalls-title">Quick pitfalls</div><ul><li>Two different $\phi$ conventions exist: the duplication parameter in R&D ($\phi \le 1$) is distinct from MRW's human-capital exponent. Cozzi uses both; track which you're in.</li><li>The truly-endogenous scale effect is the model's <em>prediction</em>, and the empirical failure of that prediction is the <em>critique</em>. Don't conflate.</li></ul></div></div>
+<div class="section" id="sec-m5-no-scale-cozzi"><div class="section-header"><span class="section-num">§ 06</span><h2>M5 — No-Scale Endogenous + Cozzi (2017) Hybrid</h2><span class="section-tag">module 5</span></div><div class="pitch"><strong>What M5 is for.</strong> Fix the empirically failing scale effect from M4. Three competing solutions: Jones (1995) semi-endogenous, Howitt-Peretto-Young truly endogenous via product variety, and Cozzi (2017) hybrid combining both with a threshold. <em>Q3 of two past exams is exactly Cozzi's hybrid.</em></div><div class="slide-group cols-3"><div class="slide-block"><img src="../../Material/modules/module 5/Lecture 5b.pages/p017.png" alt="Lecture 5b p17 — Summing Up Cozzi (2017) I"><div class="slide-caption">Lecture 5b p17 — Summing Up Cozzi (2017) I</div></div><div class="slide-block"><img src="../../Material/modules/module 5/Lecture 5b.pages/p018.png" alt="Lecture 5b p18 — Summing Up Cozzi (2017) II — policy implication + Lisbon example"><div class="slide-caption">Lecture 5b p18 — Summing Up Cozzi (2017) II — policy implication + Lisbon example</div></div><div class="slide-block"><img src="../../Material/modules/module 5/Lecture 5b.pages/p019.png" alt="Lecture 5b p19 — Summing Up Cozzi (2017) III — historical narrative"><div class="slide-caption">Lecture 5b p19 — Summing Up Cozzi (2017) III — historical narrative</div></div></div><div class="skeleton"><div class="skeleton-title">Cozzi hybrid threshold $\bar n$</div><div class="skeleton-step"><span class="step-num">(1)</span><span class="step-math">Two engines: vertical R&D (quality) + horizontal R&D (variety)</span><span class="step-why">shared researcher pool $L_A$</span></div><div class="skeleton-step"><span class="step-num">(2)</span><span class="step-math">Variety expansion neutralizes the scale effect</span><span class="step-why">à la Howitt/Peretto/Young</span></div><div class="skeleton-step"><span class="step-num">(3)</span><span class="step-math">Critical threshold $\bar n$: regime switches at $n = \bar n$</span><span class="step-why">below $\bar n$ truly endogenous, above semi-endogenous</span></div><div class="skeleton-step"><span class="step-num">(4)</span><span class="step-math">Policy parameter $s_R$ affects $\bar n$ itself</span><span class="step-why">shifting R&D portfolio shifts the threshold</span></div></div><div class="key-result"><strong>Result.</strong> <strong>For $n < \bar n$</strong>: growth is <em>truly endogenous</em>, scale-free, depends on R&D policy parameters (subsidies, IP).</div><div class="key-result"><strong>Result.</strong> <strong>For $n > \bar n$</strong>: growth is <em>semi-endogenous</em>, scales with $n$ à la Jones.</div><div class="key-result"><strong>Result.</strong> <strong>Policy can shift $\bar n$</strong>: by reallocating $L_A$ between vertical and horizontal R&D via differential subsidies. <em>"Policy could make policy itself more effective for growth!"</em></div><div class="key-result"><strong>Result.</strong> Lisbon Strategy example: raising $s_R$ from 1% to 3% shifts $\bar n$ from 0.44% to 1.18% (Lecture 5b p18).</div><div class="mock-answer"><div class="mock-answer-title">Mock answer (Cozzi tone)</div><p><em>Introduction.</em> Cozzi (2017) builds a hybrid R&D growth model that combines two previously rival mechanisms: the semi-endogenous engine of Jones (1995), where growth scales with population, and the truly-endogenous engine of Howitt-Peretto-Young, where horizontal variety expansion eliminates the scale effect. The paper shows that the two engines can coexist within a single R&D sector, generating a threshold-driven regime structure where one engine dominates depending on parameter values.</p><p><em>Sketch.</em> The model has two complementary R&D activities — vertical (improving the quality of existing varieties) and horizontal (introducing new varieties) — competing for the same researcher pool $L_A$. The allocation between them is endogenous and responds to relative profitability. With population growing at rate $n$, the model produces a critical threshold $\bar n$ at which the active growth engine switches. Cozzi derives the closed form of $\bar n$ from the equilibrium R&D allocation condition.</p><p><em>Consequences.</em> For $n < \bar n$, the truly-endogenous engine dominates: growth is scale-free and depends on policy parameters such as the R&D subsidy rate $s_R$. For $n > \bar n$, the semi-endogenous engine takes over and growth scales with $n$ à la Jones; policy raises levels but not growth. Crucially, $\bar n$ itself depends on $s_R$ and on the R&D-portfolio split: raising the R&D subsidy from 1% to 3% shifts $\bar n$ from 0.44% to 1.18%, potentially moving an economy from one regime to the other.</p><p><em>Intuition.</em> The signature policy implication is that <em>policy can make policy itself more effective for growth</em>. In a world where conventional wisdom following Jones says "R&D subsidies only raise levels, not growth rates", Cozzi's hybrid says: a subsidy that tilts the R&D portfolio toward variety expansion enough to cross the threshold can move the economy into a regime where further subsidies do raise growth. This makes the <em>composition</em> of R&D policy — and not only its size — a central choice for governments aiming to lift long-run growth. Historically, Cozzi (p19) reads the demographic transition through this lens: Malthusian regime, then industrial-revolution semi-endogenous regime, then post-transition truly-endogenous regime as fertility fell below $\bar n$.</p></div><div class="pitfalls"><div class="pitfalls-title">Quick pitfalls</div><ul><li>$s_R$ here is the R&D subsidy / research share — <em>not</em> the saving rate $s$.</li><li>The threshold $\bar n$ is endogenous to policy. Don't treat it as fixed when discussing policy implications.</li></ul></div></div>
+<div class="section" id="sec-m6-efficiency-wages"><div class="section-header"><span class="section-num">§ 07</span><h2>M6 — Efficiency Wages</h2><span class="section-tag">module 6</span></div><div class="pitch"><strong>What this module is for.</strong> Explain why involuntary unemployment exists in long-run equilibrium. Firms set wages above market-clearing to elicit effort, employment adjusts to the resulting wage, and unemployment is structural — not a friction.</div><div class="slide-group cols-2"><div class="slide-block"><img src="../../Material/modules/module 6/Lecture6b.pages/p005.png" alt="Lecture6b p5 — derivation: $w \cdot a'(w)/a(w) = 1$ (the famous Solow condition)"><div class="slide-caption">Lecture6b p5 — derivation: $w \cdot a'(w)/a(w) = 1$ (the famous Solow condition)</div></div><div class="slide-block"><img src="../../Material/modules/module 6/Lecture6b.pages/p011.png" alt="Lecture6b p11 — MODEL IMPLICATIONS (6-bullet skeleton)"><div class="slide-caption">Lecture6b p11 — MODEL IMPLICATIONS (6-bullet skeleton)</div></div></div><div class="skeleton"><div class="skeleton-title">Derivation of the Solow conditions</div><div class="skeleton-step"><span class="step-num">(1)</span><span class="step-math">$Y = F(K, a(w)L)$ with $a'(w) > 0$, $a''(w) < 0$</span><span class="step-why">effort $a(w)$ increasing concave in wage</span></div><div class="skeleton-step"><span class="step-num">(2)</span><span class="step-math">Firm minimizes cost per efficiency unit: $\min_w w/a(w)$</span><span class="step-why">effective wage per unit of labor input</span></div><div class="skeleton-step"><span class="step-num">(3)</span><span class="step-math">FOC: $a(w) - w a'(w) = 0 \;\Rightarrow\; w a'(w)/a(w) = 1$</span><span class="step-why">elasticity of effort wrt wage equals 1</span></div><div class="skeleton-step"><span class="step-num">(4)</span><span class="step-math">Employment FOC: $F_L(K, a(w^*)L^*) = w^*$</span><span class="step-why">marginal product of effective labor equals real wage</span></div></div><div class="key-result"><strong>Result.</strong> <strong>First Solow condition</strong>: $a'(w^*) w^* / a(w^*) = 1$ — elasticity of effort wrt wage equals 1 at the optimum.</div><div class="key-result"><strong>Result.</strong> <strong>Second Solow condition</strong>: $F_L(K, a(w^*) L^*) = w^*$ — marginal product of effective labor equals the real wage.</div><div class="key-result"><strong>Result.</strong> <strong>Wage rigidity</strong>: $w^*$ is determined by the shape of $a(\cdot)$, NOT by the supply and demand for labor.</div><div class="key-result"><strong>Result.</strong> <strong>Equilibrium unemployment</strong>: labor market does not clear at $w^*$; $u > 0$ is structural and persistent.</div><div class="mock-answer"><div class="mock-answer-title">Mock answer (Cozzi tone)</div><p><em>Introduction.</em> The efficiency-wage model explains why structural unemployment can persist in long-run equilibrium even with fully flexible wages. The key idea is that worker effort is not exogenous but responds to the wage paid: firms therefore have an incentive to set wages above the market-clearing level to elicit higher productivity, and the resulting wage rigidity creates involuntary unemployment as an equilibrium outcome.</p><p><em>Sketch.</em> Let production be $Y = F(K, a(w)L)$ where $a(w)$ is the effort function, increasing and concave in the real wage. The firm chooses both the wage $w$ and the employment level $L$ to maximize profits, equivalent to minimizing the cost per efficiency unit $w/a(w)$ over $w$, and then choosing $L$ via the standard marginal-product condition. Taking the first-order condition with respect to $w$ gives $a(w) - w a'(w) = 0$, which rearranges to $w a'(w)/a(w) = 1$ — the famous Solow condition.</p><p><em>Consequences.</em> The first Solow condition states that the elasticity of effort with respect to the wage equals one at the optimum: a 1% wage increase buys exactly 1% more effort. The second Solow condition $F_L = w^*$ then determines optimal employment given $w^*$. The radical consequence is that $w^*$ depends entirely on the shape of $a(\cdot)$ — on worker preferences and the labor-market environment that shapes shirking incentives — and not on the marginal supply and demand for labor. Any worker willing to accept $w^*$ but not hired is involuntarily unemployed, and unemployment persists in long-run equilibrium.</p><p><em>Intuition.</em> Below the optimum $w < w^*$, raising the wage buys effort more than proportionally (elasticity $> 1$) — the firm gets cheaper effective labor and so wants to raise $w$. Above the optimum, the elasticity is less than 1 and the firm wants to cut $w$. The fixed point is exactly where the two pressures balance. The model implies that unemployment is structural rather than frictional: wage cuts by unemployed workers would not clear the market because firms internally prefer $w^*$. Comparative statics follow easily: a rise in unemployment benefits $b$ shifts the no-shirking constraint up, raising $w^*$ and reducing employment; increased product-market competition compresses firm profits and tightens the effort-wage trade-off, with effects on $u$ that depend on the specific functional form of $a(\cdot)$.</p></div><div class="pitfalls"><div class="pitfalls-title">Quick pitfalls</div><ul><li>The Solow condition is about <em>effort elasticity</em>, not about wage levels. The $w^*$ that emerges is whatever wage satisfies elasticity = 1.</li><li>Be precise about which Solow: the condition $w a'(w)/a(w) = 1$ is the first Solow condition; $F_L = w^*$ is the second. Cozzi treats both as a pair.</li></ul></div></div>
+<div class="section" id="sec-cross-convergence"><div class="section-header"><span class="section-num">§ 08</span><h2>Cross-cutting — Convergence Speeds Compared</h2><span class="section-tag">comparison</span></div><div class="pitch"><strong>The same algebra, three exponents.</strong> The convergence-speed formula has the same shape across Solow-family models — only the exponent on accumulable capital changes. This is the single most important cross-model connection.</div><table class="ref"><thead><tr><th>Model</th><th>Convergence speed $\lambda$</th><th>Calibration ($\alpha=1/3$, $n+g+\delta=0.06$)</th><th>Match with data?</th></tr></thead><tbody><tr><td>Basic Solow</td><td>$(1-\alpha)(n+\delta)$</td><td>$\approx 4\%$/year</td><td>too fast (data: 2%)</td></tr><tr><td>General Solow (w/ tech)</td><td>$(1-\alpha)(n+g+\delta)$</td><td>$\approx 4\%$/year</td><td>still too fast</td></tr><tr><td>MRW (w/ human capital, $\alpha+\phi \approx 0.66$)</td><td>$(1-\alpha-\phi)(n+g+\delta)$</td><td>$\approx 2\%$/year</td><td>matches</td></tr></tbody></table><p><strong>Why this matters.</strong> The whole empirical case for MRW is that the same parameter $1 - \alpha - \phi$ controls both convergence speed (which must be small to match data) and the elasticity of $y^*$ with respect to $s$ (which must be large to match cross-country dispersion). Reducing $1 - \alpha - \phi$ from $\approx 0.67$ to $\approx 0.34$ fixes both simultaneously. This is the single most elegant model-empirics connection in the course.</p></div>
+<div class="section" id="sec-cross-golden-rule"><div class="section-header"><span class="section-num">§ 09</span><h2>Cross-cutting — Golden Rule Across Models</h2><span class="section-tag">comparison</span></div><div class="pitch"><strong>The Golden Rule maximizes steady-state consumption per worker.</strong> Across models, the result is the same form: saving rate equals the elasticity of output with respect to the corresponding accumulable factor.</div><table class="ref"><thead><tr><th>Model</th><th>Golden Rule</th><th>Derivation</th></tr></thead><tbody><tr><td>Basic / General Solow</td><td>$s^{**} = \alpha$</td><td>Maximize $c^* = (1-s) y^*(s)$ wrt $s$; FOC gives $\text{MPK} = n + \delta$ (or $n+g+\delta$).</td></tr><tr><td>MRW (human capital)</td><td>$s_K^{**} = \alpha,\; s_H^{**} = \phi$</td><td>Separate FOCs for each saving rate; each equals the corresponding exponent.</td></tr><tr><td>Solow with land/oil</td><td>$s^{**} = \alpha$ (still, for reproducible capital)</td><td>Land and oil are non-reproducible — they enter the consumption-maximization problem only via their fixed/depleting paths.</td></tr></tbody></table><p><strong>Why this matters.</strong> The Golden Rule is one of the few results where extending the model just adds more conditions of the same form — saving rate = exponent. Cozzi loves this kind of structural elegance. Be ready to state $s^{**}$ for any model variant on the exam.</p></div>
+<div class="section" id="sec-cross-rd"><div class="section-header"><span class="section-num">§ 10</span><h2>Cross-cutting — R&D Model Variants</h2><span class="section-tag">comparison</span></div><div class="pitch"><strong>Three R&D growth models, each fixing a flaw in the previous.</strong> Romer 1990 has a scale effect (empirically wrong). Jones 1995 fixes it by reducing the idea-stock externality. Howitt-Peretto-Young + Cozzi hybrid eliminate scale via variety expansion.</div><table class="ref"><thead><tr><th>Model</th><th>Growth rate $g_A$</th><th>Scale effect?</th><th>Policy effective on growth?</th></tr></thead><tbody><tr><td>Romer 1990 (truly endogenous, $\theta = 1$)</td><td>$\lambda L_A$ — scales with researcher levels</td><td>YES (large countries grow faster)</td><td>Yes (raising $L_A$ raises $g$ permanently)</td></tr><tr><td>Jones 1995 (semi-endogenous, $\theta < 1$)</td><td>$\lambda n / (1-\theta)$ — scales with population growth</td><td>No</td><td>No (raising $s_R$ raises levels only)</td></tr><tr><td>Howitt-Peretto-Young (truly endogenous w/o scale)</td><td>Scale-free via product variety expansion</td><td>No</td><td>Yes</td></tr><tr><td>Cozzi 2017 hybrid</td><td>Threshold-dependent: scale-free below $\bar n$, semi-endogenous above</td><td>No</td><td>Yes — and $\bar n$ is itself policy-affectable</td></tr></tbody></table><p><strong>Cozzi's signature observation.</strong> In the Cozzi hybrid, an R&D subsidy can shift the threshold $\bar n$ itself, potentially moving the economy from a semi-endogenous regime (where subsidies don't affect growth) into a truly-endogenous regime (where they do). <em>"Policy makes policy more effective."</em></p></div>
+<div class="section" id="sec-simulation-template"><div class="section-header"><span class="section-num">§ 11</span><h2>Cross-cutting — Simulation Algorithm Template</h2><span class="section-tag">reference</span></div><div class="pitch"><strong>Sketch-the-simulation question appears in 5/5 past exams.</strong> The same algorithm shape works for every Solow-family model. Memorize the skeleton; for any specific model, just fill in the state variables and the production / accumulation rules.</div><div class="skeleton"><div class="skeleton-title">Generic Solow-family simulation algorithm</div><div class="skeleton-step"><span class="step-num">(0)</span><span class="step-math">Set parameters and initial values</span><span class="step-why">$\alpha, n, \delta, s, \ldots$ and $k_0, A_0, R_0, \ldots$</span></div><div class="skeleton-step"><span class="step-num">(1)</span><span class="step-math">For each $t = 0, 1, \ldots, T$:</span><span class="step-why">loop body below</span></div><div class="skeleton-step"><span class="step-num">(a)</span><span class="step-math">Compute $Y_t$ from production fn at current state</span><span class="step-why">$Y_t = F(K_t, L_t, A_t, R_t, \ldots)$</span></div><div class="skeleton-step"><span class="step-num">(b)</span><span class="step-math">Compute derived outputs: $y_t = Y_t/L_t$, $c_t = (1-s)y_t$, growth rates</span><span class="step-why">store for plotting</span></div><div class="skeleton-step"><span class="step-num">(c)</span><span class="step-math">Update state variables</span><span class="step-why">$K_{t+1} = sY_t + (1-\delta)K_t$, $A_{t+1} = (1+g)A_t$, $L_{t+1} = (1+n)L_t$, $R_{t+1} = (1-s_E)R_t$, etc.</span></div><div class="skeleton-step"><span class="step-num">(2)</span><span class="step-math">Plot $y_t$, $c_t$, growth rate $(y_t - y_{t-1})/y_{t-1}$ over $t$</span><span class="step-why">identify steady state / BGP</span></div><div class="skeleton-step"><span class="step-num">(3)</span><span class="step-math">If shock: rerun with new parameters from $t = t_0$</span><span class="step-why">compare pre- and post-shock trajectories</span></div></div><h3 style="font-size:.85rem;color:var(--accent);margin:1.5rem 0 .5rem;letter-spacing:.06em;text-transform:uppercase;">Per-model fill-in</h3><table class="ref"><thead><tr><th>Model</th><th>State variables</th><th>Production</th><th>Key update rule</th></tr></thead><tbody><tr><td>Basic Solow</td><td>$K_t, L_t$</td><td>$Y_t = BK_t^\alpha L_t^{1-\alpha}$</td><td>$K_{t+1} = sY_t + (1-\delta)K_t$</td></tr><tr><td>General Solow w/ tech</td><td>$K_t, L_t, A_t$</td><td>$Y_t = K_t^\alpha (A_t L_t)^{1-\alpha}$</td><td>+ $A_{t+1} = (1+g)A_t$</td></tr><tr><td>MRW</td><td>$K_t, H_t, L_t, A_t$</td><td>$Y_t = K_t^\alpha H_t^\phi (A_t L_t)^{1-\alpha-\phi}$</td><td>+ $H_{t+1} = s_H Y_t + (1-\delta_H)H_t$</td></tr><tr><td>Solow w/ land + oil</td><td>$K_t, L_t, A_t, R_t$</td><td>$Y_t = K_t^\alpha (A_t L_t)^\beta X^\kappa E_t^\varepsilon$, $E_t = s_E R_t$</td><td>+ $R_{t+1} = (1-s_E)R_t$</td></tr><tr><td>R&amp;D Romer</td><td>$K_t, L_t, A_t, L_{A,t}$</td><td>$Y_t = K_t^\alpha (A_t L_{Y,t})^{1-\alpha}$, $L_Y + L_A = L$</td><td>+ $A_{t+1} = A_t + \lambda L_{A,t}^\phi A_t^\theta$</td></tr></tbody></table><p><strong>Plot</strong>: $y_t$, $c_t$, and growth rate. <strong>Sweep</strong>: rerun with a parameter shocked to compare paths. <strong>Tools</strong>: Excel columns or Python loop — pseudocode is fine for the exam, no code needed.</p></div>
+<div class="section" id="sec-empirical-glossary"><div class="section-header"><span class="section-num">§ 12</span><h2>Empirical Numbers & Glossary</h2><span class="section-tag">reference</span></div><div class="pitch"><strong>Numbers and names you must recall.</strong> These don't fall out of derivations — they require direct memorization. Cite them in the empirical-evidence questions for partial credit even if your model derivation is shaky.</div><h3 style="font-size:.85rem;color:var(--accent);margin:1.2rem 0 .5rem;letter-spacing:.06em;text-transform:uppercase;">Numbers to know</h3><table class="ref"><thead><tr><th>Quantity</th><th>Value</th><th>Source / context</th></tr></thead><tbody><tr><td>Capital share $\alpha$</td><td>$\approx 1/3$</td><td>Cross-country labor-share data</td></tr><tr><td>MRW broad-capital exponent $\alpha + \phi$</td><td>$\approx 0.66$</td><td>MRW (1992) regression estimates</td></tr><tr><td>Observed convergence rate</td><td>$\approx 2\%$/year</td><td>Cross-country panel, conditional convergence</td></tr><tr><td>Basic-Solow predicted convergence</td><td>$\approx 5\text{-}6\%$/year</td><td>$(1-\alpha)(n+g+\delta)$ at $\alpha=1/3$</td></tr><tr><td>MRW predicted convergence</td><td>$\approx 2\%$/year</td><td>$(1-\alpha-\phi)(n+g+\delta)$ with $\alpha+\phi=0.66$</td></tr><tr><td>$n + g + \delta$ (calibration)</td><td>$\approx 0.06$</td><td>$n \approx 0.01, g \approx 0.02, \delta \approx 0.03$</td></tr><tr><td>MRW $R^2$ improvement</td><td>$0.63 \to 0.79$</td><td>Adding $H$ to the cross-country regression</td></tr><tr><td>Cozzi Lisbon Strategy example: $\bar n$ shift</td><td>$0.44\% \to 1.18\%$</td><td>Raising $s_R$ from 1% to 3% (Lecture 5b p18)</td></tr></tbody></table><h3 style="font-size:.85rem;color:var(--accent);margin:1.5rem 0 .5rem;letter-spacing:.06em;text-transform:uppercase;">Names and stylized facts</h3><table class="ref"><thead><tr><th>Term</th><th>What it means</th></tr></thead><tbody><tr><td><strong>Kaldor's stylized facts</strong></td><td>Six long-run regularities the basic Solow model is built to match: (1) per-worker output grows roughly steadily; (2) capital per worker grows steadily; (3) capital-output ratio $K/Y$ is roughly constant; (4) real interest rate $r$ shows no trend; (5) labor and capital income shares are roughly constant; (6) growth rates differ substantially across countries.</td></tr><tr><td><strong>Cozzi's seven stylized facts</strong></td><td>Cozzi's M1 numbered list extends Kaldor's. Includes the falling labor share controversy, the rise of intangibles, and cross-country dispersion patterns. See Lecture 1a p19-22.</td></tr><tr><td><strong>Solow residual</strong></td><td>The growth-accounting term: the part of output growth NOT explained by capital and labor inputs. Interpreted as TFP growth, but really a measure of our ignorance.</td></tr><tr><td><strong>Rate-of-convergence puzzle</strong></td><td>Basic Solow predicts $\lambda \approx 5\text{-}6\%$; data show $\approx 2\%$. The mismatch motivates MRW.</td></tr><tr><td><strong>Investment-rate-effect puzzle</strong></td><td>Basic Solow predicts elasticity of $y^*$ to $s$ is $\alpha/(1-\alpha) \approx 0.5$; cross-country data show $\approx 1.5$. Also motivates MRW.</td></tr><tr><td><strong>Absolute convergence</strong></td><td>Hypothesis that all countries converge to the SAME income level. Basic Solow does NOT predict this — only conditional convergence.</td></tr><tr><td><strong>Conditional convergence</strong></td><td>Countries converge to their OWN steady state, which depends on country-specific parameters. Solow's actual prediction.</td></tr><tr><td><strong>Balanced growth path (BGP)</strong></td><td>A trajectory along which all variables grow at constant rates (possibly different from each other) and ratios like $K/Y$ are constant.</td></tr><tr><td><strong>Feldstein-Horioka puzzle</strong></td><td>Empirical regression of national investment on national saving across countries: should be flat in a fully open economy, but slope is close to 1. Used as a measure of capital immobility.</td></tr><tr><td><strong>Euler's theorem (for CRS)</strong></td><td>If $F$ is homogeneous of degree 1, then $F_K K + F_L L = Y$. Combined with competitive factor markets, gives $rK + wL = Y$, i.e. factor payments exhaust output.</td></tr><tr><td><strong>Hicks-neutral vs labor-augmenting tech</strong></td><td>$Y = BK^\alpha L^{1-\alpha}$ (Hicks: $B$ multiplies everything) vs $Y = K^\alpha (AL)^{1-\alpha}$ (labor-augmenting: $A$ multiplies only $L$). Only labor-augmenting is consistent with a Cobb-Douglas BGP under sustained growth.</td></tr><tr><td><strong>Scale effect (in R&amp;D models)</strong></td><td>Prediction that larger economies grow faster (more researchers $\to$ more ideas $\to$ more growth). Empirically false; motivates Jones (1995) and the M5 literature.</td></tr><tr><td><strong>"Standing on shoulders"</strong></td><td>The idea-stock externality in R&amp;D production: $\theta > 0$ in $\Delta A = \lambda L_A^\phi A^\theta$. Previous ideas make new ones easier.</td></tr><tr><td><strong>"Stepping on toes"</strong></td><td>The duplication penalty in R&amp;D: $\phi < 1$ in the same equation. More researchers means more duplication, diminishing marginal returns to $L_A$.</td></tr><tr><td><strong>Non-rivalry of ideas</strong></td><td>Ideas can be used simultaneously by many agents without depletion — the foundation of endogenous growth. Distinguishes ideas from physical capital.</td></tr><tr><td><strong>Golden Rule</strong></td><td>The saving rate that maximizes steady-state consumption per worker. In basic Solow, $s^{**} = \alpha$, equivalent to MPK = $n+\delta$.</td></tr><tr><td><strong>Cozzi 2017 hybrid threshold $\bar n$</strong></td><td>Population-growth threshold separating the truly-endogenous regime (below $\bar n$) from the semi-endogenous regime (above). Policy-affectable via the R&amp;D portfolio split.</td></tr><tr><td><strong>Solow conditions (efficiency wages)</strong></td><td>The pair (1) $w a'(w)/a(w) = 1$ and (2) $F_L = w^*$ that jointly determine the optimal wage and employment level in the efficiency-wage model.</td></tr><tr><td><strong>Structural vs cyclical unemployment</strong></td><td>Structural = long-run, from real wage rigidity (efficiency wages, trade unions, search frictions). Cyclical = short-run, from nominal rigidities. Out of scope (Ch 12+).</td></tr></tbody></table></div>
+<div class="section" id="sec-question-map"><div class="section-header"><span class="section-num">§ 13</span><h2>Past Exam Question Types → Where to Look</h2><span class="section-tag">reference</span></div><div class="pitch"><strong>Quick lookup.</strong> If the exam shows one of these question types, the answer skeleton lives in the listed section above. Match the verb-pair to the relevant module, then expand the skeleton into the 4-part structure.</div><table class="ref"><thead><tr><th>Past exam question type</th><th>Frequency (out of 5)</th><th>Where the answer is</th></tr></thead><tbody><tr><td>"Describe the empirical evidence supporting and contradicting basic Solow"</td><td>3/5</td><td>§01 (M1) + §08 (convergence comparison) + §12 (empirical numbers)</td></tr><tr><td>"Explain Solow with land and natural resources + sketch simulation"</td><td>3/5</td><td>§04 (M3 land/oil) + §11 (simulation template)</td></tr><tr><td>"Explain MRW + sketch numerical simulation"</td><td>2/5</td><td>§03 (MRW) + §11 (simulation template)</td></tr><tr><td>"Derive and discuss policy implications of Cozzi (2017) hybrid"</td><td>2/5</td><td>§06 (M5 + Cozzi) + §10 (R&amp;D variants)</td></tr><tr><td>"Derive the Solow conditions of efficiency wages + intuition"</td><td>1/5</td><td>§07 (M6)</td></tr><tr><td>"What are the causes of structural unemployment?"</td><td>1/5</td><td>§07 (M6 intro paragraph + Lecture 6a p7-8 PNGs)</td></tr><tr><td>"How would efficiency-wage unemployment respond to $b$ / firm competition?"</td><td>1/5</td><td>§07 (M6 intuition paragraph)</td></tr><tr><td>"State main Romer equations + economic explanation"</td><td>2/5</td><td>§05 (M4) + §10 (R&amp;D variants)</td></tr><tr><td>"Empirical evidence for general Solow w/ tech / convergence to BGP"</td><td>2/5</td><td>§02 (M2) + §08 (convergence comparison)</td></tr><tr><td>"Endogenous vs semi-endogenous growth — economic difference"</td><td>1/5</td><td>§10 (R&amp;D variants table) + §06 (M5 intro)</td></tr><tr><td>"Shock + simulate: BGP economy, parameter changes, what happens?"</td><td>2/5</td><td>§04 (M3) or §02 (M2) for the model + §11 (simulation template)</td></tr><tr><td>"Describe analytically and graphically the transition equation"</td><td>2/5</td><td>§01, §02, §03 model sections (use embedded slide PNGs for the phase / transition diagram)</td></tr></tbody></table><p><strong>Final reminder.</strong> Whatever the question, structure the answer in four parts: (1) introduction, (2) sketch the model, (3) consequences, (4) intuition. Include a diagram where the question asks for one or where it would illuminate the consequences. Memorize the Cozzi <em>Summing Up</em> bullets from the slide PNGs above — they ARE the answer skeleton.</p></div>
+</main>
+</div>
+<script>
+renderMathInElement(document.body,{delimiters:[
+  {left:"$$",right:"$$",display:true},
+  {left:"$",right:"$",display:false},
+  {left:"\\(",right:"\\)",display:false},
+  {left:"\\[",right:"\\]",display:true}
+]});
+const obs=new IntersectionObserver(entries=>{entries.forEach(e=>{if(e.isIntersecting){document.querySelectorAll("nav a").forEach(a=>a.classList.remove("active"));const a=document.querySelector(`nav a[href="#${e.target.id}"]`);if(a)a.classList.add("active")}})},{threshold:0.3});
+document.querySelectorAll(".section").forEach(s=>obs.observe(s));
+</script>
+</body>
+</html>

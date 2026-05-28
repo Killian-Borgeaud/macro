@@ -43,7 +43,7 @@ Each module folder follows the same pattern:
 
 ## Mock exam
 
-`../mock exam/Mock_Exam-1.pdf` — four equally-weighted (25% each) essay questions covering: (1) empirical evidence on basic Solow (Module 1), (2) Solow with land and natural resources plus numerical simulation (Module 3, Ch 7), (3) Cozzi (2017) hybrid model and its policy implications (Module 5), (4) Solow conditions of the efficiency wages model (Module 6, Ch 11). Detailed style/format analysis will live in `EXAM_PROFILE.md` at workspace root (Step 4 deliverable, not yet written).
+`../mock exam/Exam compilation.pdf` — five past exams (2019, 2020, 2023, plus 2 undated). Every exam: 4 essay questions, 25% each, terse declarative prompts, technical + interpretive two-component pattern. Topic distribution across the 5 exams is broader than any single year: M1, M3, M4, M6 each appear in ≥3 exams; M2 in 2; M5 (Cozzi hybrid) only in 2019/2020. Detailed style/format analysis in `docs/EXAM_PROFILE.md`.
 
 ## Broken math
 

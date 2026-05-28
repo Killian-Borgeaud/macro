@@ -133,77 +133,189 @@
       "module": 3,
       "name": "MRW production function Y = K^α H^φ (AL)^(1-α-φ); per-effective-worker form",
       "level": "practiced",
-      "last_touched": "2026-05-27"
+      "last_touched": "2026-05-28"
     },
     {
       "id": "m3-mrw-transition-and-phase",
       "module": 3,
       "name": "MRW transition equations, Solow equations, phase diagram in (k̃, h̃)",
       "level": "practiced",
-      "last_touched": "2026-05-27"
+      "last_touched": "2026-05-28"
     },
     {
       "id": "m3-mrw-steady-state-elasticities",
       "module": 3,
       "name": "MRW steady state k̃*, h̃*, ỹ* and elasticities (~1 wrt s, ~-2 wrt n+g+δ)",
       "level": "practiced",
-      "last_touched": "2026-05-27"
+      "last_touched": "2026-05-28"
     },
     {
       "id": "m3-mrw-golden-rule",
       "module": 3,
       "name": "MRW golden rule s_K = α, s_H = φ",
       "level": "practiced",
-      "last_touched": "2026-05-27"
+      "last_touched": "2026-05-28"
     },
     {
       "id": "m3-mrw-empirical-fit",
       "module": 3,
       "name": "MRW cross-country regression: R² 0.63 → 0.79, slope estimates 0.59 and 0.93",
       "level": "practiced",
-      "last_touched": "2026-05-27"
+      "last_touched": "2026-05-28"
     },
     {
       "id": "m3-education-subsidies",
       "module": 3,
       "name": "Policy implications: education subsidies justified by credit/insurance/externalities/distribution imperfections",
       "level": "practiced",
-      "last_touched": "2026-05-27"
+      "last_touched": "2026-05-28"
     },
     {
       "id": "m3-solow-with-land",
       "module": 3,
       "name": "Solow with land: production Y = K^α (AL)^β X^κ, z = K/Y transition curve and 4 properties",
       "level": "practiced",
-      "last_touched": "2026-05-27"
+      "last_touched": "2026-05-28"
     },
     {
       "id": "m3-land-growth-rate",
       "module": 3,
       "name": "Steady-state growth rate g^y = (βg − κn)/(β+κ); classical vs modern case",
       "level": "practiced",
-      "last_touched": "2026-05-27"
+      "last_touched": "2026-05-28"
     },
     {
       "id": "m3-solow-with-oil",
       "module": 3,
       "name": "Solow with land + oil: depletion drag, E_t = s_E R_t, R_t = (1−s_E)^t R_0",
       "level": "practiced",
-      "last_touched": "2026-05-27"
+      "last_touched": "2026-05-28"
     },
     {
       "id": "m3-oil-growth-rate",
       "module": 3,
       "name": "Land+oil g^y formula with three drags (tech share, population, depletion)",
       "level": "practiced",
-      "last_touched": "2026-05-27"
+      "last_touched": "2026-05-28"
     },
     {
       "id": "m3-numerical-simulation-q2",
       "module": 3,
       "name": "How to numerically simulate the transition equations (Mock Q2 part 2)",
       "level": "practiced",
-      "last_touched": "2026-05-27"
+      "last_touched": "2026-05-28"
+    },
+    {
+      "id": "m4-endogenous-growth-overview",
+      "module": 4,
+      "name": "Why endogenize technological progress; two flavours (externality vs R&D)",
+      "level": "seen",
+      "last_touched": "2026-05-28"
+    },
+    {
+      "id": "m4-externality-aggregate-pf",
+      "module": 4,
+      "name": "Externality model: A_t = K_t^φ; aggregate PF Y = K^(α+φ(1-α)) L^(1-α); CRS at firm vs IRS at aggregate",
+      "level": "seen",
+      "last_touched": "2026-05-28"
+    },
+    {
+      "id": "m4-externality-factor-prices",
+      "module": 4,
+      "name": "Factor prices in externality model and capital share = α from Euler",
+      "level": "seen",
+      "last_touched": "2026-05-28"
+    },
+    {
+      "id": "m4-three-phi-regimes",
+      "module": 4,
+      "name": "Three regimes by φ: φ<1 semi-endogenous, φ=1 truly endogenous (AK), φ>1 explosive",
+      "level": "seen",
+      "last_touched": "2026-05-28"
+    },
+    {
+      "id": "m4-semi-endogenous-ch8",
+      "module": 4,
+      "name": "Semi-endogenous Ch8: transition equation in k̃, steady state k̃*, growth rate g_se = (1+n)^(φ/(1-φ)) - 1",
+      "level": "seen",
+      "last_touched": "2026-05-28"
+    },
+    {
+      "id": "m4-ak-model",
+      "module": 4,
+      "name": "AK model: Y = AK with A = L^(1-α); truly endogenous growth rate g_e = sA - δ; no convergence; scale effect",
+      "level": "seen",
+      "last_touched": "2026-05-28"
+    },
+    {
+      "id": "m4-rd-production-function",
+      "module": 4,
+      "name": "R&D production function ΔA = ρ A^φ L_A^λ; standing-on-shoulders φ, stepping-on-toes λ; non-rival ideas",
+      "level": "seen",
+      "last_touched": "2026-05-28"
+    },
+    {
+      "id": "m4-romer-six-equations",
+      "module": 4,
+      "name": "Romer six-equation model: final goods + R&D + capital + labour growth + split + R&D share s_R",
+      "level": "seen",
+      "last_touched": "2026-05-28"
+    },
+    {
+      "id": "m4-g-transition-dynamics",
+      "module": 4,
+      "name": "Independent dynamics of g_t in Romer: g_{t+1} = (1+n)^λ (1+g_t)^(φ-1) g_t",
+      "level": "seen",
+      "last_touched": "2026-05-28"
+    },
+    {
+      "id": "m4-semi-endogenous-romer",
+      "module": 4,
+      "name": "Semi-endogenous Romer: g_se = (1+n)^(λ/(1-φ)) - 1 ≈ λn/(1-φ); requires n>0",
+      "level": "seen",
+      "last_touched": "2026-05-28"
+    },
+    {
+      "id": "m4-strictly-endogenous-romer",
+      "module": 4,
+      "name": "Strictly endogenous Romer: g_e = ρ(s_R L)^λ with φ=1, n=0; scale effect in L",
+      "level": "seen",
+      "last_touched": "2026-05-28"
+    },
+    {
+      "id": "m4-hemi-endogenous-growth",
+      "module": 4,
+      "name": "Hemi-endogenous growth (Jones): φ<1, n=0, s_R slowly growing; g_he = λ g_sR / (1-φ); 200-year interpretation",
+      "level": "seen",
+      "last_touched": "2026-05-28"
+    },
+    {
+      "id": "m4-scale-effect-critique",
+      "module": 4,
+      "name": "Scale effect critique: bigger countries do not grow faster; 20th-c US population vs growth; Jones researcher-count critique",
+      "level": "seen",
+      "last_touched": "2026-05-28"
+    },
+    {
+      "id": "m4-empirics-investment-vs-growth",
+      "module": 4,
+      "name": "Empirical investment-rate vs growth-rate correlation; Bernanke-Gürkaynak g_A vs s as endogenous-growth evidence",
+      "level": "seen",
+      "last_touched": "2026-05-28"
+    },
+    {
+      "id": "m4-empirics-population-vs-growth",
+      "module": 4,
+      "name": "Population growth vs economic growth: negative correlation contradicts semi-endogenous prediction",
+      "level": "seen",
+      "last_touched": "2026-05-28"
+    },
+    {
+      "id": "m4-externality-vs-rd-comparison",
+      "module": 4,
+      "name": "Side-by-side: externality (unintentional, perfect competition) vs R&D (deliberate, requires monopoly/patents)",
+      "level": "seen",
+      "last_touched": "2026-05-28"
     }
   ],
   "quiz_attempts": [
@@ -238,6 +350,53 @@
         }
       ],
       "notes": "First M2 quiz at >=80%. Per OUTPUT_CONVENTIONS, mastered requires two such attempts. M2 topics remain at practiced (already bumped from exercise generation 2026-05-27). On next M2 quiz at >=80%, promote the topics fully answered both times to mastered; keep the 4 missed-question topics at practiced until cleared."
+    },
+    {
+      "slug": "module-3-conceptual_2026-05-27",
+      "date_taken": "2026-05-27",
+      "date_logged": "2026-05-28",
+      "score": "13/20",
+      "fraction": 0.65,
+      "passes_mastered_threshold": false,
+      "module": 3,
+      "missed_questions": [
+        {
+          "qid": "Q2",
+          "topic_tag": "MRW transition and phase diagram — k̃, h̃ are CONSTANT at steady state (only level variables grow at g)",
+          "learning_state_id": "m3-mrw-transition-and-phase"
+        },
+        {
+          "qid": "Q3",
+          "topic_tag": "MRW steady-state elasticities — adding H resolves the cross-country savings-rate puzzle (basic Solow predicts ~0.5, MRW ~1, observed ~1.5)",
+          "learning_state_id": "m3-mrw-steady-state-elasticities"
+        },
+        {
+          "qid": "Q4",
+          "topic_tag": "MRW Golden Rule — consumption share = 1−α−φ ≈ labour share (structural symmetry with basic Solow)",
+          "learning_state_id": "m3-mrw-golden-rule"
+        },
+        {
+          "qid": "Q5",
+          "topic_tag": "Empirical fit — 'adding H = adding a factor' is loose; the sharp mechanism is raising broad-capital elasticity α → α+φ, which moves slope AND convergence speed via the SAME structural shift",
+          "learning_state_id": "m3-mrw-empirical-fit"
+        },
+        {
+          "qid": "Q8",
+          "topic_tag": "Education subsidies — H entering the production function does NOT by itself justify subsidies; positive vs normative distinction (Cozzi p21)",
+          "learning_state_id": "m3-education-subsidies"
+        },
+        {
+          "qid": "Q13",
+          "topic_tag": "MRW parameter inversion from convergence speed — arithmetic-direction error: solving λ=(1−α−φ)(n+g+δ) for α+φ gives 0.75, not 0.25 (1−x = 0.25 → x = 0.75)",
+          "learning_state_id": "m3-mrw-empirical-fit"
+        },
+        {
+          "qid": "Q20",
+          "topic_tag": "Land model: modern case ($n=0$) gives $g^y = \\beta g/(\\beta+\\kappa) < g$, NOT $g^y = g$ — the diminishing-returns drag never vanishes when $\\kappa > 0$",
+          "learning_state_id": "m3-land-growth-rate"
+        }
+      ],
+      "notes": "Score 13/20 = 65% — below the 70% practiced threshold AND the 80% mastered threshold. Topics remain at practiced (never-downgrade rule; level was set by exercise generation 2026-05-27). Five MTF questions wrong, two MCQ wrong. Dominant error pattern: subtle conceptual nuances rather than mechanical gaps — (a) confusing per-effective-worker variables ($\\tilde k, \\tilde h$) with per-capita variables (Q2 D), (b) conflating positive model structure with normative policy implications (Q5 B, Q8 D), (c) forgetting that 'modern case' / 'Golden Rule' /'MRW resolution' all still leave residual structural features (Q3 D, Q4 C, Q20), (d) arithmetic-direction error inverting the convergence formula (Q13). Before re-quizzing M3, drill the 7 missed topics — especially the empirical-fit cluster (Q5+Q13 both hit m3-mrw-empirical-fit; that topic is the weakest). Next M3 quiz should aim for ≥80% with the 7 missed topics answered correctly; only then promote toward mastered."
     }
   ]
 }
