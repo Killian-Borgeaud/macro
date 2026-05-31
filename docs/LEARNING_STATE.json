@@ -209,113 +209,211 @@
       "id": "m4-endogenous-growth-overview",
       "module": 4,
       "name": "Why endogenize technological progress; two flavours (externality vs R&D)",
-      "level": "seen",
+      "level": "practiced",
       "last_touched": "2026-05-28"
     },
     {
       "id": "m4-externality-aggregate-pf",
       "module": 4,
       "name": "Externality model: A_t = K_t^φ; aggregate PF Y = K^(α+φ(1-α)) L^(1-α); CRS at firm vs IRS at aggregate",
-      "level": "seen",
-      "last_touched": "2026-05-28"
+      "level": "practiced",
+      "last_touched": "2026-05-30"
     },
     {
       "id": "m4-externality-factor-prices",
       "module": 4,
       "name": "Factor prices in externality model and capital share = α from Euler",
-      "level": "seen",
-      "last_touched": "2026-05-28"
+      "level": "practiced",
+      "last_touched": "2026-05-30"
     },
     {
       "id": "m4-three-phi-regimes",
       "module": 4,
       "name": "Three regimes by φ: φ<1 semi-endogenous, φ=1 truly endogenous (AK), φ>1 explosive",
-      "level": "seen",
-      "last_touched": "2026-05-28"
+      "level": "practiced",
+      "last_touched": "2026-05-30"
     },
     {
       "id": "m4-semi-endogenous-ch8",
       "module": 4,
       "name": "Semi-endogenous Ch8: transition equation in k̃, steady state k̃*, growth rate g_se = (1+n)^(φ/(1-φ)) - 1",
-      "level": "seen",
-      "last_touched": "2026-05-28"
+      "level": "practiced",
+      "last_touched": "2026-05-30"
     },
     {
       "id": "m4-ak-model",
       "module": 4,
       "name": "AK model: Y = AK with A = L^(1-α); truly endogenous growth rate g_e = sA - δ; no convergence; scale effect",
-      "level": "seen",
-      "last_touched": "2026-05-28"
+      "level": "practiced",
+      "last_touched": "2026-05-30"
     },
     {
       "id": "m4-rd-production-function",
       "module": 4,
       "name": "R&D production function ΔA = ρ A^φ L_A^λ; standing-on-shoulders φ, stepping-on-toes λ; non-rival ideas",
-      "level": "seen",
-      "last_touched": "2026-05-28"
+      "level": "practiced",
+      "last_touched": "2026-05-30"
     },
     {
       "id": "m4-romer-six-equations",
       "module": 4,
       "name": "Romer six-equation model: final goods + R&D + capital + labour growth + split + R&D share s_R",
-      "level": "seen",
+      "level": "practiced",
       "last_touched": "2026-05-28"
     },
     {
       "id": "m4-g-transition-dynamics",
       "module": 4,
       "name": "Independent dynamics of g_t in Romer: g_{t+1} = (1+n)^λ (1+g_t)^(φ-1) g_t",
-      "level": "seen",
+      "level": "practiced",
       "last_touched": "2026-05-28"
     },
     {
       "id": "m4-semi-endogenous-romer",
       "module": 4,
       "name": "Semi-endogenous Romer: g_se = (1+n)^(λ/(1-φ)) - 1 ≈ λn/(1-φ); requires n>0",
-      "level": "seen",
-      "last_touched": "2026-05-28"
+      "level": "practiced",
+      "last_touched": "2026-05-30"
     },
     {
       "id": "m4-strictly-endogenous-romer",
       "module": 4,
       "name": "Strictly endogenous Romer: g_e = ρ(s_R L)^λ with φ=1, n=0; scale effect in L",
-      "level": "seen",
-      "last_touched": "2026-05-28"
+      "level": "practiced",
+      "last_touched": "2026-05-30"
     },
     {
       "id": "m4-hemi-endogenous-growth",
       "module": 4,
       "name": "Hemi-endogenous growth (Jones): φ<1, n=0, s_R slowly growing; g_he = λ g_sR / (1-φ); 200-year interpretation",
-      "level": "seen",
+      "level": "practiced",
       "last_touched": "2026-05-28"
     },
     {
       "id": "m4-scale-effect-critique",
       "module": 4,
       "name": "Scale effect critique: bigger countries do not grow faster; 20th-c US population vs growth; Jones researcher-count critique",
-      "level": "seen",
-      "last_touched": "2026-05-28"
+      "level": "practiced",
+      "last_touched": "2026-05-30"
     },
     {
       "id": "m4-empirics-investment-vs-growth",
       "module": 4,
       "name": "Empirical investment-rate vs growth-rate correlation; Bernanke-Gürkaynak g_A vs s as endogenous-growth evidence",
-      "level": "seen",
-      "last_touched": "2026-05-28"
+      "level": "practiced",
+      "last_touched": "2026-05-30"
     },
     {
       "id": "m4-empirics-population-vs-growth",
       "module": 4,
       "name": "Population growth vs economic growth: negative correlation contradicts semi-endogenous prediction",
-      "level": "seen",
-      "last_touched": "2026-05-28"
+      "level": "practiced",
+      "last_touched": "2026-05-30"
     },
     {
       "id": "m4-externality-vs-rd-comparison",
       "module": 4,
       "name": "Side-by-side: externality (unintentional, perfect competition) vs R&D (deliberate, requires monopoly/patents)",
-      "level": "seen",
-      "last_touched": "2026-05-28"
+      "level": "practiced",
+      "last_touched": "2026-05-30"
+    },
+    {
+      "id": "m5-scale-effect-problem",
+      "module": 5,
+      "name": "Scale effect and its empirical failure (Jones 1995 critique): researchers rose several-fold but TFP growth stayed flat",
+      "level": "practiced",
+      "last_touched": "2026-05-31"
+    },
+    {
+      "id": "m5-model-landscape",
+      "module": 5,
+      "name": "Three theories via two knobs: knowledge returns φ (φ<1 vs φ=1) and R&D input (level L_A vs share s_R); semi-endo / Romer-with-scale / truly-endo-without-scale",
+      "level": "practiced",
+      "last_touched": "2026-05-31"
+    },
+    {
+      "id": "m5-dilution-mechanism",
+      "module": 5,
+      "name": "R&D dilution: population → more sectors → R&D spread thinner → only the share s_R matters (kills the scale effect)",
+      "level": "practiced",
+      "last_touched": "2026-05-31"
+    },
+    {
+      "id": "m5-semi-endogenous-growth",
+      "module": 5,
+      "name": "Semi-endogenous growth g^se = (1+n)^(λ/(1−φ)) − 1 ≈ λn/(1−φ); growth chained to n, dies at n=0, policy only temporary",
+      "level": "practiced",
+      "last_touched": "2026-05-31"
+    },
+    {
+      "id": "m5-truly-endogenous-growth",
+      "module": 5,
+      "name": "Truly-endogenous growth without scale effect g^e = ρ s_R^λ (φ=1, share s_R); policy permanent; no population/scale dependence",
+      "level": "practiced",
+      "last_touched": "2026-05-31"
+    },
+    {
+      "id": "m5-complete-model-reduction",
+      "module": 5,
+      "name": "Complete model and per-effective-worker reduction ỹ = k̃^α(1−s_R)^(1−α); k̃ transition with (1+n)(1+g^e) dilution",
+      "level": "practiced",
+      "last_touched": "2026-05-31"
+    },
+    {
+      "id": "m5-steady-state",
+      "module": 5,
+      "name": "Steady state k̃* = (s/(n+g^e+δ+ng^e))^(1/(1−α))(1−s_R), ỹ*; per-capita output grows at the technology rate g",
+      "level": "practiced",
+      "last_touched": "2026-05-31"
+    },
+    {
+      "id": "m5-hybrid-model",
+      "module": 5,
+      "name": "Cozzi (2017) hybrid: A-equation as weighted sum of the two mechanisms (weight α_sem ≠ capital share α); hybrid growth rate g_t",
+      "level": "practiced",
+      "last_touched": "2026-05-31"
+    },
+    {
+      "id": "m5-three-case-theorem",
+      "module": 5,
+      "name": "Three-case theorem (n=0, n<0, n>0): which mechanism's term survives the A^(φ−1) limit; NOT the naive weighted average (winner-take-all)",
+      "level": "practiced",
+      "last_touched": "2026-05-31"
+    },
+    {
+      "id": "m5-threshold-n-bar",
+      "module": 5,
+      "name": "Threshold n̄ = [(1−α_sem)ρs_R^λ + 1]^((1−φ)/λ) − 1; n>n̄ → g^se (semi), n<n̄ → (1−α_sem)g^e (endo); demography is the referee",
+      "level": "practiced",
+      "last_touched": "2026-05-31"
+    },
+    {
+      "id": "m5-policy-implications",
+      "module": 5,
+      "name": "Policy: semi=temporary vs truly=permanent; n̄ rises with s_R so policy can flip the regime ('policy makes policy effective'); Lisbon 1%→3% example; demographic-history arc",
+      "level": "practiced",
+      "last_touched": "2026-05-31"
+    },
+    {
+      "id": "m5-numerical-simulation",
+      "module": 5,
+      "name": "Numerical simulation sketch (Mock Q3 'simulate' half): initial A_0 = (ρ(s_R L_0)^λ/g^se)^(1/(1−φ)) on the BGP; g_y response to a drop in n (overshoot ~6 periods then converge lower)",
+      "level": "practiced",
+      "last_touched": "2026-05-31"
+    },
+    {
+      "id": "m5-two-economy-calibration",
+      "module": 5,
+      "name": "Two-economy calibration (Exercise 5.2): n=0.04 → semi-endogenous g^h=0.054; n=0.02 → fully endogenous g^h=0.046; n̄≈3.4%",
+      "level": "practiced",
+      "last_touched": "2026-05-31"
+    },
+    {
+      "id": "m5-mock-q3-hybrid-policy",
+      "module": 5,
+      "name": "Mock Q3 target: derive AND discuss the policy implications of the Cozzi (2017) hybrid model (M5 is mock-exam-load-bearing)",
+      "level": "practiced",
+      "last_touched": "2026-05-31"
     }
   ],
   "quiz_attempts": [
@@ -397,6 +495,38 @@
         }
       ],
       "notes": "Score 13/20 = 65% — below the 70% practiced threshold AND the 80% mastered threshold. Topics remain at practiced (never-downgrade rule; level was set by exercise generation 2026-05-27). Five MTF questions wrong, two MCQ wrong. Dominant error pattern: subtle conceptual nuances rather than mechanical gaps — (a) confusing per-effective-worker variables ($\\tilde k, \\tilde h$) with per-capita variables (Q2 D), (b) conflating positive model structure with normative policy implications (Q5 B, Q8 D), (c) forgetting that 'modern case' / 'Golden Rule' /'MRW resolution' all still leave residual structural features (Q3 D, Q4 C, Q20), (d) arithmetic-direction error inverting the convergence formula (Q13). Before re-quizzing M3, drill the 7 missed topics — especially the empirical-fit cluster (Q5+Q13 both hit m3-mrw-empirical-fit; that topic is the weakest). Next M3 quiz should aim for ≥80% with the 7 missed topics answered correctly; only then promote toward mastered."
+    },
+    {
+      "slug": "module-4-conceptual_2026-05-28",
+      "date_taken": "2026-05-28",
+      "date_logged": "2026-05-30",
+      "score": "16/20",
+      "fraction": 0.8,
+      "passes_mastered_threshold": true,
+      "module": 4,
+      "missed_questions": [
+        {
+          "qid": "Q4",
+          "topic_tag": "Meaning of φ in the externality model — φ is the elasticity of the knowledge externality A_t = K_t^φ w.r.t. aggregate capital (spillover strength), distinct from the private capital exponent α",
+          "learning_state_id": "m4-externality-aggregate-pf"
+        },
+        {
+          "qid": "Q5",
+          "topic_tag": "AK model properties (MTF) — two cells wrong (C said F, should be T; D said T, should be F); revisit which AK features hold: no transitional dynamics, constant growth g_e = sA−δ, no convergence, scale effect",
+          "learning_state_id": "m4-ak-model"
+        },
+        {
+          "qid": "Q15",
+          "topic_tag": "Factor income shares in the externality model — under perfect competition factors earn PRIVATE marginal products, so capital's income share = α (not the social α+φ(1−α)) despite aggregate increasing returns",
+          "learning_state_id": "m4-externality-factor-prices"
+        },
+        {
+          "qid": "Q17",
+          "topic_tag": "Recovering φ from an observed g_se — inverting g_se = (1+n)^(φ/(1−φ)) − 1 for φ; arithmetic-inversion step (same slip class as M3 Q13)",
+          "learning_state_id": "m4-semi-endogenous-ch8"
+        }
+      ],
+      "notes": "First M4 quiz, 16/20 = 80% — passes the mastered threshold once. Per OUTPUT_CONVENTIONS mastered requires TWO ≥80% attempts, so all 16 M4 topics stay at practiced (also never-downgrade; levels set by lecture/exercise generation 2026-05-28). Clean diagnostic: ALL FOUR misses (Q4, Q5, Q15, Q17) fall in the Chapter-8 externality/AK cluster; every R&D/Romer (Ch 9) question — Q8, Q9, Q10, Q11, Q16, Q18, Q19, Q20 — was correct. The R&D side is solid; the externality/AK side is the weak spot. Error themes: (a) φ as the externality elasticity vs the private α (Q4); (b) AK structural properties (Q5); (c) private-MPK factor pricing giving capital share = α even under aggregate IRS (Q15); (d) inverting the semi-endogenous growth formula for φ (Q17). Before re-quizzing M4, drill the externality/AK cluster (m4-externality-aggregate-pf, m4-externality-factor-prices, m4-ak-model, m4-semi-endogenous-ch8). On the next M4 quiz at ≥80%, promote to mastered the topics answered correctly in BOTH attempts; keep these 4 missed topics at practiced until cleared."
     }
   ]
 }

@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quiz: Module 4 — Endogenous Growth (Externalities + R&D)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+
+
+<style>
+:root{
+  --bg:#fdf6e3;
+  --card:#ffffff;
+  --border:#e6dcc4;
+  --text:#003135;
+  --muted:#5a7378;
+  --accent:#024950;
+  --accent-2:#0FA4AF;
+  --accent-bg:rgba(15,164,175,0.10);
+  --key:#964734;
+  --key-bg:rgba(150,71,52,0.08);
+  --box-fill:#003135;
+  --box-text:#e6f4f5;
+  --box-line:#0FA4AF;
+  --col-w:760px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background-color:var(--bg)}
+body{
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  color:var(--text);
+  line-height:1.7;
+  font-weight:400;
+  font-feature-settings:"cv11","ss01","ss03";
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.45  0 0 0 0 0.35  0 0 0 0 0.20  0 0 0 0.06 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  background-repeat:repeat;
+  background-attachment:fixed;
+}
+.container{
+  max-width:var(--col-w);
+  margin:0 auto;
+  padding:4rem 1.5rem 5rem;
+}
+h1{
+  font-size:2.5rem;
+  font-weight:300;
+  letter-spacing:-0.03em;
+  line-height:1.15;
+  margin-bottom:.6rem;
+  color:var(--text);
+}
+.meta{
+  color:var(--muted);
+  font-size:.85rem;
+  font-weight:400;
+  letter-spacing:.01em;
+  margin-bottom:2rem;
+  padding-bottom:1.25rem;
+  border-bottom:1px solid var(--border);
+}
+.progress{
+  display:flex;align-items:center;gap:.9rem;
+  margin-bottom:2.5rem;
+  font-size:.78rem;color:var(--muted);
+  position:sticky;top:0;
+  background:var(--bg);
+  padding:.85rem 0;
+  z-index:10;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+  border-bottom:1px solid var(--border);
+}
+.progress-bar{flex:1;height:1px;background:var(--border);overflow:hidden}
+.progress-fill{height:100%;background:var(--accent-2);transition:width .3s ease}
+.score-display{font-weight:500;color:var(--accent);font-variant-numeric:tabular-nums}
+
+/* ── Chain (scenario) block ──────────────────────────────────────────── */
+.chain-block{
+  position:relative;
+  margin:2.5rem 0;
+  padding:1.5rem 1.5rem 1rem;
+  outline:1px solid var(--accent);
+  outline-offset:6px;
+}
+.chain-label{
+  position:absolute;top:-9px;right:14px;
+  background:var(--bg);
+  padding:0 .5rem;
+  font-size:.65rem;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:var(--accent);
+  font-weight:600;
+}
+.chain-setup{
+  font-size:.95rem;
+  color:var(--text);
+  padding:0 0 1.1rem;
+  margin-bottom:1.25rem;
+  border-bottom:1px dashed var(--border);
+  line-height:1.65;
+}
+.chain-setup strong{color:var(--accent);font-weight:600}
+.chain-block .question-card{margin-bottom:1rem}
+.chain-block .question-card:last-child{margin-bottom:0}
+
+/* ── Question card ───────────────────────────────────────────────────── */
+.question-card{
+  background:var(--card);
+  border:1px solid var(--border);
+  padding:1.6rem 1.75rem;
+  margin-bottom:1.5rem;
+  transition:border-color .25s;
+}
+.question-card.answered-correct{border-color:var(--accent-2)}
+.question-card.answered-wrong{border-color:var(--key)}
+.question-header{
+  display:flex;justify-content:space-between;align-items:center;
+  margin-bottom:1.1rem;
+  padding-bottom:.7rem;
+  border-bottom:1px solid var(--border);
+}
+.question-number{
+  font-size:.75rem;font-weight:600;
+  color:var(--accent);
+  letter-spacing:.08em;
+}
+.question-style{
+  font-size:.65rem;
+  color:var(--muted);
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  font-weight:500;
+}
+.question-stem{
+  font-size:1rem;
+  margin-bottom:1.2rem;
+  line-height:1.7;
+}
+.question-stem p{margin-bottom:.7rem}
+.question-stem p:last-child{margin-bottom:0}
+
+/* ── Derivation step list (inside stem) ──────────────────────────────── */
+.derivation-block{
+  margin:1rem 0 1.2rem;
+  padding:1rem 1.2rem;
+  background:rgba(255,255,255,0.5);
+  border:1px solid var(--border);
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+  font-size:.9rem;
+}
+.derivation-step{
+  display:flex;
+  align-items:baseline;
+  gap:.9rem;
+  padding:.35rem 0;
+  line-height:1.5;
+}
+.derivation-step .step-num{
+  color:var(--muted);
+  font-size:.7rem;
+  min-width:1.6rem;
+  font-weight:500;
+}
+.derivation-step.highlight{
+  background:var(--accent-bg);
+  margin:.2rem -.8rem;
+  padding:.45rem .8rem;
+  border-left:2px solid var(--accent-2);
+}
+.derivation-step.highlight .step-num{color:var(--accent-2);font-weight:600}
+.derivation-step .step-body{flex:1;color:var(--text)}
+.derivation-step.missing .step-body{
+  color:var(--accent-2);
+  font-style:italic;
+  font-family:'Inter',sans-serif;
+}
+
+/* ── Embedded figure inside question stem ────────────────────────────── */
+.question-card .mf-figure{margin:1rem 0 1.2rem;border-color:var(--border)}
+
+/* ── Productive-failure reveal: hide answer surfaces until user thinks first ─ */
+.reveal-btn{
+  display:inline-block;
+  background:transparent;
+  color:var(--accent);
+  border:1px dashed var(--accent);
+  padding:.6rem 1.2rem;
+  margin:.5rem 0 1rem;
+  font-size:.75rem;
+  font-family:inherit;
+  font-weight:500;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+  cursor:pointer;
+  transition:background .15s, color .15s, border-style .15s;
+}
+.reveal-btn:hover{background:var(--accent);color:#fff;border-style:solid}
+.reveal-hint{
+  font-size:.7rem;color:var(--muted);
+  margin-left:.7rem;letter-spacing:.04em;
+  font-style:italic;
+}
+.choices,.mtf-statements,.submit-row{display:none}
+.question-card.revealed .choices{display:flex}
+.question-card.revealed .mtf-statements{display:block}
+.question-card.revealed .submit-row{display:flex}
+.question-card.revealed .reveal-btn{display:none}
+
+/* ── Choices ─────────────────────────────────────────────────────────── */
+.choices{flex-direction:column;gap:.45rem}
+.choice{
+  display:flex;align-items:flex-start;gap:.85rem;
+  padding:.75rem 1rem;
+  border:1px solid var(--border);
+  background:var(--card);
+  cursor:pointer;
+  transition:background .15s, border-color .15s;
+  font-size:.95rem;
+  line-height:1.55;
+}
+.choice:hover:not(.disabled){background:var(--accent-bg);border-color:var(--accent-2)}
+.choice.disabled{cursor:default}
+.choice.selected{background:var(--accent-bg);border-color:var(--accent-2)}
+.choice.correct-reveal{
+  background:var(--accent-bg);
+  border-color:var(--accent-2);
+}
+.choice.wrong-reveal{
+  background:var(--key-bg);
+  border-color:var(--key);
+}
+.choice.missed-reveal{
+  /* multi-select: correct option the user failed to tick */
+  background:transparent;
+  border-color:var(--accent-2);
+  border-style:dashed;
+}
+
+/* Single-MCQ: circular letter chip */
+.choice-letter{
+  min-width:1.7rem;height:1.7rem;
+  display:flex;align-items:center;justify-content:center;
+  background:transparent;
+  border:1px solid var(--border);
+  border-radius:50%;
+  font-weight:500;font-size:.78rem;
+  color:var(--muted);
+  flex-shrink:0;margin-top:.05rem;
+  transition:all .15s;
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+}
+.choice:hover:not(.disabled) .choice-letter{border-color:var(--accent-2);color:var(--accent-2)}
+.choice.correct-reveal .choice-letter{background:var(--accent-2);color:#fff;border-color:var(--accent-2)}
+.choice.wrong-reveal .choice-letter{background:var(--key);color:#fff;border-color:var(--key)}
+.choice.missed-reveal .choice-letter{background:transparent;color:var(--accent-2);border-color:var(--accent-2)}
+
+/* Multi-select: hollow square that fills cyan when ticked */
+.question-card.multi .choice-letter{
+  border-radius:0;
+  position:relative;
+}
+.question-card.multi .choice.selected .choice-letter{
+  background:var(--accent-2);
+  color:#fff;
+  border-color:var(--accent-2);
+}
+.question-card.multi .choice.selected .choice-letter::after{
+  content:'';
+  position:absolute;
+  left:5px;top:3px;
+  width:5px;height:9px;
+  border:solid #fff;
+  border-width:0 1.5px 1.5px 0;
+  transform:rotate(45deg);
+}
+.question-card.multi .choice.selected .choice-letter > span{visibility:hidden}
+
+/* Numeric: monospace choice text */
+.question-card.mono-choices .choice-body{
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+  font-size:.95rem;
+  color:var(--text);
+}
+
+/* ── MTF (multiple true-false) cluster ───────────────────────────────── */
+.mtf-statements{display:block}
+.mtf-row{
+  border:1px solid var(--border);
+  background:var(--card);
+  margin-bottom:.55rem;
+  padding:.75rem 1rem;
+  transition:border-color .15s;
+}
+.mtf-row.correct-reveal{border-color:var(--accent-2);background:var(--accent-bg)}
+.mtf-row.wrong-reveal{border-color:var(--key);background:var(--key-bg)}
+.mtf-row-body{
+  display:flex;
+  align-items:flex-start;
+  gap:.85rem;
+  font-size:.95rem;
+  line-height:1.55;
+}
+.mtf-letter{
+  min-width:1.7rem;height:1.7rem;
+  display:flex;align-items:center;justify-content:center;
+  background:transparent;
+  border:1px solid var(--border);
+  border-radius:50%;
+  font-weight:500;font-size:.78rem;
+  color:var(--muted);
+  flex-shrink:0;margin-top:.05rem;
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+}
+.mtf-text{flex:1}
+.mtf-pick{
+  display:flex;
+  gap:.35rem;
+  flex-shrink:0;
+}
+.mtf-pick button{
+  width:2.2rem;height:1.9rem;
+  background:transparent;
+  color:var(--muted);
+  border:1px solid var(--border);
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+  font-size:.85rem;
+  font-weight:500;
+  cursor:pointer;
+  transition:all .15s;
+}
+.mtf-pick button:hover:not(:disabled){border-color:var(--accent-2);color:var(--accent-2)}
+.mtf-pick button.picked{background:var(--accent-2);color:#fff;border-color:var(--accent-2)}
+.mtf-pick button:disabled{cursor:default;opacity:.6}
+.mtf-row.correct-reveal .mtf-letter{background:var(--accent-2);color:#fff;border-color:var(--accent-2)}
+.mtf-row.wrong-reveal .mtf-letter{background:var(--key);color:#fff;border-color:var(--key)}
+.mtf-defense{
+  display:none;
+  font-size:.78rem;
+  color:var(--muted);
+  font-style:italic;
+  margin-top:.5rem;
+  padding-top:.5rem;
+  border-top:1px dashed var(--border);
+  line-height:1.55;
+}
+.mtf-row.correct-reveal .mtf-defense,
+.mtf-row.wrong-reveal .mtf-defense{display:block}
+.mtf-row.correct-reveal .mtf-defense{color:var(--accent)}
+.mtf-row.wrong-reveal .mtf-defense{color:var(--key)}
+
+.choice-body{flex:1}
+
+/* Per-choice defense (revealed after submit) — small muted text under choice */
+.choice-defense{
+  display:none;
+  font-size:.78rem;
+  color:var(--muted);
+  font-style:italic;
+  margin-top:.35rem;
+  line-height:1.5;
+}
+.choice.disabled .choice-defense{display:block}
+.choice.correct-reveal .choice-defense{color:var(--accent)}
+.choice.wrong-reveal .choice-defense{color:var(--key)}
+
+/* Multi-select submit button */
+.submit-row{
+  margin-top:1rem;
+  display:flex;
+  align-items:center;
+  gap:1rem;
+  font-size:.75rem;
+  color:var(--muted);
+  letter-spacing:.04em;
+}
+.submit-btn{
+  background:transparent;
+  color:var(--accent);
+  border:1px solid var(--accent);
+  padding:.45rem 1.1rem;
+  font-size:.78rem;
+  font-family:inherit;
+  font-weight:500;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+  cursor:pointer;
+  transition:background .15s, color .15s;
+}
+.submit-btn:hover:not(:disabled){background:var(--accent);color:#fff}
+.submit-btn:disabled{opacity:.4;cursor:not-allowed}
+
+/* ── Explanation: HUD callout, same as lecture .example ──────────────── */
+.explanation{
+  display:none;
+  position:relative;
+  background:var(--box-fill);
+  color:var(--box-text);
+  padding:1.25rem 1.5rem;
+  margin:1.4rem 0 .25rem;
+  outline:1px solid var(--box-line);
+  outline-offset:4px;
+  font-size:.92rem;
+  line-height:1.65;
+}
+.explanation.visible{display:block}
+.explanation p{margin-bottom:.6rem}
+.explanation p:last-child{margin-bottom:0}
+.explanation strong{color:var(--box-line);font-weight:600;letter-spacing:.02em}
+.explanation .katex{color:var(--box-text)}
+.explanation code{background:rgba(255,255,255,0.08);color:var(--box-line);padding:.1rem .35rem;border-radius:2px;font-family:'JetBrains Mono',monospace;font-size:.85em}
+.explanation .connection{
+  margin-top:.9rem;
+  padding-top:.8rem;
+  border-top:1px solid rgba(15,164,175,0.3);
+  font-size:.85rem;
+  color:rgba(230,244,245,0.85);
+}
+.explanation .connection strong{color:#e8826a}
+
+/* HUD tracer extending leftward into gutter — mirrored from .example */
+.explanation::before{
+  content:'';
+  position:absolute;
+  width:74px;
+  height:60px;
+  pointer-events:none;
+  background-color:var(--box-line);
+  bottom:14px;left:-82px;
+  -webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;
+  -webkit-mask-position:center;mask-position:center;
+  -webkit-mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 74 60'><line x1='26' y1='9' x2='74' y2='9' stroke='black' stroke-width='3'/><line x1='52' y1='28' x2='74' y2='28' stroke='black' stroke-width='3'/><line x1='40' y1='47' x2='74' y2='47' stroke='black' stroke-width='3'/><rect x='8' y='4' width='10' height='10' fill='none' stroke='black' stroke-width='1.6'/></svg>");
+          mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 74 60'><line x1='26' y1='9' x2='74' y2='9' stroke='black' stroke-width='3'/><line x1='52' y1='28' x2='74' y2='28' stroke='black' stroke-width='3'/><line x1='40' y1='47' x2='74' y2='47' stroke='black' stroke-width='3'/><rect x='8' y='4' width='10' height='10' fill='none' stroke='black' stroke-width='1.6'/></svg>");
+}
+@media(max-width:1100px){.explanation::before{display:none}}
+
+/* ── Summary ─────────────────────────────────────────────────────────── */
+.summary{
+  background:var(--card);
+  border:1px solid var(--border);
+  padding:2.25rem;
+  margin-top:2.5rem;
+  display:none;
+}
+.summary h2{
+  font-size:1.55rem;font-weight:400;
+  letter-spacing:-0.02em;
+  color:var(--accent);
+  margin-bottom:.4rem;
+  text-align:center;
+}
+.summary .score-big{
+  font-size:3.5rem;font-weight:300;
+  color:var(--accent);
+  margin:.5rem 0;text-align:center;
+  letter-spacing:-0.03em;
+  font-variant-numeric:tabular-nums;
+}
+.summary .score-label{
+  color:var(--muted);font-size:.85rem;
+  text-align:center;margin-bottom:1.75rem;
+  letter-spacing:.02em;
+}
+.results-table{
+  width:100%;border-collapse:collapse;
+  margin:1.25rem 0;font-size:.85rem;
+}
+.results-table th,.results-table td{
+  padding:.55rem .75rem;
+  border-bottom:1px solid var(--border);
+  text-align:left;
+}
+.results-table th{
+  background:var(--accent-bg);
+  font-weight:600;color:var(--accent);
+  font-size:.7rem;text-transform:uppercase;
+  letter-spacing:.06em;
+}
+.results-table .row-correct td:last-child{color:var(--accent-2);font-weight:600}
+.results-table .row-wrong td:last-child{color:var(--key);font-weight:600}
+.json-section{margin-top:1.5rem}
+.json-section label{
+  display:block;font-weight:500;font-size:.7rem;
+  margin-bottom:.4rem;color:var(--muted);
+  letter-spacing:.08em;text-transform:uppercase;
+}
+.json-box{
+  width:100%;min-height:80px;
+  padding:.8rem;
+  border:1px solid var(--border);
+  background:rgba(255,255,255,0.5);
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+  font-size:.78rem;
+  color:var(--text);
+  resize:vertical;
+  line-height:1.5;
+}
+.btn-row{
+  display:flex;gap:.75rem;justify-content:center;
+  margin-top:1rem;flex-wrap:wrap;
+}
+.btn{
+  display:inline-block;
+  padding:.55rem 1.25rem;
+  background:var(--accent);
+  color:#fff;
+  border:none;
+  font-size:.78rem;
+  font-family:inherit;
+  font-weight:500;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  cursor:pointer;
+  transition:background .15s;
+}
+.btn:hover{background:var(--accent-2)}
+.btn-secondary{
+  background:transparent;
+  color:var(--accent);
+  border:1px solid var(--accent);
+}
+.btn-secondary:hover{background:var(--accent);color:#fff}
+.copy-toast{
+  position:fixed;bottom:2rem;left:50%;
+  transform:translateX(-50%);
+  background:var(--box-fill);color:var(--box-text);
+  padding:.6rem 1.25rem;
+  font-size:.85rem;
+  display:none;z-index:100;
+  outline:1px solid var(--box-line);outline-offset:3px;
+}
+
+@media(max-width:600px){
+  .container{padding:2rem 1rem 3rem}
+  .question-card{padding:1.25rem}
+  h1{font-size:1.8rem}
+}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Quiz: Module 4 — Endogenous Growth (Externalities + R&D)</h1>
+<div class="meta">Macro III — Module 4 — 2026-05-28</div>
+<div class="progress">
+<span id="prog-text">0 / 20</span>
+<div class="progress-bar"><div class="progress-fill" id="prog-fill" style="width:0%"></div></div>
+<span class="score-display" id="score-text"></span>
+</div>
+<div class="question-card mtf" id="q-1" data-correct="{&quot;A&quot;: true, &quot;B&quot;: true, &quot;C&quot;: false, &quot;D&quot;: true}" data-topic="Externality model micro structure" data-done="0"><div class="question-header"><span class="question-number">Q1</span><span class="question-style">Multi true-false</span></div><div class="question-stem"><p>In the productive-externality model (Ch 8), the individual firm's production function is $y_t^d = (K_t^d)^\alpha (A_t L_t^d)^{1-\alpha}$ with $A_t = K_t^\varphi$ in equilibrium, where the firm treats $A_t$ as given. Evaluate each statement.</p></div><button class="reveal-btn" type="button" onclick="reveal(1)">Reveal statements</button><span class="reveal-hint">Think through the setup first.</span><div class="mtf-statements"><div class="mtf-row" data-letter="A"><div class="mtf-row-body"><span class="mtf-letter">A</span><span class="mtf-text">At the firm level, the production function has constant returns to scale in $(K_t^d, L_t^d)$.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(1,'A',true)">T</button><button type="button" data-value="false" onclick="pickTF(1,'A',false)">F</button></div></div><div class="mtf-defense">Replication argument: with $A_t$ fixed, doubling firm inputs doubles firm output. This is what allows perfect competition with zero pure profits to coexist with the aggregate spillover.</div></div><div class="mtf-row" data-letter="B"><div class="mtf-row-body"><span class="mtf-letter">B</span><span class="mtf-text">At the aggregate level (with $A_t = K_t^\varphi$) the production function exhibits increasing returns when $\varphi > 0$.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(1,'B',true)">T</button><button type="button" data-value="false" onclick="pickTF(1,'B',false)">F</button></div></div><div class="mtf-defense">Aggregate PF becomes $Y_t = K_t^{\alpha+\varphi(1-\alpha)} L_t^{1-\alpha}$; exponents sum to $1+\varphi(1-\alpha) > 1$. CRS at firm + IRS at aggregate is the model's whole conceptual contribution.</div></div><div class="mtf-row" data-letter="C"><div class="mtf-row-body"><span class="mtf-letter">C</span><span class="mtf-text">The equilibrium capital share of national income equals $\alpha + \varphi(1-\alpha)$.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(1,'C',true)">T</button><button type="button" data-value="false" onclick="pickTF(1,'C',false)">F</button></div></div><div class="mtf-defense">Picked by students who differentiate the AGGREGATE PF. Wrong: factor prices come from firm-level MPK with $A_t$ taken as given, giving $r_t K_t / Y_t = \alpha$. The externality is uncompensated.</div></div><div class="mtf-row" data-letter="D"><div class="mtf-row-body"><span class="mtf-letter">D</span><span class="mtf-text">The firm chooses $K_t^d, L_t^d$ taking $A_t$ parametrically, even though $A_t = K_t^\varphi$ holds in equilibrium.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(1,'D',true)">T</button><button type="button" data-value="false" onclick="pickTF(1,'D',false)">F</button></div></div><div class="mtf-defense">The atomistic-firm assumption is what creates the externality: each firm is too small to internalise its effect on aggregate $A_t$. Equilibrium imposes $K^d = K$ only after optimisation.</div></div></div><div class="submit-row"><button type="button" class="submit-btn" disabled onclick="submitMtf(1)">Submit</button><span>Pick T or F for each statement.</span></div><div class="explanation"><p>The cluster targets four core micro-features of the externality model: (i) firm-level CRS via replication; (ii) aggregate IRS as a <em>consequence</em> of the spillover; (iii) the subtle point that capital share equals $\alpha$ (firm exponent), not $\alpha+\varphi(1-\alpha)$ (aggregate exponent), because the externality is uncompensated; (iv) the atomistic-firm assumption that generates the externality in the first place. Item (iii) is the most common error — and the reason this model preserves perfect competition despite the spillover.</p></div></div>
+<div class="question-card mtf" id="q-2" data-correct="{&quot;A&quot;: true, &quot;B&quot;: true, &quot;C&quot;: true, &quot;D&quot;: false}" data-topic="Three φ regimes" data-done="0"><div class="question-header"><span class="question-number">Q2</span><span class="question-style">Multi true-false</span></div><div class="question-stem"><p>In the externality model with $A_t = K_t^\varphi$, the parameter $\varphi$ governs the strength of the productive spillover. Evaluate each statement.</p></div><button class="reveal-btn" type="button" onclick="reveal(2)">Reveal statements</button><span class="reveal-hint">Think through the setup first.</span><div class="mtf-statements"><div class="mtf-row" data-letter="A"><div class="mtf-row-body"><span class="mtf-letter">A</span><span class="mtf-text">$\varphi = 0$ reduces the model to the basic Solow model with $A_t \equiv 1$ and no long-run growth in $y$.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(2,'A',true)">T</button><button type="button" data-value="false" onclick="pickTF(2,'A',false)">F</button></div></div><div class="mtf-defense">Setting $\varphi = 0$ kills the spillover ($A_t = K_t^0 = 1$); the aggregate PF collapses to $Y = K^\alpha L^{1-\alpha}$, basic Solow without exogenous tech.</div></div><div class="mtf-row" data-letter="B"><div class="mtf-row-body"><span class="mtf-letter">B</span><span class="mtf-text">$0 < \varphi < 1$ delivers semi-endogenous growth: positive long-run growth in $y$ requires $n > 0$.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(2,'B',true)">T</button><button type="button" data-value="false" onclick="pickTF(2,'B',false)">F</button></div></div><div class="mtf-defense">In this regime aggregate returns to capital alone are $\alpha+\varphi(1-\alpha) < 1$ (diminishing). Steady-state growth $g_{se} = (1+n)^{\varphi/(1-\varphi)} - 1$ vanishes if $n=0$.</div></div><div class="mtf-row" data-letter="C"><div class="mtf-row-body"><span class="mtf-letter">C</span><span class="mtf-text">$\varphi = 1$ delivers the AK model in which long-run growth rate of $y$ equals $sA - \delta$ even with $n = 0$.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(2,'C',true)">T</button><button type="button" data-value="false" onclick="pickTF(2,'C',false)">F</button></div></div><div class="mtf-defense">Aggregate returns to capital alone equal $\alpha+1\cdot(1-\alpha) = 1$ (constant). The Solow diagram collapses: $k_t$ grows at rate $g_e = sA-\delta$ permanently.</div></div><div class="mtf-row" data-letter="D"><div class="mtf-row-body"><span class="mtf-letter">D</span><span class="mtf-text">$\varphi > 1$ is empirically supported by data showing accelerating growth rates as countries get richer.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(2,'D',true)">T</button><button type="button" data-value="false" onclick="pickTF(2,'D',false)">F</button></div></div><div class="mtf-defense">Lecture 4a explicitly says $\varphi > 1$ gives accelerating growth and is 'not confirmed by the data'. Cross-country evidence shows conditional convergence — poor countries grow faster, not slower. Picked by students who skim the regime table.</div></div></div><div class="submit-row"><button type="button" class="submit-btn" disabled onclick="submitMtf(2)">Submit</button><span>Pick T or F for each statement.</span></div><div class="explanation"><p>The three regimes are the conceptual spine of Ch 8. Reducing $\varphi$ smoothly walks the model from basic Solow ($\varphi=0$, no growth) to semi-endogenous ($0<\varphi<1$, needs $n>0$) to AK ($\varphi=1$, growth from $s$). The fourth case ($\varphi>1$) is excluded on empirical grounds: it predicts accelerating growth which the data flatly contradict.</p></div></div>
+<div class="question-card" id="q-3" data-correct="D" data-topic="Scope of 'endogenous growth'" data-done="0"><div class="question-header"><span class="question-number">Q3</span><span class="question-style">Boundary</span></div><div class="question-stem"><p>A model is called 'endogenous growth' if it explains the long-run growth rate of $A_t$ through model parameters. Which of the following is <strong>NOT</strong> implied by this scope alone?</p></div><button class="reveal-btn" type="button" onclick="reveal(3)">Reveal options</button><span class="reveal-hint">Try answering in your head first.</span><div class="choices"><div class="choice" onclick="pick(3,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">Long-run growth rate of $y_t$ depends on model parameters.<div class="choice-defense">This is the definition of endogenous growth. Always implied.</div></div></div><div class="choice" onclick="pick(3,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">Policy can in principle affect the long-run growth rate of output.<div class="choice-defense">If $g$ depends on parameters and policy moves parameters, then policy affects $g$. Implied.</div></div></div><div class="choice" onclick="pick(3,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">Technology growth arises from either externalities or deliberate R&D.<div class="choice-defense">These are the two flavours covered in Modules 4–5. Implied within the course's scope.</div></div></div><div class="choice" onclick="pick(3,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">Long-run growth is positive even without population growth or exogenous tech.<div class="choice-defense">CORRECT — NOT implied. Semi-endogenous models ARE endogenous but give $g_{se}=0$ if $n=0$. Students conflate 'endogenous' with 'self-sustaining without $n$', which holds only for STRICTLY endogenous variants ($\varphi=1$).</div></div></div></div><div class="explanation"><p>'Endogenous growth' means $g$ is explained by parameters, NOT that $g > 0$ holds without external drivers. Semi-endogenous models endogenise the growth rate but still require $n > 0$ to deliver positive long-run growth. The distinction between semi-endogenous and strictly endogenous is precisely about whether $n > 0$ is needed.</p></div></div>
+<div class="question-card" id="q-4" data-correct="C" data-topic="Meaning of φ in externality model" data-done="0"><div class="question-header"><span class="question-number">Q4</span><span class="question-style">What it measures</span></div><div class="question-stem"><p>In the productive-externality model, $A_t = K_t^\varphi$. The parameter $\varphi$ represents:</p></div><button class="reveal-btn" type="button" onclick="reveal(4)">Reveal options</button><span class="reveal-hint">Try answering in your head first.</span><div class="choices"><div class="choice" onclick="pick(4,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">Capital's share of aggregate national income.<div class="choice-defense">Wrong: capital share equals $\alpha$ from firm-level factor pricing; $\varphi$ is unrelated to functional distribution. Students conflate spillover strength with income shares.</div></div></div><div class="choice" onclick="pick(4,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">The endogenous growth rate of aggregate technology.<div class="choice-defense">Wrong: $g_A$ is an OUTPUT of the model, not a parameter. Confuses the parameter governing spillover strength with the growth rate it endogenises.</div></div></div><div class="choice" onclick="pick(4,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">Elasticity of $A_t$ with respect to aggregate $K_t$.<div class="choice-defense">CORRECT — by direct differentiation of $A_t = K_t^\varphi$: $\partial \ln A_t / \partial \ln K_t = \varphi$. This is the spillover strength.</div></div></div><div class="choice" onclick="pick(4,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">The economy's investment rate parameter.<div class="choice-defense">Wrong: $s$ governs investment. $\varphi$ has nothing to do with savings.</div></div></div></div><div class="explanation"><p>$\varphi$ is the elasticity of technology with respect to aggregate capital — by definition of the spillover function $A_t = K_t^\varphi$. It does NOT equal capital's income share (which is $\alpha$), the growth rate of technology (an endogenous output), or anything about savings.</p></div></div>
+<div class="question-card mtf" id="q-5" data-correct="{&quot;A&quot;: false, &quot;B&quot;: true, &quot;C&quot;: true, &quot;D&quot;: false}" data-topic="AK model properties" data-done="0"><div class="question-header"><span class="question-number">Q5</span><span class="question-style">Multi true-false</span></div><div class="question-stem"><p>The AK model (Ch 8, $\varphi=1$) assumes constant population, so $A = L^{1-\alpha}$ is a constant, and output is $Y_t = AK_t$. Evaluate each statement.</p></div><button class="reveal-btn" type="button" onclick="reveal(5)">Reveal statements</button><span class="reveal-hint">Think through the setup first.</span><div class="mtf-statements"><div class="mtf-row" data-letter="A"><div class="mtf-row-body"><span class="mtf-letter">A</span><span class="mtf-text">$k_t$ converges to a constant steady state $k^*$ analogous to the basic Solow steady state.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(5,'A',true)">T</button><button type="button" data-value="false" onclick="pickTF(5,'A',false)">F</button></div></div><div class="mtf-defense">FALSE — no convergence. $k_{t+1}/k_t = 1 + sA - \delta$ is constant, so $k_t$ grows at rate $g_e$ forever. Tempting because students reflexively look for a steady state.</div></div><div class="mtf-row" data-letter="B"><div class="mtf-row-body"><span class="mtf-letter">B</span><span class="mtf-text">A permanent increase in $s$ permanently raises the growth rate of $y_t$.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(5,'B',true)">T</button><button type="button" data-value="false" onclick="pickTF(5,'B',false)">F</button></div></div><div class="mtf-defense">$g_e = sA - \delta$ depends positively on $s$. This is the most plausible empirical prediction of AK — Bernanke-Gürkaynak supports it across countries.</div></div><div class="mtf-row" data-letter="C"><div class="mtf-row-body"><span class="mtf-letter">C</span><span class="mtf-text">A larger constant population $L$ produces a higher long-run growth rate.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(5,'C',true)">T</button><button type="button" data-value="false" onclick="pickTF(5,'C',false)">F</button></div></div><div class="mtf-defense">$A = L^{1-\alpha}$, so bigger $L$ → bigger $A$ → bigger $g_e = sA-\delta$. This is the (empirically problematic) scale effect — motivation for Module 5.</div></div><div class="mtf-row" data-letter="D"><div class="mtf-row-body"><span class="mtf-letter">D</span><span class="mtf-text">The transitional dynamics resemble the general Solow model with exogenous tech: $\tilde k_t$ approaches a steady state at a positive convergence rate.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(5,'D',true)">T</button><button type="button" data-value="false" onclick="pickTF(5,'D',false)">F</button></div></div><div class="mtf-defense">FALSE — AK has NO transition: $k_t$ jumps onto the BGP immediately and grows at $g_e$ forever. Students conflate 'balanced growth' with 'transitional convergence'.</div></div></div><div class="submit-row"><button type="button" class="submit-btn" disabled onclick="submitMtf(5)">Submit</button><span>Pick T or F for each statement.</span></div><div class="explanation"><p>AK is the simplest truly-endogenous model. Its defining features: (i) no steady-state level for $k$ — only a balanced-growth path; (ii) $s$ affects long-run growth (good); (iii) scale effect in $L$ (bad — empirically refuted); (iv) zero convergence dynamics. Distinguishing AK's BGP from the general Solow's BGP is essential — both feature constant-rate growth, but only general Solow has convergence in $\tilde k$.</p></div></div>
+<div class="question-card" id="q-6" data-correct="A" data-topic="Externality mechanism scope" data-done="0"><div class="question-header"><span class="question-number">Q6</span><span class="question-style">Boundary</span></div><div class="question-stem"><p>In the productive-externality model (Ch 8), learning-by-doing causes worker productivity to rise with aggregate capital. Which of the following is <strong>NOT</strong> implied by this mechanism?</p></div><button class="reveal-btn" type="button" onclick="reveal(6)">Reveal options</button><span class="reveal-hint">Try answering in your head first.</span><div class="choices"><div class="choice" onclick="pick(6,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">Monopoly power or patents are required for sustaining innovation.<div class="choice-defense">CORRECT — NOT implied. The externality model runs entirely under perfect competition with no IP. Patents are needed in the R&D model (Ch 9); students conflate the two.</div></div></div><div class="choice" onclick="pick(6,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">The aggregate production function exhibits increasing returns to scale.<div class="choice-defense">Aggregate PF is $Y = K^{\alpha+\varphi(1-\alpha)}L^{1-\alpha}$; exponents sum > 1 when $\varphi>0$. Implied by the mechanism.</div></div></div><div class="choice" onclick="pick(6,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">Firms take aggregate $K_t$ as parametric when optimising.<div class="choice-defense">The atomistic-firm assumption is part of the externality model. Implied.</div></div></div><div class="choice" onclick="pick(6,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">The spillover effect is uncompensated in the factor market.<div class="choice-defense">Lecture 4a explicitly says the spillover does not accrue to the individual firm — uncompensated. Implied.</div></div></div></div><div class="explanation"><p>Externalities deliver endogenous growth WITHOUT requiring monopoly power: the mechanism is unintentional spillover, not deliberate R&D. Patents and imperfect competition are central to the R&D model (Ch 9) but irrelevant to the externality model (Ch 8). Confusing the two is the single most common Module 4 error.</p></div></div>
+<div class="question-card" id="q-7" data-correct="C" data-topic="Externality model → basic Solow" data-done="0"><div class="question-header"><span class="question-number">Q7</span><span class="question-style">Cross-topic</span></div><div class="question-stem"><p>In the productive-externality model, setting $\varphi = 0$ reduces it <em>exactly</em> to the basic Solow model. Which property is then recovered?</p></div><button class="reveal-btn" type="button" onclick="reveal(7)">Reveal options</button><span class="reveal-hint">Try answering in your head first.</span><div class="choices"><div class="choice" onclick="pick(7,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">Constant returns to capital, allowing perpetual AK-style growth.<div class="choice-defense">Opposite end of the spectrum — that's $\varphi = 1$. Students who muddle the regime table pick this.</div></div></div><div class="choice" onclick="pick(7,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">Strictly endogenous growth with growth rate $sA - \delta$.<div class="choice-defense">Also the AK case. Picked by students who don't track which regime corresponds to which $\varphi$.</div></div></div><div class="choice" onclick="pick(7,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">Convergence to a steady state where $y$ is constant.<div class="choice-defense">CORRECT — $\varphi = 0$ kills the spillover ($A_t = 1$), aggregate PF reduces to $Y = K^\alpha L^{1-\alpha}$, giving basic Solow's steady state with diminishing returns.</div></div></div><div class="choice" onclick="pick(7,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">Aggregate production function with strictly increasing returns.<div class="choice-defense">Aggregate IRS requires $\varphi > 0$. At $\varphi = 0$ we have aggregate CRS.</div></div></div></div><div class="explanation"><p>$\varphi$ measures spillover strength. At $\varphi = 0$ the spillover vanishes and the aggregate PF collapses to $Y_t = K_t^\alpha L_t^{1-\alpha}$ — exactly the basic Solow model with diminishing returns and a steady state. The model nests Solow as a special case.</p><div class="connection"><strong>Connection:</strong> Basic Solow (Module 1) is the $\varphi=0$ corner of the externality model. The whole regime table is a parametric extension of Solow: $\varphi=0$ gives Solow, $0<\varphi<1$ gives semi-endogenous, $\varphi=1$ gives AK, $\varphi>1$ gives explosive.</div></div></div>
+<div class="question-card" id="q-8" data-correct="B" data-topic="Meaning of λ in R&D production function" data-done="0"><div class="question-header"><span class="question-number">Q8</span><span class="question-style">What it measures</span></div><div class="question-stem"><p>In Romer's R&D production function $\Delta A_t = \rho A_t^\varphi L_{At}^\lambda$, the parameter $\lambda < 1$ captures:</p></div><button class="reveal-btn" type="button" onclick="reveal(8)">Reveal options</button><span class="reveal-hint">Try answering in your head first.</span><div class="choices"><div class="choice" onclick="pick(8,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">The 'standing on shoulders' effect: prior ideas boost research.<div class="choice-defense">Wrong attribution. Standing on shoulders is captured by $\varphi > 0$, not $\lambda$. Students conflate the two extras in the R&D function.</div></div></div><div class="choice" onclick="pick(8,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">The 'stepping on toes' effect: research suffers from duplication.<div class="choice-defense">CORRECT — $\lambda < 1$ means doubling $L_{At}$ less than doubles new ideas. Multiple researchers chase overlapping ideas; some effort is duplicated.</div></div></div><div class="choice" onclick="pick(8,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">The 'fishing-out' effect: easy ideas exhausted before hard ones.<div class="choice-defense">Wrong attribution. Fishing out is $\varphi < 0$, not $\lambda < 1$. Students who learned the three effects but didn't memorise which parameter each maps to pick here.</div></div></div><div class="choice" onclick="pick(8,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">The rate at which existing ideas become obsolete.<div class="choice-defense">Wrong — ideas don't depreciate in this model. Only physical capital does.</div></div></div></div><div class="explanation"><p>The two non-unity exponents in $\Delta A_t = \rho A_t^\varphi L_{At}^\lambda$ map to two distinct phenomena: $\varphi$ governs how prior knowledge feeds new research (standing on shoulders if $\varphi > 0$, fishing out if $\varphi < 0$), while $\lambda$ governs returns to research labour (stepping on toes if $\lambda < 1$). Don't conflate them — both are tested in the MTF that follows.</p></div></div>
+<div class="question-card mtf" id="q-9" data-correct="{&quot;A&quot;: true, &quot;B&quot;: true, &quot;C&quot;: true, &quot;D&quot;: false}" data-topic="R&D production function" data-done="0"><div class="question-header"><span class="question-number">Q9</span><span class="question-style">Multi true-false</span></div><div class="question-stem"><p>Romer's R&D production function is $\Delta A_t = \rho A_t^\varphi L_{At}^\lambda$, where $L_{At}$ is R&D labour. Evaluate each statement.</p></div><button class="reveal-btn" type="button" onclick="reveal(9)">Reveal statements</button><span class="reveal-hint">Think through the setup first.</span><div class="mtf-statements"><div class="mtf-row" data-letter="A"><div class="mtf-row-body"><span class="mtf-letter">A</span><span class="mtf-text">$\varphi > 0$ reflects 'standing on shoulders': prior knowledge boosts current R&D productivity.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(9,'A',true)">T</button><button type="button" data-value="false" onclick="pickTF(9,'A',false)">F</button></div></div><div class="mtf-defense">By construction: $\partial \ln \Delta A_t / \partial \ln A_t = \varphi$. Positive elasticity means more accumulated knowledge speeds up new discoveries.</div></div><div class="mtf-row" data-letter="B"><div class="mtf-row-body"><span class="mtf-letter">B</span><span class="mtf-text">$\lambda < 1$ reflects 'stepping on toes': adding researchers yields less than proportional new ideas due to duplication.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(9,'B',true)">T</button><button type="button" data-value="false" onclick="pickTF(9,'B',false)">F</button></div></div><div class="mtf-defense">Decreasing returns to research labour. Each additional researcher partly overlaps with existing effort, producing fewer new ideas than the average researcher.</div></div><div class="mtf-row" data-letter="C"><div class="mtf-row-body"><span class="mtf-letter">C</span><span class="mtf-text">$\varphi < 0$ would model 'fishing out': the stock of easy ideas dwindles as $A_t$ grows.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(9,'C',true)">T</button><button type="button" data-value="false" onclick="pickTF(9,'C',false)">F</button></div></div><div class="mtf-defense">Plausible alternative interpretation. The lecture acknowledges the case but says it always assumes $\varphi$ to be bounded above and uses $\varphi \geq 0$ in practice.</div></div><div class="mtf-row" data-letter="D"><div class="mtf-row-body"><span class="mtf-letter">D</span><span class="mtf-text">Physical capital is a required input alongside labour in the R&D sector.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(9,'D',true)">T</button><button type="button" data-value="false" onclick="pickTF(9,'D',false)">F</button></div></div><div class="mtf-defense">FALSE — lecture 4b p3 is explicit: 'R&D is a labour-intensive production process! We assume it does not involve capital at all.' Students assume R&D needs lab equipment; the model abstracts from this.</div></div></div><div class="submit-row"><button type="button" class="submit-btn" disabled onclick="submitMtf(9)">Submit</button><span>Pick T or F for each statement.</span></div><div class="explanation"><p>The R&D production function compresses three distinct ideas into two parameters: $\varphi$ governs the role of accumulated knowledge (shoulders / fishing out), $\lambda$ governs the role of contemporaneous research labour (toes). Statement D tests a common modelling assumption — Romer abstracts from physical capital in R&D to keep the model tractable.</p></div></div>
+<div class="question-card" id="q-10" data-correct="D" data-topic="Recognising semi-endogenous Romer" data-done="0"><div class="question-header"><span class="question-number">Q10</span><span class="question-style">Deep-short</span></div><div class="question-stem"><p>An economy has positive population growth $n > 0$ and a constant labour split between final goods and R&D. After many periods, the technological growth rate $g_t$ has stopped changing. This is the long-run behaviour of:</p></div><button class="reveal-btn" type="button" onclick="reveal(10)">Reveal options</button><span class="reveal-hint">Try answering in your head first.</span><div class="choices"><div class="choice" onclick="pick(10,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">The basic Solow model with no technology growth.<div class="choice-defense">Basic Solow has no $g_A$ at all, so $g_t$ isn't even defined. Picked by students conflating 'no growth' with 'constant zero growth'.</div></div></div><div class="choice" onclick="pick(10,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">The general Solow model with exogenous $g$.<div class="choice-defense">General Solow has $g_A$ constant BY ASSUMPTION, not by convergence. The stem says $g_t$ has 'stopped CHANGING' — implies dynamics, not exogenous fixity.</div></div></div><div class="choice" onclick="pick(10,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">The AK model (Ch 8, $\varphi=1$).<div class="choice-defense">AK assumes $n = 0$; the stem specifies $n > 0$. Eliminates this regime.</div></div></div><div class="choice" onclick="pick(10,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">The semi-endogenous Romer model ($\varphi < 1$, $n > 0$).<div class="choice-defense">CORRECT — only this regime has BOTH (i) endogenous $g_t$ dynamics that converge to a constant, AND (ii) requires $n > 0$. Long-run limit is $g_{se} = (1+n)^{\lambda/(1-\varphi)} - 1$.</div></div></div></div><div class="explanation"><p>Semi-endogenous Romer is the only model in the catalogue where $g_t$ has independent dynamics (from $g_{t+1} = (1+n)^\lambda (1+g_t)^{\varphi-1} g_t$) that converge to a positive constant requiring $n > 0$. Basic Solow has no $g_A$, general Solow has $g_A$ fixed exogenously, AK has $n = 0$. Recognising the model from its long-run behaviour is the key skill for mock-exam Q2-style questions.</p></div></div>
+<div class="question-card mtf" id="q-11" data-correct="{&quot;A&quot;: true, &quot;B&quot;: true, &quot;C&quot;: false, &quot;D&quot;: true}" data-topic="Semi vs strictly endogenous Romer" data-done="0"><div class="question-header"><span class="question-number">Q11</span><span class="question-style">Multi true-false</span></div><div class="question-stem"><p>Compare the semi-endogenous Romer model ($\varphi < 1$, $n > 0$) and the strictly endogenous Romer model ($\varphi = 1$, $n = 0$). Evaluate each statement.</p></div><button class="reveal-btn" type="button" onclick="reveal(11)">Reveal statements</button><span class="reveal-hint">Think through the setup first.</span><div class="mtf-statements"><div class="mtf-row" data-letter="A"><div class="mtf-row-body"><span class="mtf-letter">A</span><span class="mtf-text">Semi-endogenous Romer requires $n > 0$ to deliver positive long-run growth.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(11,'A',true)">T</button><button type="button" data-value="false" onclick="pickTF(11,'A',false)">F</button></div></div><div class="mtf-defense">$g_{se} = (1+n)^{\lambda/(1-\varphi)} - 1$ collapses to zero if $n=0$. Population growth is the scale-increasing channel that sustains endogenous growth despite diminishing returns in idea creation.</div></div><div class="mtf-row" data-letter="B"><div class="mtf-row-body"><span class="mtf-letter">B</span><span class="mtf-text">Strictly endogenous Romer requires $n = 0$ to avoid accelerating growth.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(11,'B',true)">T</button><button type="button" data-value="false" onclick="pickTF(11,'B',false)">F</button></div></div><div class="mtf-defense">With $\varphi = 1$ and $n > 0$ the model becomes explosive — growth rate of $g_t$ increases without bound. Imposing $n=0$ keeps the model tractable and matches Romer's original formulation.</div></div><div class="mtf-row" data-letter="C"><div class="mtf-row-body"><span class="mtf-letter">C</span><span class="mtf-text">In BOTH regimes, a permanent increase in $s_R$ raises the long-run growth rate.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(11,'C',true)">T</button><button type="button" data-value="false" onclick="pickTF(11,'C',false)">F</button></div></div><div class="mtf-defense">FALSE — only in strictly endogenous ($g_e = \rho(s_R L)^\lambda$ rises with $s_R$). Semi-endogenous $g_{se} = (1+n)^{\lambda/(1-\varphi)}-1$ is independent of $s_R$. This level-vs-growth confusion is the single most exam-tested point.</div></div><div class="mtf-row" data-letter="D"><div class="mtf-row-body"><span class="mtf-letter">D</span><span class="mtf-text">Strictly endogenous Romer predicts that larger countries (higher $L$) grow faster — the scale effect.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(11,'D',true)">T</button><button type="button" data-value="false" onclick="pickTF(11,'D',false)">F</button></div></div><div class="mtf-defense">$g_e = \rho(s_R L)^\lambda$ rises with $L$. Empirically false (large countries don't grow faster) — this is why Module 5 introduces 'no scale effects' refinements.</div></div></div><div class="submit-row"><button type="button" class="submit-btn" disabled onclick="submitMtf(11)">Submit</button><span>Pick T or F for each statement.</span></div><div class="explanation"><p>The semi-vs-strictly endogenous distinction is structural: semi-endogenous uses population growth to feed endogenous tech growth (giving $g_{se}$ that depends only on $n, \lambda, \varphi$), while strictly endogenous uses constant population at $\varphi=1$ to break the diminishing-returns curse (giving $g_e$ that depends on $s_R$ and $L$). Statement C is the single highest-value Module 4 mistake — students reflexively assume more R&D effort always means more growth.</p></div></div>
+<div class="question-card" id="q-12" data-correct="B" data-topic="AK = constant returns to K alone" data-done="0"><div class="question-header"><span class="question-number">Q12</span><span class="question-style">Deep-short</span></div><div class="question-stem"><p>In the AK model, doubling the capital stock $K_t$ while holding the labour force $L$ constant doubles output $Y_t$. This property is best described as:</p></div><button class="reveal-btn" type="button" onclick="reveal(12)">Reveal options</button><span class="reveal-hint">Try answering in your head first.</span><div class="choices"><div class="choice" onclick="pick(12,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">Constant returns to capital and labour jointly.<div class="choice-defense">Picked by students who don't distinguish 'returns to one factor alone' from 'returns to scale'. CRS to $(K,L)$ is the textbook Solow assumption; here only $K$ varies and $Y$ still doubles.</div></div></div><div class="choice" onclick="pick(12,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">Constant returns to capital alone, holding $L$ fixed.<div class="choice-defense">CORRECT — $Y = AK$ with $A$ held constant means $MPK = A$ is constant. Doubling $K$ alone doubles $Y$ — by definition CRS to capital alone.</div></div></div><div class="choice" onclick="pick(12,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">Diminishing returns to capital plus aggregate IRS.<div class="choice-defense">Describes the semi-endogenous regime ($\varphi<1$), not AK. The hallmark of AK is precisely constant — not diminishing — returns to capital alone.</div></div></div><div class="choice" onclick="pick(12,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">Inada conditions for the marginal product of capital fail.<div class="choice-defense">Partially true (Inada at $k\to\infty$ requires $MPK \to 0$; here $MPK = A$ everywhere), but this is a consequence of CRS-to-K-alone, not the direct description.</div></div></div></div><div class="explanation"><p>'Constant returns to capital alone' is the structural fingerprint of AK and what distinguishes it from all earlier Solow variants. The aggregate PF $Y = AK$ has output linear in $K$ at given $A$. This is what kills the Solow steady state: no diminishing returns to drag $k$ back, so $k$ grows at rate $g_e$ forever.</p></div></div>
+<div class="question-card" id="q-13" data-correct="A" data-topic="AK vs general Solow convergence" data-done="0"><div class="question-header"><span class="question-number">Q13</span><span class="question-style">Cross-topic</span></div><div class="question-stem"><p>The general Solow model with exogenous technology (Module 2) exhibits conditional convergence to a balanced growth path. The AK model (Module 4, $\varphi=1$) does <em>not</em> exhibit convergence. What single structural feature accounts for this difference?</p></div><button class="reveal-btn" type="button" onclick="reveal(13)">Reveal options</button><span class="reveal-hint">Try answering in your head first.</span><div class="choices"><div class="choice" onclick="pick(13,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">Returns to capital alone: diminishing in Solow, constant in AK.<div class="choice-defense">CORRECT — diminishing $MPK$ in Solow ($\alpha < 1$) pulls $\tilde k$ back to its steady state. In AK, $MPK = A$ is constant; no force pulls $k_t$ to a fixed level.</div></div></div><div class="choice" onclick="pick(13,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">Technology is exogenous in Solow but endogenous in AK.<div class="choice-defense">Tempting but wrong: even endogenous-tech models can have convergence (semi-endogenous Romer does, on $\tilde k$). What matters is curvature in capital, not whether $A$ is endogenous.</div></div></div><div class="choice" onclick="pick(13,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">General Solow has population growth, AK assumes $n = 0$.<div class="choice-defense">Wrong: assumptions about $n$ don't explain the distinction. General Solow with $n=0$ still has convergence; AK with $n>0$ still would not.</div></div></div><div class="choice" onclick="pick(13,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">Cobb-Douglas vs general functional form for production.<div class="choice-defense">Both models use Cobb-Douglas. The qualitative difference is parameter values, not functional form.</div></div></div></div><div class="explanation"><p>The single structural feature is whether the marginal product of capital diminishes as capital accumulates. Solow has $MPK \to 0$ as $k \to \infty$, so investment eventually equals depreciation and a steady state forms. AK has $MPK = A$ constant — net investment never falls to zero, $k_t$ grows forever. This is also why $\varphi = 1$ is called the 'knife-edge' case: it's exactly the parameter value that flips the qualitative behaviour.</p><div class="connection"><strong>Connection:</strong> The Solow diagram works because $s f(k)$ is concave (diminishing returns), eventually flattening below $(n+\delta)k$. AK has $s f(k) = sAk$, a straight line — never flattens, never crosses depreciation linearly. The mechanism that makes Solow's steady state exist is exactly what AK removes.</div></div></div>
+<div class="question-card mtf" id="q-14" data-correct="{&quot;A&quot;: true, &quot;B&quot;: false, &quot;C&quot;: true, &quot;D&quot;: true}" data-topic="Externality vs R&D models" data-done="0"><div class="question-header"><span class="question-number">Q14</span><span class="question-style">Multi true-false</span></div><div class="question-stem"><p>Compare the externality-based (Ch 8) and R&D-based (Ch 9) endogenous growth models. Evaluate each statement.</p></div><button class="reveal-btn" type="button" onclick="reveal(14)">Reveal statements</button><span class="reveal-hint">Think through the setup first.</span><div class="mtf-statements"><div class="mtf-row" data-letter="A"><div class="mtf-row-body"><span class="mtf-letter">A</span><span class="mtf-text">The externality model assumes unintentional spillovers; the R&D model assumes deliberate, profit-motivated innovation.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(14,'A',true)">T</button><button type="button" data-value="false" onclick="pickTF(14,'A',false)">F</button></div></div><div class="mtf-defense">Lecture 4b p2 contrasts the two flavours explicitly: externality = unintentional byproduct of capital accumulation; R&D = intentional production by labour. This framing is canonical.</div></div><div class="mtf-row" data-letter="B"><div class="mtf-row-body"><span class="mtf-letter">B</span><span class="mtf-text">Both models require monopoly power or patents to sustain private innovation.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(14,'B',true)">T</button><button type="button" data-value="false" onclick="pickTF(14,'B',false)">F</button></div></div><div class="mtf-defense">FALSE — only the R&D model needs IP. Externality model runs under perfect competition: firms don't internalise the spillover and don't need to. Confusing the two micro-foundations is the central Module 4 error.</div></div><div class="mtf-row" data-letter="C"><div class="mtf-row-body"><span class="mtf-letter">C</span><span class="mtf-text">Both models can generate semi-endogenous and strictly endogenous regimes depending on parameter values.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(14,'C',true)">T</button><button type="button" data-value="false" onclick="pickTF(14,'C',false)">F</button></div></div><div class="mtf-defense">Externality: $0<\varphi<1$ semi, $\varphi=1$ AK. R&D: $0<\varphi<1$ with $n>0$ semi, $\varphi=1$ with $n=0$ strictly endogenous. Same parametric structure, different mechanism.</div></div><div class="mtf-row" data-letter="D"><div class="mtf-row-body"><span class="mtf-letter">D</span><span class="mtf-text">In the externality model, factor prices equal marginal products at the FIRM level (with $A_t$ taken as given), not the aggregate level.</span><div class="mtf-pick"><button type="button" data-value="true" onclick="pickTF(14,'D',true)">T</button><button type="button" data-value="false" onclick="pickTF(14,'D',false)">F</button></div></div><div class="mtf-defense">Crucial for preserving perfect competition. If firms paid the aggregate MPK $\alpha+\varphi(1-\alpha)$, total factor payments would exceed output — externality is uncompensated by construction.</div></div></div><div class="submit-row"><button type="button" class="submit-btn" disabled onclick="submitMtf(14)">Submit</button><span>Pick T or F for each statement.</span></div><div class="explanation"><p>The two flavours converge in form (both can be semi-endogenous or strictly endogenous) but diverge in micro-foundation. Externality = perfect competition + uncompensated spillover. R&D = imperfect competition + patents to reward inventors. Statement B is the deepest pitfall — it conflates these foundations.</p></div></div>
+<div class="question-card" id="q-15" data-correct="A" data-topic="Factor income shares in externality model" data-done="0"><div class="question-header"><span class="question-number">Q15</span><span class="question-style">Derivation · justify step</span></div><div class="question-stem"><p>The derivation below establishes that capital's share of national income equals $\alpha$ in the externality model (Ch 8). Which statement justifies the result in the highlighted line?</p><div class="derivation-block"><div class="derivation-step"><span class="step-num">(1)</span><span class="step-body">y_t^d = (K_t^d)^\alpha (A_t L_t^d)^{1-\alpha} \quad \text{(firm-level PF, } A_t \text{ given)}</span></div><div class="derivation-step"><span class="step-num">(2)</span><span class="step-body">r_t = \alpha \cdot y_t^d / K_t^d, \quad w_t = (1-\alpha) \cdot y_t^d / L_t^d</span></div><div class="derivation-step"><span class="step-num">(3)</span><span class="step-body">K_t^d = K_t, \quad L_t^d = L_t, \quad A_t = K_t^\varphi \quad \text{(equilibrium)}</span></div><div class="derivation-step"><span class="step-num">(4)</span><span class="step-body">Y_t = K_t^{\alpha + \varphi(1-\alpha)} L_t^{1-\alpha}</span></div><div class="derivation-step highlight"><span class="step-num">(5)</span><span class="step-body">r_t K_t / Y_t = \alpha</span></div></div></div><button class="reveal-btn" type="button" onclick="reveal(15)">Reveal options</button><span class="reveal-hint">Try answering in your head first.</span><div class="choices"><div class="choice" onclick="pick(15,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">Factor prices use the firm-level MPK with $A_t$ taken as given; the externality is uncompensated.<div class="choice-defense">CORRECT — line 2 derives $r_t$ from the FIRM-level PF, not the aggregate. Multiplying $r_t$ by $K_t$ and dividing by $Y_t$ gives $\alpha$, not $\alpha+\varphi(1-\alpha)$.</div></div></div><div class="choice" onclick="pick(15,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">Zero profit forces factor shares to sum to 1, fixing them at $\alpha$ and $1-\alpha$.<div class="choice-defense">Zero profit holds (factor payments exhaust output by Euler), but it doesn't determine the SPLIT between $K$ and $L$. Logically incomplete.</div></div></div><div class="choice" onclick="pick(15,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">Cobb-Douglas form makes factor shares equal aggregate output elasticities directly.<div class="choice-defense">Reflects the common mistake of differentiating the AGGREGATE PF: would give $\alpha+\varphi(1-\alpha)$, not $\alpha$. Confuses firm-level vs aggregate elasticities.</div></div></div><div class="choice" onclick="pick(15,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">Replication argument plus Euler's theorem forces capital share to equal $\alpha$.<div class="choice-defense">Replication delivers CRS at firm level; Euler's theorem says factor payments exhaust output. Together insufficient — they don't tell us the $\alpha$ split unless we already know factor prices are firm-level MPK.</div></div></div></div><div class="explanation"><p>The key insight: factor prices come from firm-level marginal products (line 2), with $A_t$ treated as exogenous by the firm. The externality enters only in line 3 (substituting equilibrium $A_t = K_t^\varphi$), and it shows up in the aggregate PF (line 4). But the CAPITAL SHARE is set by the firm's pricing decision — so $r_t K_t / Y_t = \alpha$, not $\alpha+\varphi(1-\alpha)$. This is the structural reason the externality model preserves perfect competition.</p></div></div>
+<div class="question-card" id="q-16" data-correct="B" data-topic="Scale effect critique" data-done="0"><div class="question-header"><span class="question-number">Q16</span><span class="question-style">Spot the flaw</span></div><div class="question-stem"><p>A student argues: 'In the strictly endogenous Romer model ($\varphi=1$, $n=0$), the long-run growth rate is $g_e = \rho(s_R L)^\lambda$. Therefore countries with twice the population should grow $2^\lambda$ times faster — this is testable.' What's the principal flaw in using this as a real-world prediction?</p></div><button class="reveal-btn" type="button" onclick="reveal(16)">Reveal options</button><span class="reveal-hint">Try answering in your head first.</span><div class="choices"><div class="choice" onclick="pick(16,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">The formula is wrong; the correct expression is $g_e = \rho s_R^\lambda$ with no $L$.<div class="choice-defense">Wrong — the formula DOES contain $L$ (Lecture 4b p21). Students who half-remember the formula and want to dismiss the scale effect pick this.</div></div></div><div class="choice" onclick="pick(16,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">Larger countries do not in fact grow faster — the predicted scale effect is empirically absent or reversed.<div class="choice-defense">CORRECT — Lecture 4a p23 calls scale effect 'a serious and problematic' feature. Empirically, cross-country growth is not increasing in $L$ (China and India do not lead growth). This is the central critique that motivates Module 5.</div></div></div><div class="choice" onclick="pick(16,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">$\lambda < 1$ means the doubling factor $2^\lambda$ is less than 1, so larger countries actually grow slower.<div class="choice-defense">Misreading — $\lambda < 1$ makes $2^\lambda > 1$ (just less than 2). Students unfamiliar with exponents pick here.</div></div></div><div class="choice" onclick="pick(16,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">$\rho$ varies across countries and tends to be lower in larger ones, cancelling the $L^\lambda$ effect.<div class="choice-defense">Ad hoc speculation not supported by the lecture. Models typically treat $\rho$ as a common technological parameter.</div></div></div></div><div class="explanation"><p>The scale effect ($g_e$ increasing in $L$) is the most prominent empirical failure of strictly endogenous Romer. Real-world growth rates are not positively correlated with country size — if anything, the 20th-century US grew at roughly constant rate while population quadrupled, contradicting the model's prediction of accelerating growth. This is the entire motivation for the 'no scale effects' literature in Module 5.</p></div></div>
+<div class="question-card mono-choices" id="q-17" data-correct="C" data-topic="Recovering φ from observed g_se" data-done="0"><div class="question-header"><span class="question-number">Q17</span><span class="question-style">Numeric</span></div><div class="question-stem"><p>A country with population growth $n = 2\%$ per year is in semi-endogenous Romer steady state, growing at $g_{se} = 4\%$. The R&D production function has stepping-on-toes parameter $\lambda = 0.5$. Using the linearised approximation $g_{se} \approx \lambda n / (1 - \varphi)$, what is the implied $\varphi$?</p></div><button class="reveal-btn" type="button" onclick="reveal(17)">Reveal options</button><span class="reveal-hint">Try answering in your head first.</span><div class="choices"><div class="choice" onclick="pick(17,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">$\varphi = 0.25$<div class="choice-defense">Arithmetic-direction error: students compute $\lambda n / g = 0.01/0.04 = 0.25$ and mistake this ratio for $\varphi$ itself. But the formula gives $1 - \varphi = \lambda n / g$, so $\varphi = 1 - 0.25 = 0.75$.</div></div></div><div class="choice" onclick="pick(17,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">$\varphi = 0.50$<div class="choice-defense">Drop-a-factor error: students treat the formula as $g_{se} \approx n/(1-\varphi)$ (forgetting $\lambda$) and get $1-\varphi = 0.5$, so $\varphi = 0.5$. The presence of $\lambda = 0.5$ in the stem makes this trap especially tempting.</div></div></div><div class="choice" onclick="pick(17,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">$\varphi = 0.75$<div class="choice-defense">CORRECT — $0.04 = 0.5 \cdot 0.02 / (1-\varphi)$ gives $1-\varphi = 0.25$, so $\varphi = 0.75$. High $\varphi$ is consistent with the lecture's emphasis that 'standing on shoulders' is empirically substantial.</div></div></div><div class="choice" onclick="pick(17,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">$\varphi = 0.85$<div class="choice-defense">Educated-guess pick: students who recall '$\varphi$ close to 1 gives slow convergence' pick a higher value without computing. Plausible-looking but quantitatively wrong.</div></div></div></div><div class="explanation"><p>The exercise inverts the model: rather than predicting $g$ from $(\varphi, \lambda, n)$, it asks which $\varphi$ is consistent with observed $(g, \lambda, n)$. Setup: $g_{se} \approx \lambda n / (1-\varphi)$ ⇒ $1 - \varphi = \lambda n / g_{se} = 0.5 \cdot 0.02 / 0.04 = 0.25$ ⇒ $\varphi = 0.75$. The trap is treating $\lambda n / g$ as $\varphi$ rather than $1 - \varphi$ — the same arithmetic-direction error that bit M3 Q13 in the last quiz.</p></div></div>
+<div class="chain-block"><span class="chain-label">Scenario</span><div class="chain-setup"><p><strong>Setup.</strong> A developed economy with constant population ($n = 0$) sits on the strictly endogenous Romer balanced growth path with $\varphi = 1$ and constant labour split. At date $t_0$ the policy authority <em>permanently</em> raises the R&D labour share $s_R$.</p></div><div class="question-card" id="q-18" data-correct="B" data-topic="s_R increase in strictly endogenous Romer" data-done="0"><div class="question-header"><span class="question-number">Q18</span><span class="question-style">Deep-short</span></div><div class="question-stem"><p>What happens to the long-run growth rate $g_e$ of GDP per worker?</p></div><button class="reveal-btn" type="button" onclick="reveal(18)">Reveal options</button><span class="reveal-hint">Try answering in your head first.</span><div class="choices"><div class="choice" onclick="pick(18,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">Falls — diverting labour from final goods reduces output growth.<div class="choice-defense">Short-run reallocation hurts final goods, but long-run R&D boosts tech growth, which dominates. Students who fixate on the static reallocation lose.</div></div></div><div class="choice" onclick="pick(18,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">Rises permanently: $g_e = \rho(s_R L)^\lambda$ depends positively on $s_R$.<div class="choice-defense">CORRECT — Lecture 4b p22: 'Structural policy implication: $g_e$ depends on $s_R$.' The whole appeal of strictly endogenous Romer is that policy can permanently raise growth.</div></div></div><div class="choice" onclick="pick(18,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">Rises temporarily, then returns to its original level.<div class="choice-defense">Describes the SEMI-endogenous response (next question). Picked by students confusing the regimes.</div></div></div><div class="choice" onclick="pick(18,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">Unchanged — $s_R$ affects $y$'s level but not its growth rate.<div class="choice-defense">True in semi-endogenous, FALSE in strictly endogenous. Same regime confusion.</div></div></div></div><div class="explanation"><p>In strictly endogenous Romer, $g_e = \rho(s_R L)^\lambda$ is a power function of $s_R$. A permanent rise in $s_R$ permanently raises $g_e$ — this is the policy-relevance virtue of the strictly endogenous model and Cozzi's lead-in to Module 5's hybrid models, which try to preserve this policy effectiveness while killing the scale effect.</p></div></div><div class="question-card" id="q-19" data-correct="D" data-topic="s_R increase in semi-endogenous Romer" data-done="0"><div class="question-header"><span class="question-number">Q19</span><span class="question-style">Deep-short</span></div><div class="question-stem"><p>Now consider the SEMI-endogenous Romer case ($\varphi < 1$, $n > 0$). The same policy — permanently raising $s_R$ — leads to which long-run outcome?</p></div><button class="reveal-btn" type="button" onclick="reveal(19)">Reveal options</button><span class="reveal-hint">Try answering in your head first.</span><div class="choices"><div class="choice" onclick="pick(19,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">Permanent rise in $g_{se}$ of the same magnitude as Q18 predicted.<div class="choice-defense">Conflates the two regimes. $g_{se} = (1+n)^{\lambda/(1-\varphi)} - 1$ is independent of $s_R$. Wrong.</div></div></div><div class="choice" onclick="pick(19,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">Permanent rise in $g_{se}$, but smaller due to diminishing returns to scale.<div class="choice-defense">Same regime conflation with a softening qualifier. Still wrong on the qualitative point: $g_{se}$ doesn't depend on $s_R$ at all.</div></div></div><div class="choice" onclick="pick(19,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">No effect on the level of $y$ at any horizon, short or long.<div class="choice-defense">Wrong — there IS a permanent level effect on $y$ (and on $A$). Picked by students who, knowing 'no growth effect', overshoot to 'no effect at all'.</div></div></div><div class="choice" onclick="pick(19,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">Temporary rise in $g_t$ that fades, plus a permanent level effect on $y$.<div class="choice-defense">CORRECT — Lecture 4b p20: $g_{se}$ depends only on $\lambda, \varphi, n$, not on $s_R$ or $s$. $s_R$ shifts the level path but not its slope.</div></div></div></div><div class="explanation"><p>The level-vs-growth distinction is the single highest-value Module 4 mistake. Semi-endogenous Romer: $g_{se} = (1+n)^{\lambda/(1-\varphi)} - 1$ depends only on $\lambda, \varphi, n$. So $s_R$ shifts the BGP up (more $y$ at every $t$) but doesn't tilt it. Strictly endogenous: $g_e = \rho(s_R L)^\lambda$ — $s_R$ tilts the BGP. Same policy, qualitatively different outcomes because the regimes differ in whether ideas have diminishing or constant returns.</p></div></div></div>
+<div class="question-card multi" id="q-20" data-correct="[&quot;A&quot;, &quot;B&quot;, &quot;D&quot;]" data-topic="Critiques of strictly endogenous models" data-done="0"><div class="question-header"><span class="question-number">Q20</span><span class="question-style">Multi-select</span></div><div class="question-stem"><p>Which of the following are valid critiques of the strictly endogenous (AK or R&D with $\varphi=1$) growth model? <strong>Select all that apply.</strong></p></div><button class="reveal-btn" type="button" onclick="reveal(20)">Reveal options</button><span class="reveal-hint">Try answering in your head first.</span><div class="choices"><div class="choice" onclick="toggle(20,'A')" data-letter="A"><span class="choice-letter"><span>A</span></span><div class="choice-body">Knife-edge: $\varphi = 1$ is a measure-zero parameter value, not robust to perturbation.<div class="choice-defense">Valid critique — although lecture concedes $\varphi=1$ is 'an approximation of $\varphi$ less than but close to one'. Theoretically the singularity at exactly 1 is real.</div></div></div><div class="choice" onclick="toggle(20,'B')" data-letter="B"><span class="choice-letter"><span>B</span></span><div class="choice-body">Scale effect: predicts larger countries grow faster, contradicting empirical evidence.<div class="choice-defense">Lecture-stated as 'serious and problematic'. The main empirical critique, and Module 5's raison d'être.</div></div></div><div class="choice" onclick="toggle(20,'C')" data-letter="C"><span class="choice-letter"><span>C</span></span><div class="choice-body">Predicts negative correlation between $s$ and $g$, contradicting Bernanke-Gürkaynak.<div class="choice-defense">Wrong direction — strictly endogenous predicts POSITIVE $s$-$g$ correlation (AK: $g_e = sA - \delta$), and Bernanke-Gürkaynak FOUND this correlation. Students who flip the sign pick this; this prediction is actually the model's empirical STRENGTH.</div></div></div><div class="choice" onclick="toggle(20,'D')" data-letter="D"><span class="choice-letter"><span>D</span></span><div class="choice-body">Lack of convergence: countries with different $k_0$ never catch up, contradicting conditional convergence.<div class="choice-defense">Valid — AK $k_t$ grows at $g_e$ forever from any initial level. Cross-country conditional convergence (MRW-style) is robust evidence against this.</div></div></div></div><div class="submit-row"><button type="button" class="submit-btn" disabled onclick="submitMulti(20)">Submit</button><span>Pick all that apply, then submit.</span></div><div class="explanation"><p>Three valid critiques: (A) knife-edge parameterisation, (B) scale effect — the most serious — and (D) lack of convergence. Item (C) is the trap: strictly endogenous models predict POSITIVE $s$-$g$ correlation, which is actually OBSERVED (Bernanke-Gürkaynak) and counts as evidence FOR endogenous growth. Students conditioned to expect 'all critiques' may include C without examining the direction.</p></div></div>
+<div class="summary" id="summary">
+<h2>Quiz Complete</h2>
+<div class="score-big" id="final-score"></div>
+<div class="score-label" id="final-label"></div>
+<table class="results-table" id="results-table">
+<thead><tr><th>#</th><th>Topic</th><th>Correct</th><th>Yours</th><th></th></tr></thead>
+<tbody id="results-body"></tbody>
+</table>
+<div class="json-section">
+<label>Paste this into chat to update your learning state</label>
+<textarea class="json-box" id="json-export" readonly></textarea>
+</div>
+<div class="btn-row">
+<button class="btn" onclick="copyJson()">Copy JSON</button>
+<button class="btn btn-secondary" onclick="document.querySelectorAll('.explanation').forEach(e=>e.classList.add('visible'))">Show All Explanations</button>
+</div>
+</div>
+</div>
+<div class="copy-toast" id="copy-toast">Copied to clipboard</div>
+<script>
+const total=20;
+let answered=0,correct=0;
+const results=[];
+
+function setsEqual(a,b){
+  if(a.length!==b.length)return false;
+  const sa=new Set(a),sb=new Set(b);
+  for(const x of sa)if(!sb.has(x))return false;
+  return true;
+}
+
+/* Productive-failure: hide answer surfaces until user clicks reveal */
+function reveal(qid){
+  document.getElementById('q-'+qid).classList.add('revealed');
+}
+
+function pickTF(qid,letter,value){
+  const card=document.getElementById('q-'+qid);
+  if(card.dataset.done==='1')return;
+  const row=card.querySelector('.mtf-row[data-letter="'+letter+'"]');
+  row.dataset.pick=String(value);
+  row.querySelectorAll('.mtf-pick button').forEach(b=>{
+    b.classList.toggle('picked',b.dataset.value===String(value));
+  });
+  // Enable submit when every row has a pick
+  const rows=card.querySelectorAll('.mtf-row');
+  const allPicked=Array.from(rows).every(r=>r.dataset.pick!==undefined);
+  const btn=card.querySelector('.submit-btn');
+  if(btn)btn.disabled=!allPicked;
+}
+
+function submitMtf(qid){
+  const card=document.getElementById('q-'+qid);
+  if(card.dataset.done==='1')return;
+  const truth=JSON.parse(card.dataset.correct);  // {"A":true,"B":false,...}
+  const topic=card.dataset.topic||'';
+  const userPicks={};
+  let allRight=true;
+  card.querySelectorAll('.mtf-row').forEach(row=>{
+    const letter=row.dataset.letter;
+    const pick=row.dataset.pick==='true';
+    userPicks[letter]=pick;
+    const right=truth[letter]===pick;
+    row.classList.add(right?'correct-reveal':'wrong-reveal');
+    row.querySelectorAll('.mtf-pick button').forEach(b=>b.disabled=true);
+    if(!right)allRight=false;
+  });
+  card.querySelector('.submit-row').style.display='none';
+  // For LEARNING_STATE updates we treat the cluster as a single all-or-nothing item.
+  const correctStr=Object.entries(truth).map(([k,v])=>k+':'+(v?'T':'F')).join(' ');
+  const userStr=Object.entries(userPicks).map(([k,v])=>k+':'+(v?'T':'F')).join(' ');
+  commitAnswer(qid,userStr,correctStr,allRight,topic);
+}
+
+function commitAnswer(qid,userAnswer,correctAnswer,isCorrect,topic){
+  const card=document.getElementById('q-'+qid);
+  if(card.dataset.done==='1')return;
+  card.dataset.done='1';
+  card.querySelectorAll('.choice').forEach(c=>c.classList.add('disabled'));
+  if(isCorrect){card.classList.add('answered-correct');correct++}
+  else{card.classList.add('answered-wrong')}
+  card.querySelector('.explanation').classList.add('visible');
+  results.push({
+    id:qid,topic:topic,
+    correct_answer:Array.isArray(correctAnswer)?correctAnswer.join('+'):correctAnswer,
+    user_answer:Array.isArray(userAnswer)?(userAnswer.length?userAnswer.join('+'):'—'):userAnswer,
+    is_correct:isCorrect
+  });
+  answered++;
+  document.getElementById('prog-text').textContent=answered+' / '+total;
+  document.getElementById('prog-fill').style.width=(answered/total*100)+'%';
+  document.getElementById('score-text').textContent=correct+'/'+answered;
+  if(answered===total)showSummary();
+}
+
+/* Single-MCQ pick: click commits answer */
+function pick(qid,letter){
+  const card=document.getElementById('q-'+qid);
+  if(card.dataset.done==='1')return;
+  const correctLetter=card.dataset.correct;
+  const topic=card.dataset.topic||'';
+  card.querySelectorAll('.choice').forEach(c=>{
+    const l=c.dataset.letter;
+    if(l===correctLetter)c.classList.add('correct-reveal');
+    if(l===letter&&l!==correctLetter)c.classList.add('wrong-reveal');
+  });
+  commitAnswer(qid,letter,correctLetter,letter===correctLetter,topic);
+}
+
+/* Multi-select toggle: click toggles, submit commits */
+function toggle(qid,letter){
+  const card=document.getElementById('q-'+qid);
+  if(card.dataset.done==='1')return;
+  const choice=card.querySelector('.choice[data-letter="'+letter+'"]');
+  choice.classList.toggle('selected');
+  const anySel=card.querySelectorAll('.choice.selected').length>0;
+  const btn=card.querySelector('.submit-btn');
+  if(btn)btn.disabled=!anySel;
+}
+
+function submitMulti(qid){
+  const card=document.getElementById('q-'+qid);
+  if(card.dataset.done==='1')return;
+  const correctSet=JSON.parse(card.dataset.correct);
+  const topic=card.dataset.topic||'';
+  const selected=Array.from(card.querySelectorAll('.choice.selected'))
+    .map(c=>c.dataset.letter).sort();
+  const isCorrect=setsEqual(selected,correctSet);
+  card.querySelectorAll('.choice').forEach(c=>{
+    const l=c.dataset.letter;
+    const wasPicked=c.classList.contains('selected');
+    const isRight=correctSet.includes(l);
+    c.classList.remove('selected');
+    if(wasPicked&&isRight)c.classList.add('correct-reveal');
+    else if(wasPicked&&!isRight)c.classList.add('wrong-reveal');
+    else if(!wasPicked&&isRight)c.classList.add('missed-reveal');
+  });
+  card.querySelector('.submit-row').style.display='none';
+  commitAnswer(qid,selected,correctSet,isCorrect,topic);
+}
+
+function showSummary(){
+  const s=document.getElementById('summary');
+  s.style.display='block';
+  document.getElementById('final-score').textContent=correct+' / '+total;
+  const pct=Math.round(correct/total*100);
+  document.getElementById('final-label').textContent=
+    pct+'% — '+(pct>=80?'strong understanding':pct>=60?'good, review marked items':'review recommended');
+  const tbody=document.getElementById('results-body');
+  results.sort((a,b)=>a.id-b.id);
+  results.forEach(r=>{
+    const tr=document.createElement('tr');
+    tr.className=r.is_correct?'row-correct':'row-wrong';
+    tr.innerHTML='<td>Q'+r.id+'</td><td>'+r.topic+'</td><td>'+r.correct_answer+
+      '</td><td>'+r.user_answer+'</td><td>'+(r.is_correct?'✓':'✗')+'</td>';
+    tbody.appendChild(tr);
+  });
+  const answers={};
+  results.sort((a,b)=>a.id-b.id).forEach(r=>{answers['Q'+r.id]=r.user_answer});
+  const exportData={file:"module-4-conceptual_2026-05-28",score:correct+'/'+total,answers:answers};
+  document.getElementById('json-export').value=JSON.stringify(exportData);
+  s.scrollIntoView({behavior:'smooth'});
+}
+
+function copyJson(){
+  const box=document.getElementById('json-export');
+  box.select();
+  document.execCommand('copy');
+  const toast=document.getElementById('copy-toast');
+  toast.style.display='block';
+  setTimeout(()=>{toast.style.display='none'},1500);
+}
+
+document.addEventListener('DOMContentLoaded',()=>{
+  renderMathInElement(document.body,{delimiters:[
+    {left:"$$",right:"$$",display:true},
+    {left:"$",right:"$",display:false},
+    {left:"\\(",right:"\\)",display:false},
+    {left:"\\[",right:"\\]",display:true}
+  ]});
+});
+</script>
+</body>
+</html>

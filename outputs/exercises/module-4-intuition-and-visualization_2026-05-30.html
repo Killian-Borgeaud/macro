@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Exercises: Module 4 — Intuition & Visualization (Externalities and R&D)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script>
+window.MacroFigures = window.MacroFigures || (function() {
+
+  function linspace(a, b, n) {
+    const out = [];
+    for (let i = 0; i < n; i++) out.push(a + (b - a) * i / (n - 1));
+    return out;
+  }
+
+  function compileExpr(expr, paramNames) {
+    return new Function('k', 'p',
+      'const {' + paramNames.join(',') + '} = p; return ' + expr + ';');
+  }
+
+  function compileScalarExpr(expr, paramNames) {
+    if (typeof expr === 'number') return () => expr;
+    if (typeof expr === 'string') {
+      return new Function('p',
+        'const {' + paramNames.join(',') + '} = p; return ' + expr + ';');
+    }
+    return () => null;
+  }
+
+  function findIntersection(xs, y1s, y2s) {
+    for (let i = 1; i < xs.length; i++) {
+      const d0 = y1s[i-1] - y2s[i-1];
+      const d1 = y1s[i] - y2s[i];
+      if (d0 === 0) return { x: xs[i-1], y: y1s[i-1] };
+      if (d0 * d1 < 0) {
+        const t = d0 / (d0 - d1);
+        return {
+          x: xs[i-1] + t * (xs[i] - xs[i-1]),
+          y: y1s[i-1] + t * (y1s[i] - y1s[i-1])
+        };
+      }
+    }
+    return null;
+  }
+
+  function findExtremum(xs, ys, kind) {
+    let idx = 0;
+    for (let i = 1; i < ys.length; i++) {
+      if (kind === 'max' ? ys[i] > ys[idx] : ys[i] < ys[idx]) idx = i;
+    }
+    return { x: xs[idx], y: ys[idx] };
+  }
+
+  function buildCurveData(curve, xs, params, paramNames) {
+    if (curve.type === 'time_series') {
+      // Discrete recursion: k_{t+1} = recursion(k_t, p), starting from initial.
+      const T = (curve.t_range && curve.t_range[1]) || 50;
+      const t0 = (curve.t_range && curve.t_range[0]) || 0;
+      const initFn = compileScalarExpr(curve.initial, paramNames);
+      const recFn = new Function('k', 'p',
+        'const {' + paramNames.join(',') + '} = p; return ' + curve.recursion + ';');
+      const ts = [t0], ks = [initFn(params)];
+      for (let t = t0 + 1; t <= T; t++) {
+        ks.push(recFn(ks[ks.length - 1], params));
+        ts.push(t);
+      }
+      return { x: ts, y: ks };
+    }
+    if (curve.type === 'piecewise') {
+      // [{when: "k < 10", expr: "..."}], else expr at end
+      const fns = curve.pieces.map(p => ({
+        when: p.when ? new Function('k', 'p',
+          'const {' + paramNames.join(',') + '} = p; return ' + p.when + ';') : null,
+        fn: compileExpr(p.expr, paramNames)
+      }));
+      return {
+        x: xs,
+        y: xs.map(k => {
+          for (const piece of fns) {
+            if (!piece.when || piece.when(k, params)) return piece.fn(k, params);
+          }
+          return null;
+        })
+      };
+    }
+    // default: type === 'expr'
+    const fn = compileExpr(curve.expr, paramNames);
+    return { x: xs, y: xs.map(k => fn(k, params)) };
+  }
+
+  function buildPanel(panel, params, paramNames, panelHostId) {
+    let xs;
+    // For panels containing only time_series curves, x_range may be omitted.
+    if (panel.x_range) {
+      xs = linspace(panel.x_range[0], panel.x_range[1], panel.n_points || 200);
+    } else {
+      xs = [];
+    }
+
+    const curveData = panel.curves.map(c => buildCurveData(c, xs, params, paramNames));
+
+    const traces = panel.curves.map((c, i) => ({
+      x: curveData[i].x, y: curveData[i].y,
+      name: c.name, mode: c.mode || 'lines',
+      line: { color: c.color, width: c.width || 1.6, dash: c.dash || 'solid' },
+      marker: { size: c.marker_size || 5, color: c.color, line: { color: 'white', width: 1 } }
+    }));
+
+    const shapes = [];
+    const annotations = [];
+    const readoutParts = [];
+
+    for (const m of (panel.markers || [])) {
+      let pt = null;
+      let line = null;
+
+      if (m.type === 'intersection') {
+        pt = findIntersection(curveData[m.curves[0]].x, curveData[m.curves[0]].y, curveData[m.curves[1]].y);
+      } else if (m.type === 'maximum' || m.type === 'minimum') {
+        const kind = m.type === 'maximum' ? 'max' : 'min';
+        pt = findExtremum(curveData[m.curve].x, curveData[m.curve].y, kind);
+      } else if (m.type === 'vertical_line') {
+        const x = compileScalarExpr(m.at, paramNames)(params);
+        line = { type: 'line', x0: x, x1: x, yref: 'paper', y0: 0, y1: 1,
+                 line: { color: m.color || '#5a7378', dash: m.dash || 'dash', width: 1 } };
+        if (m.label) annotations.push({
+          x: x, y: 0, xref: 'x', yref: 'paper', text: m.label,
+          showarrow: false, yshift: -18, font: { size: 11, color: '#111' }
+        });
+      } else if (m.type === 'horizontal_line') {
+        const y = compileScalarExpr(m.at, paramNames)(params);
+        line = { type: 'line', y0: y, y1: y, xref: 'paper', x0: 0, x1: 1,
+                 line: { color: m.color || '#5a7378', dash: m.dash || 'dash', width: 1 } };
+        if (m.label) annotations.push({
+          x: 1, y: y, xref: 'paper', yref: 'y', text: m.label,
+          showarrow: false, xshift: -8, yshift: -8, font: { size: 11, color: '#111' }
+        });
+      } else if (m.type === 'tangent_line') {
+        const x0 = compileScalarExpr(m.at, paramNames)(params);
+        const fn = compileExpr(panel.curves[m.curve].expr, paramNames);
+        const h = Math.max(0.001, Math.abs(x0) * 0.001);
+        const slope = (fn(x0 + h, params) - fn(x0 - h, params)) / (2 * h);
+        const y0v = fn(x0, params);
+        const xMin = panel.x_range[0], xMax = panel.x_range[1];
+        traces.push({
+          x: [xMin, xMax],
+          y: [y0v + slope * (xMin - x0), y0v + slope * (xMax - x0)],
+          mode: 'lines', name: m.label || 'tangent',
+          line: { color: m.color || '#16a34a', dash: 'dot', width: 2 }, showlegend: !!m.label
+        });
+        pt = { x: x0, y: y0v };
+      } else if (m.type === 'asymptote') {
+        const fn = compileExpr(panel.curves[m.curve].expr, paramNames);
+        const yInf = fn(1e9, params);
+        line = { type: 'line', y0: yInf, y1: yInf, xref: 'paper', x0: 0, x1: 1,
+                 line: { color: m.color || '#94a3b8', dash: 'dot', width: 1 } };
+        if (m.label) annotations.push({
+          x: 0.98, y: yInf, xref: 'paper', yref: 'y', text: m.label,
+          showarrow: false, xanchor: 'right', yshift: -8, font: { size: 11, color: '#666' }
+        });
+      } else if (m.type === 'area') {
+        // Shaded region between curves[0] and curves[1]
+        const ys1 = curveData[m.curves[0]].y;
+        const ys2 = curveData[m.curves[1]].y;
+        traces.push({
+          x: [...curveData[m.curves[0]].x, ...curveData[m.curves[0]].x.slice().reverse()],
+          y: [...ys1, ...ys2.slice().reverse()],
+          fill: 'toself', fillcolor: m.color || 'rgba(37,99,235,0.15)',
+          line: { width: 0 }, name: m.label || 'area', hoverinfo: 'skip',
+          showlegend: !!m.label
+        });
+      } else if (m.type === 'label_point') {
+        const x = compileScalarExpr(m.x, paramNames)(params);
+        const y = compileScalarExpr(m.y, paramNames)(params);
+        pt = { x, y };
+      }
+
+      if (pt) {
+        const pointTrace = {
+          x: [pt.x], y: [pt.y], mode: 'markers',
+          marker: { size: 8, color: m.color || '#003135', line: { color: 'white', width: 1.5 } },
+          name: m.label, showlegend: false,
+          hovertemplate: (m.label ? m.label + ' = ' : '') + '(%{x:.3f}, %{y:.3f})<extra></extra>'
+        };
+        // label_point markers render the label TEXT next to the dot; other marker
+        // types (intersection, max/min) write their label via annotations / guides.
+        if (m.type === 'label_point' && m.label) {
+          pointTrace.mode = 'markers+text';
+          pointTrace.text = [m.label];
+          pointTrace.textposition = m.textposition || 'top right';
+          pointTrace.textfont = {
+            size: 13, color: m.color || '#003135',
+            family: 'JetBrains Mono, ui-monospace, monospace', weight: 700
+          };
+        }
+        traces.push(pointTrace);
+        if (m.guide === 'vertical') {
+          shapes.push({ type: 'line', x0: pt.x, x1: pt.x, y0: 0, y1: pt.y,
+                        line: { color: '#5a7378', dash: 'dash', width: 1 } });
+        } else if (m.guide === 'horizontal') {
+          shapes.push({ type: 'line', xref: 'paper', x0: 0, x1: 1, y0: pt.y, y1: pt.y,
+                        line: { color: '#5a7378', dash: 'dash', width: 1 } });
+        } else if (m.guide === 'both') {
+          shapes.push({ type: 'line', x0: pt.x, x1: pt.x, y0: 0, y1: pt.y,
+                        line: { color: '#5a7378', dash: 'dash', width: 1 } });
+          shapes.push({ type: 'line', xref: 'paper', x0: 0, x1: 1, y0: pt.y, y1: pt.y,
+                        line: { color: '#5a7378', dash: 'dash', width: 1 } });
+        }
+        if (m.label && m.guide === 'vertical') annotations.push({
+          x: pt.x, y: 0, xref: 'x', yref: 'y', text: m.label + ' = ' + pt.x.toFixed(2),
+          showarrow: false, yshift: -18, font: { size: 11, color: '#111' }
+        });
+        readoutParts.push(panel.id + ': ' + (m.label || '?') +
+                          ' = ' + pt.x.toFixed(3) + ', y = ' + pt.y.toFixed(3));
+      }
+      if (line) shapes.push(line);
+    }
+
+    const layout = {
+      font: { family: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+              color: '#003135', size: 12 },
+      xaxis: { title: { text: panel.x_label, font: { size: 12, color: '#5a7378' } },
+               gridcolor: '#e6eef0', zerolinecolor: '#d4e1e4', linecolor: '#d4e1e4',
+               tickfont: { color: '#5a7378', size: 11 } },
+      yaxis: { title: { text: panel.y_label, font: { size: 12, color: '#5a7378' } },
+               gridcolor: '#e6eef0', zerolinecolor: '#d4e1e4', linecolor: '#d4e1e4',
+               tickfont: { color: '#5a7378', size: 11 } },
+      shapes: shapes, annotations: annotations,
+      margin: { t: 28, r: 20, b: 50, l: 60 },
+      title: panel.title ? { text: panel.title, font: { size: 13, color: '#024950' } } : undefined,
+      legend: { x: 0.02, y: 0.98, bgcolor: 'rgba(255,255,255,0.9)',
+                bordercolor: '#d4e1e4', borderwidth: 1, font: { size: 11, color: '#003135' } },
+      plot_bgcolor: '#ffffff', paper_bgcolor: '#ffffff'
+    };
+
+    Plotly.react(panelHostId, traces, layout, { responsive: true, displayModeBar: false });
+    return readoutParts;
+  }
+
+  function renderFigure(spec, hostId) {
+    const root = document.getElementById(hostId);
+    if (!root) { console.warn('Figure host not found:', hostId); return; }
+    const paramNames = Object.keys(spec.params);
+    const defaults = JSON.parse(JSON.stringify(spec.params));
+    const params = JSON.parse(JSON.stringify(spec.params));
+
+    const panels = spec.panels || [{
+      id: 'main', x_range: spec.x_range, n_points: spec.n_points,
+      x_label: spec.x_label, y_label: spec.y_label,
+      curves: spec.curves, markers: spec.markers
+    }];
+
+    function renderAll() {
+      const readoutLines = [];
+      panels.forEach((p, i) => {
+        const lines = buildPanel(p, params, paramNames, hostId + '-panel-' + i);
+        readoutLines.push(...lines);
+      });
+      const readoutEl = root.querySelector('.mf-readout');
+      if (readoutEl) readoutEl.textContent = readoutLines.join('   |   ');
+    }
+
+    // Wire sliders
+    (spec.sliders || []).forEach(s => {
+      const sl = root.querySelector('[data-slider="' + s.param + '"]');
+      const vsp = root.querySelector('[data-value="' + s.param + '"]');
+      if (sl) sl.addEventListener('input', e => {
+        params[s.param] = parseFloat(e.target.value);
+        if (vsp) vsp.textContent = params[s.param].toFixed(s.decimals || 2);
+        renderAll();
+      });
+    });
+
+    // Reset button
+    const resetBtn = root.querySelector('.mf-reset');
+    if (resetBtn) resetBtn.addEventListener('click', () => {
+      Object.assign(params, JSON.parse(JSON.stringify(defaults)));
+      (spec.sliders || []).forEach(s => {
+        const sl = root.querySelector('[data-slider="' + s.param + '"]');
+        const vsp = root.querySelector('[data-value="' + s.param + '"]');
+        if (sl) sl.value = defaults[s.param];
+        if (vsp) vsp.textContent = defaults[s.param].toFixed(s.decimals || 2);
+      });
+      renderAll();
+    });
+
+    renderAll();
+  }
+
+  return { renderFigure };
+})();
+</script>
+<style>
+:root{
+  --bg:#fdf6e3;
+  --card:#ffffff;
+  --border:#e6dcc4;
+  --text:#003135;
+  --muted:#5a7378;
+  --accent:#024950;
+  --accent-2:#0FA4AF;
+  --accent-bg:rgba(15,164,175,0.10);
+  --key:#964734;
+  --key-bg:rgba(150,71,52,0.08);
+  --box-fill:#003135;
+  --box-text:#e6f4f5;
+  --box-line:#0FA4AF;
+  --col-w:820px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background-color:var(--bg)}
+body{
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  color:var(--text);
+  line-height:1.7;
+  font-weight:400;
+  font-feature-settings:"cv11","ss01","ss03";
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.45  0 0 0 0 0.35  0 0 0 0 0.20  0 0 0 0.06 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  background-repeat:repeat;
+  background-attachment:fixed;
+}
+.container{
+  max-width:var(--col-w);
+  margin:0 auto;
+  padding:4rem 1.5rem 5rem;
+}
+h1{
+  font-size:2.5rem;
+  font-weight:300;
+  letter-spacing:-0.03em;
+  line-height:1.15;
+  margin-bottom:.6rem;
+  color:var(--text);
+}
+.meta{
+  color:var(--muted);
+  font-size:.85rem;
+  font-weight:400;
+  letter-spacing:.01em;
+  margin-bottom:2rem;
+  padding-bottom:1.25rem;
+  border-bottom:1px solid var(--border);
+}
+
+/* ── Coverage banner ─────────────────────────────────────────────────── */
+.coverage{
+  margin:0 0 3rem;
+  padding:1.25rem 1.4rem;
+  outline:1px solid var(--accent);
+  outline-offset:5px;
+  position:relative;
+}
+.coverage-label{
+  position:absolute;top:-9px;left:14px;
+  background:var(--bg);
+  padding:0 .5rem;
+  font-size:.65rem;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:var(--accent);
+  font-weight:600;
+}
+.coverage-scope{
+  font-size:.78rem;
+  color:var(--muted);
+  letter-spacing:.04em;
+  text-transform:uppercase;
+  margin-bottom:.7rem;
+}
+.coverage-scope strong{color:var(--accent);font-weight:600}
+.coverage-list{
+  list-style:none;
+  font-size:.92rem;
+  display:grid;
+  gap:.45rem;
+}
+.coverage-list li{
+  display:flex;
+  gap:.85rem;
+  align-items:baseline;
+}
+.coverage-list .cov-num{
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+  font-size:.75rem;
+  color:var(--accent-2);
+  font-weight:600;
+  min-width:2rem;
+}
+.coverage-excluded{
+  margin-top:.9rem;
+  padding-top:.7rem;
+  border-top:1px dashed var(--border);
+  font-size:.82rem;
+  color:var(--muted);
+  font-style:italic;
+}
+
+/* ── Exercise card ───────────────────────────────────────────────────── */
+.exercise{
+  background:var(--card);
+  border:1px solid var(--border);
+  padding:1.75rem 2rem;
+  margin-bottom:2rem;
+}
+.exercise-header{
+  display:flex;
+  justify-content:space-between;
+  align-items:baseline;
+  gap:1rem;
+  margin-bottom:.4rem;
+  padding-bottom:.7rem;
+  border-bottom:1px solid var(--border);
+}
+.exercise-number{
+  font-size:.75rem;
+  font-weight:600;
+  color:var(--accent);
+  letter-spacing:.12em;
+  text-transform:uppercase;
+}
+.exercise-title{
+  font-size:1.25rem;
+  font-weight:400;
+  letter-spacing:-0.01em;
+  color:var(--text);
+  flex:1;
+}
+.exercise-scope{
+  font-size:.72rem;
+  color:var(--muted);
+  letter-spacing:.04em;
+  margin-bottom:1.4rem;
+  font-style:italic;
+}
+.exercise-scope strong{color:var(--accent);font-style:normal;font-weight:600;letter-spacing:.02em}
+
+/* ── Sub-move ────────────────────────────────────────────────────────── */
+.sub-move{
+  margin-bottom:1.5rem;
+  padding-top:.8rem;
+}
+.sub-move:first-of-type{padding-top:0}
+.sub-move-label{
+  display:inline-block;
+  font-size:.7rem;
+  font-weight:600;
+  color:var(--accent-2);
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  margin-bottom:.55rem;
+  padding-bottom:.25rem;
+  border-bottom:1px solid var(--accent-2);
+}
+.sub-move-prompt{
+  font-size:.97rem;
+  line-height:1.7;
+}
+.sub-move-prompt p{margin-bottom:.7rem}
+.sub-move-prompt p:last-child{margin-bottom:0}
+.sub-move-prompt ol,.sub-move-prompt ul{margin:0 0 .8rem 1.5rem}
+.sub-move-prompt li{margin-bottom:.3rem}
+
+/* Hints — progressive reveal per sub-move */
+.hints-area{margin-top:.9rem}
+.hint{
+  display:none;
+  background:var(--accent-bg);
+  border-left:2px solid var(--accent-2);
+  padding:.7rem 1rem;
+  margin-top:.5rem;
+  font-size:.88rem;
+  line-height:1.6;
+  color:var(--text);
+}
+.hint.shown{display:block}
+.hint strong{color:var(--accent);font-weight:600;letter-spacing:.02em}
+.hint-btn{
+  background:transparent;
+  color:var(--accent);
+  border:1px dashed var(--accent);
+  padding:.4rem 1rem;
+  font-size:.7rem;
+  font-family:inherit;
+  font-weight:500;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  cursor:pointer;
+  transition:background .15s, color .15s, border-style .15s;
+  margin-top:.6rem;
+}
+.hint-btn:hover{background:var(--accent);color:#fff;border-style:solid}
+.hint-btn[hidden]{display:none}
+
+/* Embedded figure inside a sub-move */
+.exercise .mf-figure{margin:1rem 0 1.2rem;border-color:var(--border)}
+
+/* ── Solution (hidden by default; matches lecture body style) ────────── */
+.solution-toggle-row{
+  margin-top:1.5rem;
+  padding-top:1.2rem;
+  border-top:1px dashed var(--border);
+  display:flex;
+  align-items:center;
+  gap:.9rem;
+}
+.solution-btn{
+  background:var(--accent);
+  color:#fff;
+  border:1px solid var(--accent);
+  padding:.55rem 1.3rem;
+  font-size:.78rem;
+  font-family:inherit;
+  font-weight:500;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  cursor:pointer;
+  transition:background .15s;
+}
+.solution-btn:hover{background:var(--accent-2);border-color:var(--accent-2)}
+.solution-hint-text{
+  font-size:.72rem;
+  color:var(--muted);
+  font-style:italic;
+  letter-spacing:.03em;
+}
+.solution{
+  display:none;
+  margin-top:1.25rem;
+  padding:1.5rem 1.75rem;
+  background:rgba(255,255,255,0.6);
+  border:1px solid var(--border);
+  font-size:.95rem;
+  line-height:1.75;
+}
+.solution.shown{display:block}
+.solution h3,.solution h4{
+  font-size:.78rem;
+  font-weight:600;
+  color:var(--accent);
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  margin-top:1.4rem;
+  margin-bottom:.6rem;
+  padding-bottom:.3rem;
+  border-bottom:1px solid var(--accent-bg);
+}
+.solution h3:first-child,.solution h4:first-child{margin-top:0}
+.solution p{margin-bottom:.85rem}
+.solution ol,.solution ul{margin:0 0 1rem 1.5rem}
+.solution li{margin-bottom:.45rem}
+.solution code{
+  background:var(--accent-bg);
+  color:var(--accent);
+  padding:.1rem .35rem;
+  border-radius:2px;
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+  font-size:.85em;
+}
+.solution .step{
+  margin-bottom:1rem;
+  padding-left:1rem;
+  border-left:2px solid var(--accent-bg);
+}
+.solution .step-label{
+  display:block;
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+  font-size:.72rem;
+  color:var(--accent-2);
+  font-weight:600;
+  letter-spacing:.06em;
+  margin-bottom:.3rem;
+}
+.solution .key-result{
+  background:var(--box-fill);
+  color:var(--box-text);
+  padding:.85rem 1.2rem;
+  margin:1rem 0;
+  outline:1px solid var(--box-line);
+  outline-offset:3px;
+}
+.solution .key-result .katex{color:var(--box-text)}
+.solution .key-result strong{color:var(--box-line);font-weight:600}
+.katex{font-size:1em}
+.katex-display{margin:1rem 0;overflow-x:auto;overflow-y:hidden}
+
+/* ── Show-all bottom button ──────────────────────────────────────────── */
+.show-all-row{
+  display:flex;justify-content:center;
+  margin:2.5rem 0 0;
+}
+.show-all-btn{
+  background:transparent;
+  color:var(--accent);
+  border:1px solid var(--accent);
+  padding:.6rem 1.5rem;
+  font-size:.75rem;
+  font-family:inherit;
+  font-weight:500;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+  cursor:pointer;
+  transition:background .15s, color .15s;
+}
+.show-all-btn:hover{background:var(--accent);color:#fff}
+
+
+.mf-figure { margin: 1.75rem 0; padding: 1.25rem; background: #ffffff;
+             border: 1px solid #b8dcd9; border-radius: 0; }
+.mf-figure h4 { margin: 0 0 0.8rem 0; font-size: 1rem; font-weight: 600;
+                color: #024950; letter-spacing: -0.01em; }
+.mf-panels { display: grid; gap: 1rem; }
+.mf-panels.cols-2 { grid-template-columns: 1fr 1fr; }
+@media (max-width: 720px) { .mf-panels.cols-2 { grid-template-columns: 1fr; } }
+.mf-panel { min-height: 380px; }
+.mf-sliders { display: grid; gap: 0.35rem; margin-top: 1.25rem; padding: 0;
+              background: transparent; border: none; }
+.mf-slider-row { display: grid; grid-template-columns: 160px 1fr 70px;
+                 align-items: center; gap: 0.9rem; }
+.mf-slider-row label { font-size: 0.76rem; color: #5a7378; font-weight: 400;
+                       letter-spacing: 0.01em; }
+.mf-slider-row input[type=range] {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 16px; background: transparent; margin: 0; padding: 0;
+  cursor: pointer;
+}
+.mf-slider-row input[type=range]::-webkit-slider-runnable-track {
+  height: 1px; background: #b8dcd9; border: none;
+}
+.mf-slider-row input[type=range]::-moz-range-track {
+  height: 1px; background: #b8dcd9; border: none;
+}
+.mf-slider-row input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  height: 9px; width: 9px; border-radius: 50%;
+  background: #0FA4AF; border: none; margin-top: -4px;
+  cursor: pointer; transition: transform .12s, background .12s;
+}
+.mf-slider-row input[type=range]::-moz-range-thumb {
+  height: 9px; width: 9px; border-radius: 50%;
+  background: #0FA4AF; border: none;
+  cursor: pointer; transition: transform .12s, background .12s;
+}
+.mf-slider-row input[type=range]:hover::-webkit-slider-thumb {
+  background: #024950; transform: scale(1.25);
+}
+.mf-slider-row input[type=range]:hover::-moz-range-thumb {
+  background: #024950; transform: scale(1.25);
+}
+.mf-slider-row .mf-value { font-family: 'JetBrains Mono', ui-monospace, monospace;
+                           text-align: right; color: #024950; font-weight: 400;
+                           font-size: 0.76rem; }
+.mf-slider-row .mf-value::before { content: ''; }
+.mf-reset { background: transparent; border: none;
+            padding: 0.35rem 0; margin-top: 0.4rem; cursor: pointer; font-size: 0.72rem;
+            color: #5a7378; justify-self: start; letter-spacing: 0.05em;
+            text-transform: uppercase; font-family: inherit;
+            border-bottom: 1px solid transparent; transition: color .15s, border-color .15s; }
+.mf-reset:hover { color: #024950; border-bottom-color: #0FA4AF; }
+.mf-readout { font-family: 'JetBrains Mono', ui-monospace, monospace;
+              font-size: 0.74rem; color: #964734; font-weight: 400;
+              margin-top: 0.6rem; padding: 0.4rem 0;
+              border-top: 1px dashed #b8dcd9; min-height: 1rem;
+              letter-spacing: 0.01em; }
+.mf-caption { font-size: 0.84rem; color: #5a7378; line-height: 1.6;
+              margin-top: 1rem; padding: 0.75rem 0 0;
+              border-top: 1px solid #b8dcd9; }
+.mf-caption strong { color: #024950; font-weight: 600; letter-spacing: 0.01em; }
+
+@media(max-width:700px){
+  .container{padding:2rem 1rem 3rem}
+  .exercise{padding:1.25rem}
+  h1{font-size:1.8rem}
+}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Exercises: Module 4 — Intuition & Visualization (Externalities and R&D)</h1>
+<div class="meta">Macroeconomics III — Module 4 — 2026-05-30 — 5 exercises — Set 2 (deep understanding, geometry, and economics)</div>
+<div class="coverage"><span class="coverage-label">Coverage</span><div class="coverage-scope"><strong>Scope:</strong> module 4 (endogenous growth: externalities Ch 8 + R&D Ch 9) — second set, intuition/visualization-first — exhaustive · mutually exclusive</div><ul class="coverage-list"><li><span class="cov-num">Ex 1</span><span>private vs social returns to capital · why competitive factor shares sum to 1 under aggregate IRS · phi (externality elasticity) vs alpha (private exponent) · Pigouvian internalization</span></li><li><span class="cov-num">Ex 2</span><span>diminishing returns and the existence of a steady state · geometry of sf(k)/k vs the break-even line · AK: no convergence / constant growth · knife-edge critique · two-method (analytical + graphical) proof</span></li><li><span class="cov-num">Ex 3</span><span>non-rivalry of ideas and the monopoly/patent requirement · standing-on-shoulders phi vs stepping-on-toes lambda · externality vs R&D side-by-side · duplication externality</span></li><li><span class="cov-num">Ex 4</span><span>three testable growth predictions · g-n negative scatter (against semi-endogenous) · g_A-s positive scatter (for endogenous) · scale effect's two empirical failures · bridge to Module 5 dilution</span></li><li><span class="cov-num">Ex 5</span><span>level effects vs growth effects of policy · g_se independent of s vs g_e increasing in s · log-output path visualization · classifying a regime from an observed policy response</span></li></ul><div class="coverage-excluded"><strong>Out of set</strong> (handled elsewhere or out of scope): the mechanical derivations themselves (aggregate PF algebra, the g_se closed form, the Romer g_t difference equation, the Romer fixed points) — these are the entire content of Set 1 (module-4-endogenous-growth); Set 2 deliberately tests the economics and geometry around them rather than re-deriving them; full numerical-simulation pseudocode — handled by /exam Q2-style sketch-simulation</div></div>
+<div class="exercise" id="ex-1"><div class="exercise-header"><span class="exercise-number">Exercise 1</span><span class="exercise-title">The private–social wedge: where does the increasing-returns output go?</span></div><div class="exercise-scope"><strong>Scope:</strong> Lecture 4a §4–6 (firm vs aggregate production function, competitive factor prices), §7 (learning-by-doing motivation); Slides_Session4 p4–8. Quiz-targeted: Q4 (meaning of φ) and Q15 (factor shares under aggregate IRS).</div><div class="sub-move" data-hints-total="2" data-hints-shown="0"><div class="sub-move-label">Anchor</div><div class="sub-move-prompt"><p>The representative firm, treating aggregate technology $A_t$ as given, produces $Y_t = K_t^{\alpha}(A_t L_t)^{1-\alpha}$, and the productive externality is $A_t = K_t^{\varphi}$ (the firm's productivity rises with the <em>aggregate</em> capital stock). Impose the equilibrium condition $K_t^d = K_t$ and write the <strong>aggregate</strong> production function in terms of $K_t$ and $L_t$ alone. Then say, in one phrase, why $\varphi$ is a fundamentally different object from $\alpha$ even though both sit on capital.</p></div><div class="hints-area"><div class="hint" data-idx="1"><strong>Hint 1.</strong> Substitute $A_t = K_t^{\varphi}$ into $Y_t = K_t^{\alpha}(A_t L_t)^{1-\alpha}$ and collect the powers of $K_t$.</div><div class="hint" data-idx="2"><strong>Hint 2.</strong> You should get $Y_t = K_t^{\alpha + \varphi(1-\alpha)} L_t^{1-\alpha}$; the exponents sum to $1 + \varphi(1-\alpha) > 1$. $\alpha$ is what one firm's <em>own</em> capital does; $\varphi$ governs the <em>spillover</em> running through everyone's capital.</div><button type="button" class="hint-btn" onclick="nextHint(this)">Hint 1 / 2</button></div></div><div class="sub-move" data-hints-total="4" data-hints-shown="0"><div class="sub-move-label">Main argument</div><div class="sub-move-prompt"><p>Here is the puzzle this model forces on you. The aggregate production function $Y_t = K_t^{\alpha+\varphi(1-\alpha)}L_t^{1-\alpha}$ has <strong>increasing returns to scale</strong> — double $K$ and $L$ and output more than doubles. Yet under competitive markets the model still delivers $r_t K_t = \alpha Y_t$ and $w_t L_t = (1-\alpha)Y_t$, so the two factors together are paid $r_tK_t + w_tL_t = Y_t$ — exactly 100% of output, with nothing left over.</p><ol><li>Derive $r_t$ and $w_t$ from the firm's first-order conditions, <em>remembering that the firm takes $A_t$ as given</em>, and show the income shares are $\alpha$ and $1-\alpha$.</li><li>Resolve the apparent contradiction: how can payments exhaust output if there are increasing returns? Identify precisely <em>what is not being paid for</em>, and to whom the extra returns to scale accrue.</li><li>State, in one sentence each, what $\alpha$ measures and what $\varphi$ measures, and why they are not the same number despite both attaching to capital.</li></ol></div><div class="hints-area"><div class="hint" data-idx="1"><strong>Hint 1.</strong> FOC for capital: $r_t = \partial Y_t/\partial K_t$ with $A_t$ held fixed. Differentiate $K_t^{\alpha}(A_tL_t)^{1-\alpha}$ w.r.t. $K_t$ — the exponent that comes down is $\alpha$, so $r_t = \alpha Y_t/K_t$.</div><div class="hint" data-idx="2"><strong>Hint 2.</strong> At the firm level the production function is CRS in $(K,L)$ (the replication argument). By Euler's theorem a CRS function is exactly exhausted by its two marginal products — that is the real reason the shares sum to 1, and it has nothing to do with the aggregate returns to scale.</div><div class="hint" data-idx="3"><strong>Hint 3.</strong> The increasing returns live <em>only</em> at the aggregate level, through the channel $A_t = K_t^{\varphi}$, which no atomistic firm internalizes. So the <em>social</em> return to capital, $\alpha + \varphi(1-\alpha)$, exceeds the <em>private</em> return $\alpha$.</div><div class="hint" data-idx="4"><strong>Hint 4.</strong> The missing piece is the externality $\varphi(1-\alpha)$: it is a return to capital that accrues to society (all firms, via higher $A$) but is paid to nobody, because each firm sees only its private marginal product.</div><button type="button" class="hint-btn" onclick="nextHint(this)">Hint 1 / 4</button></div></div><div class="sub-move" data-hints-total="1" data-hints-shown="0"><div class="sub-move-label">Visualize</div><div class="sub-move-prompt"><p>The figure draws two curves. The lower one is the <strong>private</strong> output response a single firm perceives when it varies its own capital with $A_t$ held fixed (exponent $\alpha$). The upper one is the <strong>social</strong> aggregate response once the externality $A_t = K_t^{\varphi}$ is switched on (exponent $\alpha+\varphi(1-\alpha)$). They coincide at $K=1$ and the shaded region is the gap.</p><ol><li>For $K>1$, which curve is steeper, and why does the <em>slope</em> gap between them equal the externality rather than the level gap?</li><li>The firm is paid the slope of one of these curves. Which one? Mark on the figure the marginal incentive a Pigouvian planner would try to correct.</li></ol></div><div class="mf-figure" id="fig-ex1-wedge"><div class="mf-panels "><div id="fig-ex1-wedge-panel-0" class="mf-panel"></div></div><div class="mf-readout"></div><p class="mf-caption"><strong>Private vs social returns to capital.</strong> The firm is paid the slope of the <strong>private</strong> curve (capital exponent $\alpha$); society actually moves along the steeper <strong>social</strong> curve (exponent $\alpha+\varphi(1-\alpha)$). The shaded gap is output generated by the spillover $A_t=K_t^{\varphi}$ that no competitive firm is paid for. Curves coincide where capital equals the reference level and open up as capital accumulates.</p><script>(function(){var spec={"id": "fig-ex1-wedge", "title": "Private vs social returns to capital", "caption": "The firm is paid the slope of the <strong>private</strong> curve (capital exponent $\\alpha$); society actually moves along the steeper <strong>social</strong> curve (exponent $\\alpha+\\varphi(1-\\alpha)$). The shaded gap is output generated by the spillover $A_t=K_t^{\\varphi}$ that no competitive firm is paid for. Curves coincide where capital equals the reference level and open up as capital accumulates.", "params": {"B": 1, "alpha": 0.33, "phi": 0.6}, "x_range": [1, 6], "n_points": 200, "x_label": "capital K  (firm capital = aggregate, in equilibrium)", "y_label": "output Y", "curves": [{"name": "social: K^(\u03b1+\u03c6(1\u2212\u03b1))", "expr": "B * Math.pow(k, alpha + phi*(1-alpha))", "color": "#0FA4AF", "width": 2}, {"name": "private: K^\u03b1  (A held fixed)", "expr": "B * Math.pow(k, alpha)", "color": "#964734", "width": 2}], "markers": [{"type": "area", "curves": [0, 1], "color": "rgba(15,164,175,0.14)", "label": "externality (paid to no one)"}]};var hostId="fig-ex1-wedge";function go(){if(!window.MacroFigures){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.MacroFigures not defined. Did FIGURE_JS load before this snippet?</div>");return;}if(!window.Plotly){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.Plotly not loaded.</div>");return;}try{window.MacroFigures.renderFigure(spec,hostId);}catch(e){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Render error: "+e.message+"</div>");}}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",go);}else{go();}})();</script></div><div class="hints-area"><div class="hint" data-idx="1"><strong>Hint 1.</strong> The slope of each curve is the corresponding marginal product of capital: the private slope is the MPK the firm is actually paid ($r_t$), the social slope is the MPK society receives. The vertical gap is a level (total-output) difference; the steepness gap is the marginal-incentive difference — that is the one prices get wrong.</div><button type="button" class="hint-btn" onclick="nextHint(this)">Hint 1 / 1</button></div></div><div class="sub-move" data-hints-total="1" data-hints-shown="0"><div class="sub-move-label">Counterfactual</div><div class="sub-move-prompt"><p>Now suppose a benevolent planner who <em>recognizes</em> $A_t = K_t^{\varphi}$ chooses the economy's capital accumulation.</p><ol><li>Write the planner's perceived marginal product of capital (differentiate the aggregate $Y$ treating the $A_t = K_t^\varphi$ link as endogenous) and compare it to the competitive $r_t = \alpha Y_t/K_t$. By what factor do they differ?</li><li>Hence argue whether the decentralized economy accumulates too little or too much capital, and what a corrective investment subsidy would have to do. (Rapid prose; one line of algebra for the social MPK.)</li></ol></div><div class="hints-area"><div class="hint" data-idx="1"><strong>Hint 1.</strong> Social MPK $= \dfrac{d}{dK}\,K^{\alpha+\varphi(1-\alpha)}L^{1-\alpha} = \big(\alpha+\varphi(1-\alpha)\big)\dfrac{Y}{K} = \dfrac{\alpha+\varphi(1-\alpha)}{\alpha}\,r_t$, a strict multiple of the private return.</div><button type="button" class="hint-btn" onclick="nextHint(this)">Hint 1 / 1</button></div></div><div class="sub-move" data-hints-total="0" data-hints-shown="0"><div class="sub-move-label">Methodology reflection</div><div class="sub-move-prompt"><p>The result “competitive shares are $\alpha$ and $1-\alpha$ despite aggregate IRS” rests on <em>one</em> specific modelling choice about how the firm perceives $A_t$. Name it. Then: if instead each firm internalized its own contribution to $A_t$ (so that $A$ became a private input the firm had to pay for), would the income shares still sum to 1? State what would break — firm-level CRS, the competitive-pricing assumption, or both — and notice how this previews why the R&D model of Chapter 9 cannot live under perfect competition. (Prose; no algebra required.)</p></div></div><div class="solution-toggle-row"><button type="button" class="solution-btn" onclick="toggleSolution(this)">Show solution</button><span class="solution-hint-text">Solve on paper first.</span></div><div class="solution"><h3>Anchor</h3><div class="step"><span class="step-label">Step 1</span> Substitute the externality $A_t = K_t^{\varphi}$ into the firm's function $Y_t = K_t^{\alpha}(A_t L_t)^{1-\alpha}$: $Y_t = K_t^{\alpha}\big(K_t^{\varphi}L_t\big)^{1-\alpha} = K_t^{\alpha}K_t^{\varphi(1-\alpha)}L_t^{1-\alpha}$.</div><div class="step"><span class="step-label">Step 2</span> Collect the powers of $K_t$: $Y_t = K_t^{\alpha+\varphi(1-\alpha)}L_t^{1-\alpha}$. The capital exponent is $\alpha+\varphi(1-\alpha)$ and the exponents sum to $\alpha+\varphi(1-\alpha)+(1-\alpha)=1+\varphi(1-\alpha)>1$ whenever $\varphi>0$: increasing returns to scale.</div><div class="key-result"><strong>Aggregate PF:</strong> $Y_t = K_t^{\alpha+\varphi(1-\alpha)}L_t^{1-\alpha}$. $\alpha$ is the firm's <em>private</em> capital exponent; $\varphi$ is the elasticity of the <em>spillover</em> $A_t=K_t^{\varphi}$ — the strength with which everyone's capital lifts everyone's productivity.</div><h3>Main argument</h3><div class="step"><span class="step-label">Step 1 — factor prices</span> The firm chooses $K_t,L_t$ taking $A_t$ as a constant. The first-order conditions equate real rental rates to firm-level marginal products: $r_t=\dfrac{\partial Y_t}{\partial K_t}=\alpha K_t^{\alpha-1}(A_tL_t)^{1-\alpha}=\alpha\dfrac{Y_t}{K_t}$, and $w_t=\dfrac{\partial Y_t}{\partial L_t}=(1-\alpha)K_t^{\alpha}A_t^{1-\alpha}L_t^{-\alpha}=(1-\alpha)\dfrac{Y_t}{L_t}$.</div><div class="step"><span class="step-label">Step 2 — shares</span> Multiply through: $r_tK_t=\alpha Y_t$ and $w_tL_t=(1-\alpha)Y_t$. The capital income share is $r_tK_t/Y_t=\alpha$ and the labour share is $1-\alpha$, exactly, independent of $K,L,A$. Adding them, $r_tK_t+w_tL_t=\alpha Y_t+(1-\alpha)Y_t=Y_t$.</div><div class="step"><span class="step-label">Step 3 — resolve the paradox</span> The decisive fact is that <em>at the firm level</em>, with $A_t$ fixed, the function $K_t^{\alpha}(A_tL_t)^{1-\alpha}$ is homogeneous of degree one in the two paid inputs $(K_t,L_t)$ — $\alpha+(1-\alpha)=1$. By Euler's theorem a degree-one function is <em>exactly</em> exhausted by its two marginal products. So payments sum to firm output by an accounting identity that knows nothing about aggregate returns to scale.</div><div class="step"><span class="step-label">Step 4 — the missing return</span> The increasing returns are entirely a property of the aggregate map $K_t\mapsto A_t=K_t^{\varphi}$, which each firm treats as exogenous. The <em>social</em> marginal product of capital is $\big(\alpha+\varphi(1-\alpha)\big)Y/K$; the <em>private</em> one paid out is $\alpha Y/K$. The difference $\varphi(1-\alpha)\,Y/K$ is a genuine return to capital that flows to all firms through higher $A$ but is invoiced to no one. There is no third factor and no missing owner: the extra returns to scale are simply <em>un-priced</em>.</div><div class="key-result"><strong>Shares:</strong> $r_tK_t/Y_t=\alpha$, $w_tL_t/Y_t=1-\alpha$, summing to 1 because the <em>firm-level</em> function is CRS. The aggregate IRS is the unpaid externality $\varphi(1-\alpha)$.</div><p><strong>What each letter means.</strong> $\alpha$ is the elasticity of a single firm's output to its <em>own</em> capital, holding technology fixed — and, under competition, also its capital income share. $\varphi$ is the elasticity of economy-wide productivity to economy-wide capital — the spillover. A common quiz trap is to read the aggregate exponent $\alpha+\varphi(1-\alpha)$ as “capital's share”; it is the social output elasticity, not anyone's income.</p><h3>Visualize</h3><p>For $K>1$ the social curve (exponent $\alpha+\varphi(1-\alpha)\approx 0.73$) is steeper than the private curve (exponent $\alpha=0.33$); the steeper the curve, the larger the marginal product it represents. The firm is paid the slope of the <em>private</em> curve, $r_t=\alpha Y/K$. The slope of the <em>social</em> curve is the return society actually earns on the marginal unit of capital. It is the <em>slope</em> gap, not the level gap, that matters for incentives: investment decisions respond to the marginal return, and the private marginal return understates the social one by the factor below. The shaded vertical band is the cumulative output the spillover adds; the wedge in slopes is what a corrective subsidy must target.</p><h3>Counterfactual — the planner</h3><div class="step"><span class="step-label">Step 1</span> A planner who internalizes $A_t=K_t^{\varphi}$ differentiates the aggregate function directly: social MPK $=\dfrac{d}{dK}K^{\alpha+\varphi(1-\alpha)}L^{1-\alpha}=\big(\alpha+\varphi(1-\alpha)\big)\dfrac{Y}{K}$.</div><div class="step"><span class="step-label">Step 2</span> Compare to the competitive return $r=\alpha Y/K$: their ratio is $\dfrac{\alpha+\varphi(1-\alpha)}{\alpha}>1$. The planner values the marginal unit of capital by exactly this factor more than the market does.</div><p>Because the private return falls short of the social return, decentralized agents stop accumulating too early: the economy holds <strong>too little</strong> capital relative to the planner's optimum. A corrective <em>investment (or capital) subsidy</em> of rate $\tau$ that raises the private return to $\alpha(1+\tau)Y/K$ up to the social $\big(\alpha+\varphi(1-\alpha)\big)Y/K$ closes the wedge; that requires $1+\tau=\big(\alpha+\varphi(1-\alpha)\big)/\alpha$, i.e. $\tau=\varphi(1-\alpha)/\alpha$. The subsidy is larger the stronger the spillover $\varphi$.</p><h3>Methodology reflection</h3><p>The load-bearing choice is that <em>the firm is atomistic and takes $A_t$ as given</em>: the spillover is external to the firm's optimization. That single assumption is what keeps the firm's paid function CRS and the shares summing to one. If instead each firm had to <em>pay</em> for the technology it uses — if $A$ were a private, excludable input — then the aggregate IRS would show up <em>inside</em> the firm's problem, the paid function would be homogeneous of degree $1+\varphi(1-\alpha)>1$, and competitive marginal-product payments would <em>exceed</em> output. Something must give: either the firm cannot price-take (it must hold market power to earn the extra return), or it operates at a loss. This is exactly the fork Chapter 9 walks into — deliberately produced, paid-for technology (ideas) cannot be sold at marginal cost under perfect competition, so the R&D model is forced toward monopoly and patents. The externality model dodges the problem only because its spillover is unintentional and free.</p><h4>Numbers to anchor it</h4><div class="step"><span class="step-label">Social vs private return</span> With $\alpha=0.33$ and $\varphi=0.6$ the aggregate capital exponent is $\alpha+\varphi(1-\alpha)=0.33+0.6(0.67)=0.732$. The social marginal product of capital exceeds the privately-paid return by the factor $\dfrac{0.732}{0.33}\approx 2.2$: society earns more than <em>double</em> the market return on the marginal machine.</div><div class="step"><span class="step-label">Corrective subsidy</span> The investment subsidy that closes the wedge solves $\alpha(1+\tau)=\alpha+\varphi(1-\alpha)$, giving $\tau=\dfrac{\varphi(1-\alpha)}{\alpha}=\dfrac{0.6(0.67)}{0.33}\approx 1.22$ — a 122% subsidy. Even a "moderate" spillover demands a very large intervention, a measure of how far private incentives fall short of the social optimum.</div><h4>The exact trap in quiz Q4 and Q15</h4><p><strong>Q4 (what $\varphi$ is).</strong> $\varphi$ is the elasticity of the spillover $A_t=K_t^{\varphi}$ with respect to aggregate capital — the <em>strength of the externality</em>. It is not a second slice of capital's private exponent; reading it as "extra $\alpha$" puts it on the wrong side of the private/social divide.</p><p><strong>Q15 (the income share).</strong> Under aggregate IRS it is tempting to call capital's income share the social exponent $\alpha+\varphi(1-\alpha)\approx 0.73$. It is not. Competitive firms pay the <em>private</em> marginal product, so the capital share is $\alpha=0.33$; the remaining $\approx 0.40$ of social output elasticity is the unpriced externality, not anybody's income. The gap between $0.33$ (paid) and $0.73$ (social) <em>is</em> the chapter.</p><h4>The micro-story and the one-line version</h4><p>The motivating mechanism is learning-by-doing: workers grow more skilled as they operate new capital, and they carry those skills with them to other firms and other jobs. The benefit leaks out beyond the firm that bought the machine, which is why it appears at the aggregate level (in $A_t=K_t^{\varphi}$) but is invisible to, and unpaid by, the individual employer. <strong>One-line version:</strong> firm-level constant returns make the books balance ($\alpha+(1-\alpha)=1$); aggregate increasing returns make society richer than the books show — the difference is a return to capital everyone enjoys and no one charges for, the signature of an externality and the reason the decentralized economy under-invests.</p></div></div>
+<div class="exercise" id="ex-2"><div class="exercise-header"><span class="exercise-number">Exercise 2</span><span class="exercise-title">Diminishing returns and the geometry of perpetual growth</span></div><div class="exercise-scope"><strong>Scope:</strong> Lecture 4a §9 (the role of φ; three regimes), §20–23 (AK model; no convergence; scale effect); Slides_Session4 p16 (diminishing returns ↔ convergence speed) and p31–33 (φ=1). Quiz-targeted: Q5 (AK structural properties). Uses a two-method (analytical + graphical) derivation.</div><div class="sub-move" data-hints-total="3" data-hints-shown="0"><div class="sub-move-label">Main proof (analytical)</div><div class="sub-move-prompt"><p>Work in per-worker terms with population held constant, for transparency (the logic is unchanged with $n>0$ — just replace $\delta$ by $n+\delta$). Capital per worker accumulates as $k_{t+1}=s\,y_t+(1-\delta)k_t$ with $y_t=B\,k_t^{a}$, where $a\equiv\alpha+\varphi(1-\alpha)$ is the aggregate elasticity of output to capital. Define the capital growth rate $g_t^{k}\equiv k_{t+1}/k_t-1$.</p><ol><li>Show $g_t^{k}=sB\,k_t^{a-1}-\delta$.</li><li>A steady state in the <em>level</em> of $k$ needs $g_t^{k}=0$ at some finite $k^*>0$. Solve $sB\,k^{a-1}=\delta$ and show a positive finite $k^*$ exists <strong>iff</strong> $a<1$.</li><li>Take $a\to 1$ (i.e. $\varphi\to 1$): show $k^*\to\infty$, and that at $a=1$ <em>exactly</em> the equation loses its $k$ entirely, becoming $sB=\delta$. Interpret: for $a=1$ the growth rate is the constant $g^{k}=sB-\delta$, independent of $k$ — capital never stops growing. Connect $sB$ to the lecture's AK result $g_e=sA-\delta$.</li></ol></div><div class="hints-area"><div class="hint" data-idx="1"><strong>Hint 1.</strong> Divide the accumulation equation by $k_t$: $k_{t+1}/k_t = sB\,k_t^{a-1}+(1-\delta)$, so $g_t^k = sB\,k_t^{a-1}-\delta$. The term $sB\,k_t^{a-1}$ is the saving rate times the average product of capital $y/k=Bk^{a-1}$.</div><div class="hint" data-idx="2"><strong>Hint 2.</strong> Solve $sB\,k^{a-1}=\delta$: $k^{a-1}=\delta/(sB)$, so $k^*=\big(\delta/(sB)\big)^{1/(a-1)}$. For $a<1$ the exponent $a-1<0$, so $k^{a-1}$ runs monotonically from $+\infty$ (at $k\to 0$) down to $0$ (at $k\to\infty$) and hits the positive constant $\delta/(sB)$ exactly once.</div><div class="hint" data-idx="3"><strong>Hint 3.</strong> At $a=1$: $k^{a-1}=k^0=1$ for all $k$, so $sB\,k^{a-1}=sB$ is constant. The equation $sB=\delta$ contains no $k$ — there is no level that stops growth. Instead $g^k=sB-\delta$ for all $k$; with the lecture's $Y=AK$ (so $B\equiv A=L^{1-\alpha}$) this is exactly $g_e=sA-\delta$.</div><button type="button" class="hint-btn" onclick="nextHint(this)">Hint 1 / 3</button></div></div><div class="sub-move" data-hints-total="2" data-hints-shown="0"><div class="sub-move-label">Graphical method</div><div class="sub-move-prompt"><p>Now read the same result off the picture — this is the second of your two methods. The figure plots the savings curve $sB\,k^{a-1}$ against the break-even line $n+\delta$ for three aggregate exponents: $a=\alpha$ (basic Solow, $\varphi=0$), $a=\alpha+\varphi(1-\alpha)$ with $\varphi=0.6$ (semi-endogenous), and $a=1$ (AK, $\varphi=1$).</p><ol><li>For the two downward-sloping curves, locate $k^*$ as the crossing with the break-even line. Explain why the semi-endogenous $k^*$ sits so far to the right of the Solow $k^*$, and connect this to Bolboaca's claim that “convergence becomes increasingly slow as $\varphi\to 1$.”</li><li>For the AK case the savings line is <em>horizontal</em> and lies entirely above the break-even line. Read off, geometrically, why this means no steady state, no convergence, and a constant positive growth rate — and state the parameter condition (in the lecture's notation) that puts the AK line above the break-even line.</li></ol></div><div class="mf-figure" id="fig-ex2-regimes"><div class="mf-panels "><div id="fig-ex2-regimes-panel-0" class="mf-panel"></div></div><div class="mf-readout"></div><p class="mf-caption"><strong>Diminishing returns and the existence of a steady state.</strong> Savings curve $sB\,k^{a-1}$ for three aggregate exponents $a=\alpha+\varphi(1-\alpha)$, against the break-even line $n+\delta$. The vertical gap is the capital growth rate. Diminishing returns ($a<1$) bend the curve down so it crosses once at a finite $k^*$ — the flatter the curve, the further out the crossing (slower convergence). The AK case ($a=1$) is a flat line above break-even: it never crosses, so growth never stops.</p><script>(function(){var spec={"id": "fig-ex2-regimes", "title": "Diminishing returns and the existence of a steady state", "caption": "Savings curve $sB\\,k^{a-1}$ for three aggregate exponents $a=\\alpha+\\varphi(1-\\alpha)$, against the break-even line $n+\\delta$. The vertical gap is the capital growth rate. Diminishing returns ($a<1$) bend the curve down so it crosses once at a finite $k^*$ \u2014 the flatter the curve, the further out the crossing (slower convergence). The AK case ($a=1$) is a flat line above break-even: it never crosses, so growth never stops.", "params": {"s": 0.2, "B": 1, "alpha": 0.33, "phi": 0.6, "n": 0.01, "delta": 0.1, "Aak": 0.8}, "x_range": [0.5, 18], "n_points": 300, "x_label": "capital per worker k", "y_label": "", "curves": [{"name": "Solow  s\u00b7B\u00b7k^(\u03b1\u22121)", "expr": "s * B * Math.pow(k, alpha - 1)", "color": "#964734", "width": 1.8}, {"name": "semi-endo  s\u00b7B\u00b7k^(a\u22121)", "expr": "s * B * Math.pow(k, (alpha + phi*(1-alpha)) - 1)", "color": "#0FA4AF", "width": 1.8}, {"name": "AK (a=1)  s\u00b7A", "expr": "s * Aak", "color": "#024950", "width": 1.8}, {"name": "break-even  n+\u03b4", "expr": "n + delta", "color": "#5a7378", "width": 1.4, "dash": "dash"}], "markers": [{"type": "intersection", "curves": [0, 3], "label": "k* Solow", "color": "#964734", "guide": "vertical"}, {"type": "intersection", "curves": [1, 3], "label": "k* semi", "color": "#0FA4AF", "guide": "vertical"}]};var hostId="fig-ex2-regimes";function go(){if(!window.MacroFigures){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.MacroFigures not defined. Did FIGURE_JS load before this snippet?</div>");return;}if(!window.Plotly){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.Plotly not loaded.</div>");return;}try{window.MacroFigures.renderFigure(spec,hostId);}catch(e){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Render error: "+e.message+"</div>");}}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",go);}else{go();}})();</script></div><div class="hints-area"><div class="hint" data-idx="1"><strong>Hint 1.</strong> The vertical gap between the savings curve and the break-even line <em>is</em> the capital growth rate $g_t^k$: above the line, $k$ grows; below, it shrinks; on the line, $k$ is at rest. A flatter savings curve meets the break-even line further out, so $k^*$ is larger and the gap (the growth rate) decays more slowly — slower convergence.</div><div class="hint" data-idx="2"><strong>Hint 2.</strong> AK condition: the horizontal line sits at $sA$; it lies above the break-even line when $sA>n+\delta$ (with $n=0$, $sA>\delta$), which is exactly the lecture's assumption guaranteeing $g_e>0$. A horizontal line above a horizontal line never crosses — no $k^*$, so $k$ grows at the constant gap $sA-(n+\delta)$ forever.</div><button type="button" class="hint-btn" onclick="nextHint(this)">Hint 1 / 2</button></div></div><div class="sub-move" data-hints-total="1" data-hints-shown="0"><div class="sub-move-label">Counterfactual</div><div class="sub-move-prompt"><p>Set $\varphi=0.99$, so $a=\alpha+0.99(1-\alpha)$ — just below 1.</p><ol><li>Does a finite steady state $k^*$ still exist?</li><li>The lecture says such an economy “approximates” the AK model. In what observable sense does a $\varphi=0.99$ economy behave like AK for decades, yet differ from it in the infinite limit? Tie your answer to the position of $k^*$ and the near-flatness of the savings curve. (Prose.)</li></ol></div><div class="hints-area"><div class="hint" data-idx="1"><strong>Hint 1.</strong> $k^*=\big(\delta/(sB)\big)^{1/(a-1)}$ with $a-1\approx-0.0067$ — a tiny negative exponent makes $k^*$ astronomically large but still finite. The savings curve is nearly flat, so the growth rate decays toward zero only over an enormous horizon: semi-endogenous growth that <em>looks</em> endogenous for a very long time.</div><button type="button" class="hint-btn" onclick="nextHint(this)">Hint 1 / 1</button></div></div><div class="sub-move" data-hints-total="0" data-hints-shown="0"><div class="sub-move-label">Methodology reflection</div><div class="sub-move-prompt"><p>$a=1$ is a single point on a continuum of $\varphi$ values. State the “knife-edge” objection to truly-endogenous (AK) growth in your own words, then give Cozzi's two-part rebuttal: one part about $\varphi=1$ as an approximation of $\varphi$ just below 1, and one part about what the data say about the $\varphi>1$ (accelerating-growth) case. Which side do you find more persuasive, and why? (Prose.)</p></div></div><div class="solution-toggle-row"><button type="button" class="solution-btn" onclick="toggleSolution(this)">Show solution</button><span class="solution-hint-text">Solve on paper first.</span></div><div class="solution"><h3>Main proof (analytical)</h3><div class="step"><span class="step-label">Step 1</span> Start from $k_{t+1}=sB\,k_t^{a}+(1-\delta)k_t$. Divide by $k_t$: $\dfrac{k_{t+1}}{k_t}=sB\,k_t^{a-1}+(1-\delta)$. Subtract 1: $g_t^k=\dfrac{k_{t+1}}{k_t}-1=sB\,k_t^{a-1}-\delta$.</div><div class="key-result"><strong>Capital growth rate:</strong> $g_t^k=sB\,k_t^{a-1}-\delta$. The driving term is saving times the average product of capital, $sB\,k^{a-1}=s\,(y/k)$.</div><div class="step"><span class="step-label">Step 2</span> A level steady state needs $g_t^k=0$: $sB\,k^{a-1}=\delta$, i.e. $k^{a-1}=\dfrac{\delta}{sB}$, hence $k^*=\Big(\dfrac{\delta}{sB}\Big)^{\frac{1}{a-1}}$.</div><div class="step"><span class="step-label">Step 3</span> Existence. For $a<1$ the exponent $a-1<0$, so the map $k\mapsto k^{a-1}$ is continuous and strictly decreasing from $+\infty$ (as $k\to 0^+$) to $0$ (as $k\to\infty$). It therefore hits the positive constant $\delta/(sB)$ at exactly one $k^*>0$. For $a>1$ the map is increasing from $0$ to $\infty$ and also crosses once, but there the steady state is unstable and growth accelerates — the case the lecture brackets out. For $a=1$, see Step 4.</div><div class="step"><span class="step-label">Step 4</span> The limit. As $a\to 1^-$, the exponent $\tfrac{1}{a-1}\to-\infty$. Since $\delta/(sB)<1$ under the usual condition $sB>\delta$, a number below 1 raised to a large negative power diverges: $k^*\to+\infty$. At $a=1$ exactly, $k^{a-1}=k^0=1$, so the steady-state equation collapses to $sB\cdot 1=\delta$, i.e. $sB=\delta$ — an equation with <em>no $k$ in it</em>. There is no capital level that halts growth.</div><div class="step"><span class="step-label">Step 5</span> Instead, at $a=1$, $g_t^k=sB\,k^{0}-\delta=sB-\delta$ for every $k$: a constant. With the lecture's normalization $Y=AK$ — where $\varphi=1$ makes $A_t=K_t$ and the aggregate function becomes $Y=K\,(L^{1-\alpha})\equiv AK$ with $A=L^{1-\alpha}$ — the constant $B$ is precisely $A$, and we recover $g_e=sA-\delta$.</div><div class="key-result"><strong>Knife-edge:</strong> a finite $k^*$ exists iff $a<1$. At $a=1$ diminishing returns to capital vanish, $k^*$ is gone, and growth is the constant $g_e=sA-\delta>0$ (assuming $sA>\delta$).</div><h3>Graphical method</h3><p><strong>The crossings.</strong> The downward curves $sB\,k^{a-1}$ cut the flat break-even line $n+\delta$ once each. The Solow curve ($a=\alpha\approx0.33$) is steep and crosses early, at a small $k^*$. The semi-endogenous curve ($a\approx0.73$) is much flatter — its exponent $a-1\approx-0.27$ is close to zero, so the average product of capital falls only slowly — and it meets the break-even line far to the right, at a large $k^*$. The vertical gap between curve and line is the growth rate $g_t^k$; a flatter curve means the gap shrinks gradually as $k$ rises, so the economy creeps toward its (distant) steady state. That <em>is</em> slow convergence: stronger spillovers ($\varphi\uparrow$) flatten the curve, push $k^*$ out, and stretch the transition.</p><p><strong>The AK line.</strong> At $a=1$ the savings term $sB\,k^{0}=sA$ no longer depends on $k$: a horizontal line. The figure places it above the break-even line, which requires $sA>n+\delta$ (with $n=0$, $sA>\delta$). Two horizontal lines never meet, so there is no $k^*$: the growth gap $sA-(n+\delta)$ is the same at every $k$, capital grows at that constant rate forever, and there is nothing for the economy to converge <em>to</em>. Geometry and algebra agree.</p><h3>Counterfactual — $\varphi=0.99$</h3><p>A finite $k^*$ still exists ($a=\alpha+0.99(1-\alpha)<1$), but with $a-1\approx-0.0067$ the steady state $k^*=(\delta/sB)^{1/(a-1)}$ is astronomically large. On the diagram the savings curve is almost flat — nearly indistinguishable from the AK horizontal over any realistic range of $k$. So the economy behaves like AK for decades or centuries: the growth rate decays toward zero so slowly that it is empirically a constant. The difference from true AK is only visible in the infinite limit, where the $\varphi=0.99$ economy eventually stalls at $k^*$ while the $\varphi=1$ economy never does. This is exactly why Cozzi treats $\varphi=1$ as a tractable stand-in for “$\varphi$ close to but below 1”.</p><h3>Methodology reflection</h3><p>The knife-edge objection: truly-endogenous growth needs $a=1$ <em>exactly</em>, and $a=1$ is a measure-zero point — any tremble away from it ($\varphi$ slightly below 1) destroys perpetual growth in the limit, so the result looks fragile and non-generic. Cozzi's rebuttal has two prongs. First, $\varphi=1$ is best read as an <em>approximation</em>: a $\varphi$ just below 1 behaves like AK for all practically relevant horizons (the counterfactual above), so the knife-edge is not a real-world fragility, only a mathematical one. Second, the alternative direction, $\varphi>1$, predicts <em>accelerating</em> growth — returns to capital and growth rates rising as a country gets richer — which the data flatly reject; so we are entitled to bracket attention to $\varphi\le 1$. I find the approximation argument the stronger of the two: it converts a sharp philosophical worry (“measure zero!”) into a quantitative question (“how slow is convergence?”), which is the question the empirics in the next exercise actually engage.</p><h4>Putting numbers on "far to the right"</h4><div class="step"><span class="step-label">Two steady states</span> Use the figure's calibration: $sB=0.2$, break-even $n+\delta=0.11$, so $k^*=\big((n+\delta)/sB\big)^{1/(a-1)}=0.55^{\,1/(a-1)}$. For Solow ($a=\alpha=0.33$, $a-1=-0.67$): $k^*=0.55^{-1.49}\approx 2.4$. For semi-endogenous ($a=0.732$, $a-1=-0.268$): $k^*=0.55^{-3.73}\approx 9.3$.</div><p>The semi-endogenous steady state sits nearly <strong>four times</strong> further out than the Solow one, from the <em>same</em> saving and depreciation rates — purely because the stronger spillover ($\varphi=0.6$) flattens the savings curve. A flatter curve means the growth gap above break-even closes only sluggishly, so the transition to $k^*$ takes far longer. "Slow convergence" is not a separate assumption; it is what a flat $sB\,k^{a-1}$ curve looks like.</p><h4>The four AK properties (quiz Q5), read straight off the flat line</h4><div class="key-result"><strong>(1) No transitional dynamics.</strong> $g^k=sB\,k^{0}-\delta=sA-\delta$ does not depend on $k$, so there is nothing to "adjust toward": the economy is on its balanced path from $t=0$. <strong>(2) Constant growth.</strong> The vertical gap between the flat savings line and the break-even line is the same at every $k$, so $g_e=sA-\delta$ is constant. <strong>(3) No convergence.</strong> With no $k^*$, two economies starting at different $k_0$ both grow at $g_e$ forever; their ratio never closes — poor and rich do not converge. <strong>(4) Scale effect.</strong> Since $A=L^{1-\alpha}$, the height of the savings line $sA=sL^{1-\alpha}$ rises with population, so $g_e=sL^{1-\alpha}-\delta$ increases with $L$.</div><p>Each property the quiz tested is a feature of the same picture — a flat line sitting above the break-even line. The miss on Q5 (which features hold) dissolves once the geometry, not a memorized list, is the source of truth.</p><h4>What changes with $n>0$?</h4><p>Nothing qualitative. Reinstating population growth simply replaces $\delta$ by $n+\delta$: the break-even line sits higher, every $k^*$ moves accordingly, and the AK condition becomes $sA>n+\delta$. The existence-iff-$a<1$ result, the divergence at $a=1$, and the slow-convergence reading are all untouched.</p><h4>Is the steady state stable?</h4><p>For $a<1$, yes — and the same geometry shows it. To the left of $k^*$ the savings curve $sB\,k^{a-1}$ lies <em>above</em> the break-even line, so $g_t^k>0$ and $k$ rises toward $k^*$; to the right it lies below, so $g_t^k<0$ and $k$ falls back. The crossing is therefore globally attracting, and the convergence speed is governed by how steeply the savings curve cuts the line: a flat cut (large $\varphi$, $a$ near 1) means a weak restoring force and slow return, a steep cut (small $a$) means fast return. This is precisely why "stronger spillover" and "slower convergence" are the same statement read twice. At $a=1$ the restoring force vanishes entirely — the savings curve never cuts the line — so there is no point to be stable around, and the economy simply rides the constant gap upward forever. The knife-edge is the moment a stable steady state stops existing, not merely a point where convergence happens to be slow.</p><h4>Connecting to the convergence-speed formula (Modules 1 and 3)</h4><p>The same log-linearization you used for basic Solow gives a local convergence speed $\lambda_{\text{conv}}\approx(1-a)(n+\delta)$, with the aggregate exponent $a=\alpha+\varphi(1-\alpha)$ now playing the role that $\alpha$ (or $\alpha+\phi$ in MRW) played there. The reading is immediate: $\lambda_{\text{conv}}$ is proportional to $1-a$, the very thing that shrinks as the spillover strengthens. As $\varphi\to 1$, $a\to 1$, and $\lambda_{\text{conv}}\to 0$: convergence speed literally goes to zero at the knife-edge. So the "flat savings curve" of the diagram and the "small $\lambda_{\text{conv}}$" of the algebra are the same fact in two languages — and it is continuous with the convergence speed you already estimated for the Solow and MRW models, just with broad capital's exponent pushed toward one.</p></div></div>
+<div class="exercise" id="ex-3"><div class="exercise-header"><span class="exercise-number">Exercise 3</span><span class="exercise-title">Why ideas are different: non-rivalry, market structure, and the two knife-edge parameters of R&D</span></div><div class="exercise-scope"><strong>Scope:</strong> Lecture 4b §3–8 (ideas as economic goods: non-rivalry, excludability, patents, public vs private production), §10–12 (R&D production function $\Delta A=\rho A^{\varphi}L_A^{\lambda}$; standing-on-shoulders $\varphi$, stepping-on-toes $\lambda$). Contrast with the Chapter 8 externality model.</div><div class="sub-move" data-hints-total="1" data-hints-shown="0"><div class="sub-move-label">Anchor</div><div class="sub-move-prompt"><p>The R&D sector produces new ideas via $A_{t+1}-A_t=\rho\,A_t^{\varphi}\,L_{At}^{\lambda}$, where $L_{At}$ is research labour and $\rho>0$ a productivity constant. The two exponents encode two distinct economic stories. In one phrase each, name the economic meaning of $\varphi$ (the exponent on the existing knowledge stock) and of $\lambda$ (the exponent on research labour), and state the sign or value each takes in Romer's baseline.</p></div><div class="hints-area"><div class="hint" data-idx="1"><strong>Hint 1.</strong> $\varphi$: “standing on shoulders” if $\varphi>0$ (past ideas make new ideas easier; Romer's baseline $\varphi=1$), or “fishing out” if $\varphi<0$ (the easy ideas are found first). $\lambda$: “stepping on toes” / duplication if $\lambda<1$ (researchers congest each other); $\lambda=1$ means no congestion.</div><button type="button" class="hint-btn" onclick="nextHint(this)">Hint 1 / 1</button></div></div><div class="sub-move" data-hints-total="3" data-hints-shown="0"><div class="sub-move-label">Main argument</div><div class="sub-move-prompt"><p>Ideas are <strong>non-rival</strong> (one firm's use does not diminish another's) and only imperfectly excludable. This forces a market-structure conclusion that has no analogue in the Chapter 8 externality model.</p><ol><li>Explain why, under <em>perfect competition</em>, no profit-seeking firm would pay to produce ideas. Use the marginal-cost-pricing logic: what is the marginal cost of letting one more firm use an idea that already exists, and hence the competitive price and revenue?</li><li>Explain how patents (excludability plus temporary monopoly) restore the incentive — and why this <em>necessarily</em> makes the decentralized R&D allocation socially suboptimal (“ideas used too little”).</li><li>Contrast with Chapter 8: there the spillover $A_t=K_t^{\varphi}$ also creates a social return no firm captures, yet that model lives happily under perfect competition with shares summing to 1 (Exercise 1). What is the key difference that lets Chapter 8 avoid the monopoly requirement Chapter 9 cannot escape?</li></ol></div><div class="hints-area"><div class="hint" data-idx="1"><strong>Hint 1.</strong> A non-rival idea has zero marginal cost of <em>additional use</em>. Competition drives price to marginal cost, so price $\to 0$ and revenue $\to 0$ — which cannot cover the positive (sunk) cost of inventing the idea. So private invention collapses under price-taking.</div><div class="hint" data-idx="2"><strong>Hint 2.</strong> A patent grants temporary monopoly, letting the inventor price <em>above</em> marginal cost and recoup the fixed invention cost. But price $>$ MC $=0$ means the idea is used <em>less</em> than the social optimum (where everyone who values it at $>0$ should get it) — a deadweight wedge is the price of having any private R&D at all.</div><div class="hint" data-idx="3"><strong>Hint 3.</strong> The Chapter 8 spillover is <em>unintentional</em>: it is a free by-product of capital that firms already accumulate for their <em>own</em> private return $r=\alpha Y/K$, so no one needs to be paid for the externality for it to exist — whereas Chapter 9 ideas are <em>deliberately and expensively produced</em> and must be funded.</div><button type="button" class="hint-btn" onclick="nextHint(this)">Hint 1 / 3</button></div></div><div class="sub-move" data-hints-total="0" data-hints-shown="0"><div class="sub-move-label">Comparison table</div><div class="sub-move-prompt"><p>Fill in (on paper) the blank cells of this side-by-side comparison, then add a one-line “why” under the market-structure row explaining the asymmetry.</p><table><thead><tr><th>Dimension</th><th>Externality (Ch 8)</th><th>R&amp;D / Romer (Ch 9)</th></tr></thead><tbody><tr><td>Source of technical progress</td><td>unintentional (learning-by-doing)</td><td>&mdash;</td></tr><tr><td>What carries the knowledge</td><td>aggregate capital $K_t$</td><td>&mdash;</td></tr><tr><td>Required market structure</td><td>&mdash;</td><td>&mdash;</td></tr><tr><td>Is the growth rate socially optimal?</td><td>&mdash; (recall the wedge of Ex 1)</td><td>&mdash;</td></tr><tr><td>Empirically problematic feature</td><td>needs $n>0$; growth $\propto$ population growth</td><td>&mdash;</td></tr></tbody></table></div></div><div class="sub-move" data-hints-total="1" data-hints-shown="0"><div class="sub-move-label">Counterfactual</div><div class="sub-move-prompt"><p>Take $\lambda<1$ (stepping on toes).</p><ol><li>Show that doubling aggregate research labour multiplies the flow of new ideas by only $2^{\lambda}$, and that for $\lambda<1$ this is strictly less than 2 — researchers “step on each other's toes.”</li><li>Because each firm takes <em>aggregate</em> research labour as given, it ignores the congestion it imposes on others. Holding the positive standing-on-shoulders effect aside, does the decentralized economy over- or under-supply research labour at the margin? (Prose.)</li></ol></div><div class="hints-area"><div class="hint" data-idx="1"><strong>Hint 1.</strong> $\rho A^{\varphi}(2L_A)^{\lambda}=2^{\lambda}\rho A^{\varphi}L_A^{\lambda}$, and $2^{\lambda}<2^1=2$ for $\lambda<1$. Equivalently the average product per researcher $\Delta A/L_A=\rho A^{\varphi}L_A^{\lambda-1}$ falls as $L_A$ rises.</div><button type="button" class="hint-btn" onclick="nextHint(this)">Hint 1 / 1</button></div></div><div class="solution-toggle-row"><button type="button" class="solution-btn" onclick="toggleSolution(this)">Show solution</button><span class="solution-hint-text">Solve on paper first.</span></div><div class="solution"><h3>Anchor</h3><p>$\varphi$ is the elasticity of new-idea production to the <em>existing stock of knowledge</em>. If $\varphi>0$, past discoveries make present research more productive — Newton's “standing on the shoulders of giants”; Romer's baseline takes $\varphi=1$ (knowledge is as productive in making ideas as a constant-returns input). If $\varphi<0$, the best ideas are found first and later ones are harder — “fishing out.” $\lambda$ is the elasticity to <em>research labour</em>. $\lambda=1$ means a researcher's contribution is independent of how many others are working; $\lambda<1$ means “stepping on toes” — duplication and congestion, so doubling the research force less than doubles output.</p><h3>Main argument</h3><div class="step"><span class="step-label">Step 1 — non-rivalry kills competitive R&D</span> An idea, once created, can be used by any number of firms simultaneously at no extra cost: its marginal cost of additional use is zero. Under perfect competition price equals marginal cost, so the idea's price is driven to zero and the inventor earns zero revenue from licensing it. But inventing it cost something positive (researchers' wages). A rational price-taking firm therefore never invents: it would sink a positive cost to earn zero. Private, competitive production of ideas collapses.</div><div class="step"><span class="step-label">Step 2 — patents restore incentives at a price</span> A patent makes the idea <em>excludable</em> and grants its holder temporary monopoly. The inventor can now charge a price above marginal cost and earn a stream of monopoly profits that can cover the fixed cost of invention. So private R&D becomes viable — but only by introducing monopoly. And monopoly pricing (price $>$ MC $=0$) means some users who value the idea at more than its zero marginal cost are priced out: the idea is used <em>less</em> than is socially optimal. The deadweight loss is the unavoidable cost of using the profit motive as the engine of progress.</div><div class="step"><span class="step-label">Step 3 — why Chapter 8 escapes this</span> In Chapter 8 the productivity spillover is an <em>unintentional by-product</em>. Firms accumulate capital for their own private return $r=\alpha Y/K$ (Exercise 1); the economy-wide rise in $A_t=K_t^{\varphi}$ happens for free, as a side-effect, whether or not anyone is compensated for it. Because nobody has to be <em>paid</em> to generate the externality, perfect competition is fine — the spillover does not need a revenue stream to exist. Chapter 9 ideas are different in kind: they are produced <em>on purpose</em>, at real resource cost, so they must generate revenue to be produced at all — and non-rivalry blocks that under competition. The deliberate-vs-incidental distinction is the whole difference.</div><div class="key-result"><strong>Core asymmetry:</strong> unintentional spillovers (Ch 8) coexist with perfect competition; intentional, costly, non-rival ideas (Ch 9) require monopoly + patents, and hence a socially suboptimal level of idea use.</div><h3>Comparison table (completed)</h3><table><thead><tr><th>Dimension</th><th>Externality (Ch 8)</th><th>R&amp;D / Romer (Ch 9)</th></tr></thead><tbody><tr><td>Source of progress</td><td>unintentional (learning-by-doing)</td><td>intentional (deliberate R&amp;D effort)</td></tr><tr><td>Knowledge carrier</td><td>aggregate capital $K_t$</td><td>a separate stock of ideas $A_t$</td></tr><tr><td>Market structure</td><td>perfect competition</td><td>monopoly power + patents (imperfect competition)</td></tr><tr><td>Socially optimal growth?</td><td>No — under-accumulation (the unpriced wedge $\varphi(1-\alpha)$)</td><td>No — ideas under-used (monopoly price $>$ MC $=0$)</td></tr><tr><td>Empirically problematic feature</td><td>growth requires (and rises with) population growth $n$</td><td>scale effect: growth rises with population <em>level</em> $L$</td></tr></tbody></table><p><strong>Why the asymmetry (market-structure row):</strong> a free by-product needs no revenue and so survives price-taking; a deliberately produced non-rival good needs revenue, which marginal-cost pricing cannot supply, forcing monopoly.</p><h3>Counterfactual — $\lambda<1$ duplication</h3><div class="step"><span class="step-label">Step 1</span> Replace $L_A$ by $2L_A$: $\rho A^{\varphi}(2L_A)^{\lambda}=2^{\lambda}\,\rho A^{\varphi}L_A^{\lambda}$. Since $\lambda<1$, $2^{\lambda}<2$: doubling the research force multiplies new ideas by a factor below two. Equivalently, output per researcher $\Delta A/L_A=\rho A^{\varphi}L_A^{\lambda-1}$ is decreasing in $L_A$ (exponent $\lambda-1<0$). Researchers crowd each other — some rediscover what others are simultaneously finding.</div><p><strong>Step 2 — direction of the distortion.</strong> Each research firm hires labour up to the point where its <em>private</em> marginal product of a researcher equals the wage, taking the aggregate research labour (and hence the congestion level) as given. It does not see that adding its own researcher lowers everyone else's productivity. That ignored effect is a negative externality, so the private marginal product overstates the social one: at the margin the decentralized economy puts <em>too many</em> workers into research relative to a congestion-internalizing optimum. (This pushes opposite to the positive standing-on-shoulders externality in $\varphi$, which on its own would justify <em>more</em> research; the net direction depends on which externality dominates — the reason the social planner's research subsidy in these models is theoretically ambiguous in sign.)</p><h4>Two properties, not one: rivalry vs excludability</h4><p>Ideas sit at the crossing of two independent attributes. <em>Rivalry</em> asks whether one agent's use uses the good up; <em>excludability</em> asks whether the owner can keep others out. A loaf of bread is rival and excludable (a private good); national defence is non-rival and non-excludable (a pure public good). An idea is <strong>non-rival but only partially excludable</strong>. Cozzi's two-clause summary is the key: <em>non-rivalry</em> prevents private production under perfect competition (price collapses to the zero marginal cost of an extra user), while <em>complete non-excludability</em> would prevent private production under <em>any</em> market structure (you cannot charge at all). A patent attacks the second problem — it manufactures excludability — which is the only reason the first problem (zero competitive price) can be escaped.</p><h4>No free lunch: the public-production alternative</h4><p>If monopoly deadweight loss is the cost of private R&D, why not have the state produce ideas with open access (price 0, socially efficient use)? Because the development cost must then be financed by <em>distortionary taxes</em>, and the profit motive — a powerful engine of discovery — is switched off. So society faces a genuine trilemma with no clean corner: monopoly deadweight loss (private + patents), tax distortion (public), or weak incentives (open non-profit). Chapter 9 deliberately keeps the profit motive and lives with the monopoly distortion.</p><h4>Concrete cases</h4><p>Calculus is the textbook non-rival good: every student and engineer uses it simultaneously, and your using it subtracts nothing from mine. A pharmaceutical molecule shows the funding problem starkly — a billion-dollar fixed R&D cost, then near-zero marginal cost to manufacture each pill; under marginal-cost pricing the developer never recoups the billion, so the patent lets price sit far above marginal cost (used "too little" while patented) until it expires and generics drive price toward marginal cost. The patent <em>is</em> the temporary monopoly that funds the invention, deadweight loss and all.</p><h4>Why the growth rate is suboptimal in both directions</h4><p>Excludability is imperfect, not absolute — patents expire, knowledge leaks, competitors reverse-engineer — so the inventor captures only a fraction of the social value an idea creates. That cuts two ways at once. From the <em>creation</em> side, the standing-on-shoulders externality ($\varphi>0$: today's ideas raise tomorrow's research productivity for everyone) is not internalized, so the decentralized economy invents <em>too little</em>. From the <em>diffusion</em> side, monopoly pricing on existing ideas (price $>$ MC $=0$) means they are used <em>too little</em> once invented. Two distortions pull in opposite directions: insufficient idea creation versus insufficient idea use. This is exactly why the socially optimal R&D subsidy is ambiguous in sign in general — layered on top of the $\lambda<1$ congestion externality of the counterfactual, the policy problem is genuinely a balance of three forces, not a one-line "subsidize research." Naming all three is what a deep answer does.</p></div></div>
+<div class="exercise" id="ex-4"><div class="exercise-header"><span class="exercise-number">Exercise 4</span><span class="exercise-title">Two empirical failures, two scatter plots</span></div><div class="exercise-scope"><strong>Scope:</strong> Lecture 4a §16–17 ($g$ vs $n$ scatter, 44 countries, 1951–2003), §24–26 ($g$ vs $s$ and $g_A$ vs $s$ scatters, 65 countries; “most important single argument”), §23 (AK scale effect $A=L^{1-\alpha}$); Lecture 4b §21,25 (strictly-endogenous scale effect in $L$). Forward bridge → Module 5 (no-scale refinements).</div><div class="sub-move" data-hints-total="3" data-hints-shown="0"><div class="sub-move-label">Main derivation</div><div class="sub-move-prompt"><p>Endogenous-growth models make sharp, testable claims about what the long-run growth rate depends on. Establish three of them precisely.</p><ol><li><strong>Semi-endogenous</strong> ($\varphi<1$): from $g_{se}=(1+n)^{\varphi/(1-\varphi)}-1$ (Ch 8), or equivalently $g_{se}\approx\dfrac{\lambda n}{1-\varphi}$ (Ch 9), show $g_{se}$ is increasing in $n$. Prediction: faster population growth $\Rightarrow$ faster economic growth.</li><li><strong>Strictly endogenous / AK</strong> ($\varphi=1$): from $g_e=sA-\delta$ with $A=L^{1-\alpha}$ (Ch 8) and $g_e=\rho(s_R L)^{\lambda}$ (Ch 9), show $g_e$ rises with the <em>level</em> of population $L$. This is the <strong>scale effect</strong>: bigger economies should grow faster.</li><li><strong>Both</strong> endogenous flavours: growth responds to the investment / research rate ($s$ or $s_R$). In an exogenous-growth Solow model, by contrast, the long-run growth of $A$ is a given constant $g$, independent of $s$. State the differential prediction this sets up for a plot of TFP growth against the investment rate.</li></ol></div><div class="hints-area"><div class="hint" data-idx="1"><strong>Hint 1.</strong> (1) For $\varphi<1$ the exponent $\varphi/(1-\varphi)>0$, so $(1+n)^{\text{positive}}$ increases in $n$; the approximation $\lambda n/(1-\varphi)$ is linear and increasing in $n$.</div><div class="hint" data-idx="2"><strong>Hint 2.</strong> (2) $A=L^{1-\alpha}\Rightarrow g_e=sL^{1-\alpha}-\delta$, rising in $L$; likewise $\rho(s_RL)^{\lambda}$ rises in $L$. The growth rate depends on the sheer number of people — the scale.</div><div class="hint" data-idx="3"><strong>Hint 3.</strong> (3) Endogenous: $g_A=sA-\delta$ rises with $s$, so $g_A$-vs-$s$ slopes <em>up</em>. Exogenous Solow: $g_A=g$ is fixed exogenously, so the same plot should be <em>flat</em>. The slope of that scatter discriminates between the two worldviews.</div><button type="button" class="hint-btn" onclick="nextHint(this)">Hint 1 / 3</button></div></div><div class="sub-move" data-hints-total="1" data-hints-shown="0"><div class="sub-move-label">Visualize</div><div class="sub-move-prompt"><p>The figure reproduces Cozzi's two scatter plots. <strong>Panel A</strong> plots each country's GDP-per-worker growth against its labour-force growth $n$ (44 countries, 1951–2003). <strong>Panel B</strong> plots each country's TFP growth $g_A$ against its physical-investment rate $s$ (65 countries).</p><ol><li>Panel A has a clear <em>negative</em> slope. Which prediction from your derivation does this contradict, and how directly?</li><li>Panel B has a clear <em>positive</em> slope. Which prediction does it support, and why is it — in Cozzi's words — “probably the most important single argument in favour of endogenous growth models”? (Think about what an exogenous-growth model predicts for this exact plot.)</li></ol></div><div class="mf-figure" id="fig-ex4-scatters"><div class="mf-panels cols-2"><div id="fig-ex4-scatters-panel-0" class="mf-panel"></div><div id="fig-ex4-scatters-panel-1" class="mf-panel"></div></div><div class="mf-readout"></div><p class="mf-caption"><strong>Two predictions, two verdicts.</strong> <strong>Left:</strong> GDP-per-worker growth vs labour-force growth $n$ (44 countries, 1951–2003) — a clear NEGATIVE slope, against the semi-endogenous prediction that growth rises with $n$. <strong>Right:</strong> TFP growth $g_A$ vs the physical-investment rate $s$ (65 countries) — a clear POSITIVE slope, which an exogenous-growth model (flat line) cannot produce. Country codes are illustrative of the clouds in Cozzi's slides.</p><script>(function(){var spec={"id": "fig-ex4-scatters", "title": "Two predictions, two verdicts", "caption": "<strong>Left:</strong> GDP-per-worker growth vs labour-force growth $n$ (44 countries, 1951\u20132003) \u2014 a clear NEGATIVE slope, against the semi-endogenous prediction that growth rises with $n$. <strong>Right:</strong> TFP growth $g_A$ vs the physical-investment rate $s$ (65 countries) \u2014 a clear POSITIVE slope, which an exogenous-growth model (flat line) cannot produce. Country codes are illustrative of the clouds in Cozzi's slides.", "params": {"aA": 0.031, "bA": 0.6, "aB": -0.008, "bB": 0.14}, "panels": [{"id": "gn", "x_range": [0, 0.035], "n_points": 2, "x_label": "labour-force growth n  (1951\u20132003)", "y_label": "GDP-per-worker growth", "curves": [{"name": "regression (negative)", "expr": "aA - bA * k", "color": "#964734", "width": 2}], "markers": [{"type": "label_point", "x": 0.004, "y": 0.033, "label": "AUT", "color": "#024950"}, {"type": "label_point", "x": 0.009, "y": 0.035, "label": "IRL", "color": "#024950"}, {"type": "label_point", "x": 0.007, "y": 0.029, "label": "ITA", "color": "#024950"}, {"type": "label_point", "x": 0.011, "y": 0.031, "label": "ESP", "color": "#024950"}, {"type": "label_point", "x": 0.01, "y": 0.026, "label": "FRA", "color": "#024950"}, {"type": "label_point", "x": 0.018, "y": 0.02, "label": "USA", "color": "#024950"}, {"type": "label_point", "x": 0.021, "y": 0.016, "label": "CAN", "color": "#024950"}, {"type": "label_point", "x": 0.031, "y": 0.014, "label": "MEX", "color": "#024950"}, {"type": "label_point", "x": 0.029, "y": 0.008, "label": "PER", "color": "#024950"}]}, {"id": "gAs", "x_range": [0, 0.35], "n_points": 2, "x_label": "investment rate s  (1960\u20132003)", "y_label": "TFP growth g_A  (1960\u20131998)", "curves": [{"name": "regression (positive)", "expr": "aB + bB * k", "color": "#0FA4AF", "width": 2}], "markers": [{"type": "label_point", "x": 0.05, "y": -0.01, "label": "TZA", "color": "#024950"}, {"type": "label_point", "x": 0.09, "y": 0.0, "label": "MWI", "color": "#024950"}, {"type": "label_point", "x": 0.13, "y": -0.004, "label": "NPL", "color": "#024950"}, {"type": "label_point", "x": 0.19, "y": 0.02, "label": "USA", "color": "#024950"}, {"type": "label_point", "x": 0.2, "y": 0.04, "label": "IRL", "color": "#024950"}, {"type": "label_point", "x": 0.27, "y": 0.043, "label": "KOR", "color": "#024950"}, {"type": "label_point", "x": 0.29, "y": 0.03, "label": "NOR", "color": "#024950"}, {"type": "label_point", "x": 0.3, "y": 0.027, "label": "JPN", "color": "#024950"}]}]};var hostId="fig-ex4-scatters";function go(){if(!window.MacroFigures){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.MacroFigures not defined. Did FIGURE_JS load before this snippet?</div>");return;}if(!window.Plotly){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.Plotly not loaded.</div>");return;}try{window.MacroFigures.renderFigure(spec,hostId);}catch(e){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Render error: "+e.message+"</div>");}}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",go);}else{go();}})();</script></div><div class="hints-area"><div class="hint" data-idx="1"><strong>Hint 1.</strong> Panel A contradicts the semi-endogenous prediction that growth rises with $n$: theory says the slope should be positive, the data say it is negative. Panel B supports endogenous growth because $g_A$ responding to $s$ is impossible if $g_A$ is exogenous — in Solow the slope would be zero, so a positive slope is evidence the technology growth rate is itself endogenous to investment.</div><button type="button" class="hint-btn" onclick="nextHint(this)">Hint 1 / 1</button></div></div><div class="sub-move" data-hints-total="1" data-hints-shown="0"><div class="sub-move-label">Reflection</div><div class="sub-move-prompt"><p>The scale effect (growth rising with population <em>level</em>) fails in two complementary ways. (a) Cross-section: large countries do not systematically grow faster (China and India versus Luxembourg). (b) Time series: over the 20th century US population grew several-fold, so the raw scale-effect model predicts its growth <em>rate</em> should have multiplied too — yet US per-capita growth was roughly constant.</p><p>Explain why “roughly constant growth despite a multiplying population” is the single cleanest refutation of the raw scale effect, and carefully distinguish this failure (in the population <em>level</em> $L$) from Panel A's failure (in the population <em>growth rate</em> $n$). They are two different predictions failing — do not blur them. (Prose.)</p></div><div class="hints-area"><div class="hint" data-idx="1"><strong>Hint 1.</strong> Keep the two axes apart: the scale effect is $g_e$ increasing in $L$ (a level); the semi-endogenous prediction is $g_{se}$ increasing in $n$ (a growth rate of $L$). Panel A rejects the second; the US time series rejects the first.</div><button type="button" class="hint-btn" onclick="nextHint(this)">Hint 1 / 1</button></div></div><div class="sub-move" data-hints-total="0" data-hints-shown="0"><div class="sub-move-label">Cross-module bridge</div><div class="sub-move-prompt"><p><strong>Previewing Module 5 (restated, not derived):</strong> the scale effect is embarrassing precisely because it follows <em>logically</em> from non-rival ideas — more people means more idea-users means faster growth. Module 5's “dilution” fix assumes population growth spreads research thinner across an expanding number of product lines, so that only the research <em>share</em> $s_R$, not the absolute headcount $L$, drives growth.</p><p>In one short paragraph, explain how this single move removes the scale effect while preserving endogenous growth, and what it implies for the old question of whether the model is “for one country or for the world.”</p></div></div><div class="solution-toggle-row"><button type="button" class="solution-btn" onclick="toggleSolution(this)">Show solution</button><span class="solution-hint-text">Solve on paper first.</span></div><div class="solution"><h3>Main derivation</h3><div class="step"><span class="step-label">Prediction 1 — semi-endogenous, growth rises with $n$</span> Take $g_{se}=(1+n)^{\varphi/(1-\varphi)}-1$. For $\varphi<1$ the exponent $\varphi/(1-\varphi)>0$, and $(1+n)$ raised to a positive power is increasing in $n$; so $\partial g_{se}/\partial n>0$. The Chapter 9 form $g_{se}\approx\lambda n/(1-\varphi)$ makes it transparent: growth is <em>linear and increasing</em> in population growth, zero when $n=0$. Faster-breeding countries should grow faster.</div><div class="step"><span class="step-label">Prediction 2 — strictly endogenous, the scale effect</span> With $\varphi=1$ and $n=0$, Chapter 8 gives $g_e=sA-\delta$ where $A=L^{1-\alpha}$, so $g_e=sL^{1-\alpha}-\delta$, strictly increasing in the population <em>level</em> $L$. Chapter 9 gives $g_e=\rho(s_RL)^{\lambda}$, again increasing in $L$. Both say a larger economy — more people, hence (ideas being non-rival) more minds improving technology everyone shares — grows faster. That is the scale effect.</div><div class="step"><span class="step-label">Prediction 3 — growth responds to $s$ (the discriminating test)</span> In any endogenous model the technology growth rate is tied to accumulation: $g_A=sA-\delta$ (Ch 8) or depends on $s_R$ (Ch 9), so $g_A$ should rise with the investment / research rate. In an exogenous Solow model $g_A=g$ is handed down from outside and is <em>independent</em> of $s$. So: regress TFP growth on the investment rate — endogenous theory predicts a positive slope, exogenous theory predicts zero. This single scatter discriminates between the two views of where growth comes from.</div><div class="key-result"><strong>Three predictions:</strong> (1) $g_{se}\uparrow$ in $n$; (2) $g_e\uparrow$ in the level $L$ (scale effect); (3) $g_A\uparrow$ in $s$ under endogenous growth but flat under exogenous growth.</div><h3>Visualize</h3><p><strong>Panel A (against semi-endogenous).</strong> The cloud slopes <em>down</em>: low-$n$ Western European economies (AUT, IRL, ITA, ESP) sit high; high-$n$ economies (MEX, PER) sit low. This is the exact opposite of Prediction 1, which demanded a positive slope. The semi-endogenous claim that population growth fuels economic growth is contradicted head-on — the most visible empirical strike against $\varphi<1$ growth driven by $n$.</p><p><strong>Panel B (for endogenous).</strong> The cloud slopes <em>up</em>: high-investment countries (KOR, IRL, NOR, JPN) show faster TFP growth than low-investment ones (TZA, MWI, NPL). This matches Prediction 3's endogenous case. It is decisive because an exogenous-growth model <em>cannot</em> generate it: if the technology growth rate were a constant of nature, it could not correlate with how much a country chooses to invest. A non-zero slope says the growth rate of technology is itself a choice variable — which is the whole thesis of endogenous growth. Hence Cozzi's billing as “probably the most important single argument in favour of endogenous growth models.”</p><h3>Reflection — the scale effect's two failures</h3><p>The US time series is the cleanest refutation because it controls for everything that varies across countries. Hold one country fixed and let its population multiply several-fold over a century: the raw scale-effect model ($g_e\propto L^{1-\alpha}$ or $\propto L^{\lambda}$) predicts the growth <em>rate</em> should have risen by a large, computable factor. Instead measured US per-capita growth was close to a constant ~2% across the century. A prediction of “growth accelerates as you get bigger” meeting a century of “growth stayed flat” is as direct a falsification as macro offers.</p><p>It is essential not to conflate this with Panel A. Panel A is about $n$, the <em>growth rate</em> of population, and rejects the semi-endogenous prediction $g_{se}\uparrow n$. The US time series is about $L$, the <em>level</em> of population, and rejects the strictly-endogenous scale effect $g_e\uparrow L$. Two different models, two different right-hand-side variables, two different pieces of evidence — both pointing the wrong way for the raw theory. A common exam error is to cite the $g$–$n$ scatter as if it disproved the scale effect; it does not, it disproves the $n$-prediction.</p><h3>Cross-module bridge → Module 5</h3><p>Module 5's dilution assumption says that as population grows the economy spreads across proportionally more product lines, so research effort per line depends on the <em>share</em> $s_R$ of labour in R&D, not on the absolute headcount $L$. Replace $L$ by $s_R$ as the growth driver and the troublesome $g_e\propto L^{\lambda}$ becomes $g_e\propto\rho\,s_R^{\lambda}$: a positive endogenous growth rate that policy can move (via $s_R$) but that no longer depends on country size. The scale effect vanishes while endogenous growth survives. It also dissolves the “country or world?” worry: because absolute size dropped out, the model no longer predicts that big countries outgrow small ones, so it can sensibly be read country-by-country rather than only as a single-world aggregate.</p><h4>Putting numbers on the US scale-effect failure</h4><div class="step"><span class="step-label">The predicted acceleration</span> US population grew from about 76 million in 1900 to about 281 million in 2000 — a factor of $\approx 3.7$. The strictly-endogenous form $g_e\propto L^{1-\alpha}$ with $1-\alpha\approx 0.67$ predicts the growth <em>rate</em> should have risen by $3.7^{0.67}\approx 2.4$. So the raw scale-effect model says 20th-century US growth should have <em>more than doubled</em>; instead it hovered near 2% a year. A predicted $2.4\times$ acceleration meeting a flat outturn is a clean, quantitative falsification.</div><h4>Why we should not over-reject (Cozzi's caveats)</h4><p>Cozzi is careful not to throw the model out on the cross-country scatter alone. Three caveats blunt Panel A: <strong>(i) direction of causality</strong> — rich, fast-growing countries <em>choose</em> low fertility, so causation may run growth $\to n$, not $n\to$ growth; <strong>(ii) country vs world</strong> — the model may be meant for the world as one closed economy, not as a country-by-country prediction; <strong>(iii) slow convergence</strong> — if $\varphi$ is near 1 the observed pattern can be transitory dynamics, so we might "reject that the countries are in steady state, not the model itself." There is even a global-long-run defence: over 200 years the world has had both non-trivial population growth and non-trivial per-capita growth, loosely consistent with semi-endogenous growth <em>if</em> convergence is very slow.</p><h4>Why Panel B is the decisive one</h4><p>Panel B isolates the growth rate of <em>technology</em> $g_A$ (via growth accounting), not just capital deepening, and shows it co-moving with the investment rate. An exogenous-growth model has $g_A$ as a constant of nature: it structurally <em>cannot</em> produce a non-zero slope here, no matter how the transition is told. That is why a positive slope — the Bernanke–Gürkaynak-style finding — is the single cleanest piece of evidence that the technology growth rate is itself endogenous to how much an economy invests. The two panels together say: reject the raw $n$- and $L$-predictions, but keep the core endogenous idea that policy can move the growth rate.</p></div></div>
+<div class="exercise" id="ex-5"><div class="exercise-header"><span class="exercise-number">Exercise 5</span><span class="exercise-title">Level effects vs growth effects: the policy geometry of the knife-edge</span></div><div class="exercise-scope"><strong>Scope:</strong> Lecture 4a §13–15 (semi-endogenous policy: $g_{se}$ independent of $s$), §22–23 (AK policy: $g_e$ depends on $s$); Slides_Session4 p16–19 ($s\uparrow$ gives a level effect for $\varphi<1$) and p31–35 ($s\uparrow$ gives a growth effect for $\varphi=1$), with calibration $\alpha=0.33$, $\varphi\in\{0.6,1\}$, $\delta=0.1$, $s:0.15\to0.25$. The recurring “derive + discuss policy implications” exam pattern.</div><div class="sub-move" data-hints-total="3" data-hints-shown="0"><div class="sub-move-label">Main derivation</div><div class="sub-move-prompt"><p>Run Bolboaca's experiment: a permanent rise in the saving rate from $s=0.15$ to $s'=0.25$, in two economies that differ only in $\varphi$.</p><ol><li><strong>Semi-endogenous</strong> ($\varphi=0.6$, $n=0.01$). Using $g_{se}=(1+n)^{\varphi/(1-\varphi)}-1$, show explicitly that $g_{se}$ contains no $s$, so the long-run growth <em>rate</em> is unchanged by the policy. Then, from the per-effective-worker steady state $\tilde k^*\propto s^{1/(1-a)}$ (with $a=\alpha+\varphi(1-\alpha)$), show the level path shifts <em>up</em>. Conclude: a permanent level effect, zero growth effect.</li><li><strong>Truly endogenous / AK</strong> ($\varphi=1$, $n=0$). Using $g_e=sA-\delta$, compute $\partial g_e/\partial s$ and conclude the policy raises the long-run growth <em>rate</em> permanently.</li><li>State the general principle: in which regime does policy move the <em>level</em> of the log-output path, in which does it move the <em>slope</em>, and what single parameter decides which?</li></ol></div><div class="hints-area"><div class="hint" data-idx="1"><strong>Hint 1.</strong> (1) $g_{se}=(1+n)^{\varphi/(1-\varphi)}-1$ is built from $n$ and $\varphi$ only — $s$ is absent, so $\partial g_{se}/\partial s=0$. But $\tilde k^*$ (and hence $\tilde y^*$ and the whole level path) is increasing in $s$.</div><div class="hint" data-idx="2"><strong>Hint 2.</strong> (2) $g_e=sA-\delta\Rightarrow\partial g_e/\partial s=A>0$: raising $s$ raises the permanent growth rate.</div><div class="hint" data-idx="3"><strong>Hint 3.</strong> (3) $\varphi<1\Rightarrow$ level effect (slope of $\log y$ fixed by $n,\varphi$; intercept moves); $\varphi=1\Rightarrow$ growth effect (slope itself moves). The knife-edge $\varphi=1$ is exactly the boundary between the two.</div><button type="button" class="hint-btn" onclick="nextHint(this)">Hint 1 / 3</button></div></div><div class="sub-move" data-hints-total="1" data-hints-shown="0"><div class="sub-move-label">Visualize</div><div class="sub-move-prompt"><p>The figure shows three log-output-per-worker paths over time, with the policy applied at $t=10$: a baseline (no policy change), the semi-endogenous response, and the truly-endogenous response.</p><ol><li>Identify which curve is which. Which one eventually runs <em>parallel</em> to the baseline (a permanently higher level, same slope), and which one <em>diverges</em> (a steeper slope)?</li><li>The semi-endogenous curve grows faster than baseline for a while after $t=10$ before settling back to the baseline slope. Explain this transitory burst: why does growth temporarily exceed $g_{se}$ even though the long-run rate is unchanged? Connect it to the approach to the new, higher $\tilde k^*$.</li></ol></div><div class="mf-figure" id="fig-ex5-paths"><div class="mf-panels "><div id="fig-ex5-paths-panel-0" class="mf-panel"></div></div><div class="mf-readout"></div><p class="mf-caption"><strong>Level effect vs growth effect.</strong> A permanent rise in the saving / research rate at $t=10$. Under <strong>semi-endogenous</strong> growth ($\varphi<1$) the log-output path transits to a higher <em>parallel</em> line — a level effect; the long-run slope $g_{se}$ is untouched. Under <strong>truly-endogenous</strong> growth ($\varphi=1$) the slope itself rises and the path diverges — a growth effect. This is Bolboaca's $s:0.15\to0.25$ experiment run in both regimes.</p><script>(function(){var spec={"id": "fig-ex5-paths", "title": "Level effect vs growth effect", "caption": "A permanent rise in the saving / research rate at $t=10$. Under <strong>semi-endogenous</strong> growth ($\\varphi<1$) the log-output path transits to a higher <em>parallel</em> line \u2014 a level effect; the long-run slope $g_{se}$ is untouched. Under <strong>truly-endogenous</strong> growth ($\\varphi=1$) the slope itself rises and the path diverges \u2014 a growth effect. This is Bolboaca's $s:0.15\\to0.25$ experiment run in both regimes.", "params": {"c0": 0, "g0": 0.02, "g1": 0.03, "dlevel": 0.28, "theta": 0.25, "t0": 10}, "x_range": [0, 60], "n_points": 300, "x_label": "time t   (policy applied at t = 10)", "y_label": "log output per worker", "curves": [{"name": "baseline (no policy)", "expr": "c0 + g0 * k", "color": "#5a7378", "width": 1.4, "dash": "dash"}, {"name": "semi-endogenous: level effect", "type": "piecewise", "color": "#0FA4AF", "width": 2, "pieces": [{"when": "k < t0", "expr": "c0 + g0 * k"}, {"expr": "c0 + g0 * k + dlevel * (1 - Math.exp(-theta * (k - t0)))"}]}, {"name": "truly endogenous: growth effect", "type": "piecewise", "color": "#964734", "width": 2, "pieces": [{"when": "k < t0", "expr": "c0 + g0 * k"}, {"expr": "c0 + g0 * t0 + g1 * (k - t0)"}]}], "markers": [{"type": "vertical_line", "at": "t0", "label": "policy: s\u2191", "color": "#024950"}]};var hostId="fig-ex5-paths";function go(){if(!window.MacroFigures){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.MacroFigures not defined. Did FIGURE_JS load before this snippet?</div>");return;}if(!window.Plotly){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.Plotly not loaded.</div>");return;}try{window.MacroFigures.renderFigure(spec,hostId);}catch(e){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Render error: "+e.message+"</div>");}}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",go);}else{go();}})();</script></div><div class="hints-area"><div class="hint" data-idx="1"><strong>Hint 1.</strong> A level effect is a parallel upward shift reached through a transition; a growth effect is a permanently steeper line that diverges without bound. The transitory burst is the ordinary Solow transition: sitting below the new, higher $\tilde k^*$, the economy temporarily grows faster than its long-run rate while capital per effective worker climbs to the new steady state.</div><button type="button" class="hint-btn" onclick="nextHint(this)">Hint 1 / 1</button></div></div><div class="sub-move" data-hints-total="2" data-hints-shown="0"><div class="sub-move-label">Numeric inversion</div><div class="sub-move-prompt"><p>An economist observes two countries decades after each made a permanent policy change, and reads the <em>shape</em> of the response (no structural estimation).</p><p><strong>Country 1</strong> permanently raised its investment rate; long-run per-capita growth was 2.0%/yr before and 2.0%/yr after, but the output path now sits permanently ~18% above the old path extrapolated forward. <strong>Country 2</strong> permanently raised its R&D share; long-run growth rose from 2.0% to 2.6%/yr and keeps diverging from the old path.</p><ol><li>Classify each country's growth regime (semi-endogenous vs truly endogenous) from the shape of the response alone.</li><li>For Country 1, explain why knowing only the post-policy growth rate (2.0%) is insufficient to classify it — and what specifically about the path reveals the regime.</li></ol></div><div class="hints-area"><div class="hint" data-idx="1"><strong>Hint 1.</strong> Country 1: growth rate unchanged but level permanently higher ⇒ a level effect ⇒ semi-endogenous ($\varphi<1$). Country 2: growth rate permanently higher and diverging ⇒ a growth effect ⇒ truly endogenous ($\varphi=1$).</div><div class="hint" data-idx="2"><strong>Hint 2.</strong> The classifying signal is whether the policy moved the <em>slope</em> or only the <em>intercept</em> of $\log y(t)$. The single number “2.0% after” is consistent with both a no-effect world and a level-effect world; only the permanent level gap distinguishes them.</div><button type="button" class="hint-btn" onclick="nextHint(this)">Hint 1 / 2</button></div></div><div class="sub-move" data-hints-total="0" data-hints-shown="0"><div class="sub-move-label">Methodology reflection</div><div class="sub-move-prompt"><p>Cozzi's exam questions on this module pair a derivation with “discuss the policy implications.” In 3–4 sentences, articulate why the level-vs-growth distinction is <em>the</em> policy stake of endogenous-growth theory: what is promised to a policymaker under truly-endogenous growth that neither semi-endogenous nor exogenous Solow growth can promise, and why the empirical fragility of the $\varphi=1$ knife-edge (Exercise 2) makes that promise contestable.</p></div></div><div class="solution-toggle-row"><button type="button" class="solution-btn" onclick="toggleSolution(this)">Show solution</button><span class="solution-hint-text">Solve on paper first.</span></div><div class="solution"><h3>Main derivation</h3><div class="step"><span class="step-label">Step 1 — semi-endogenous growth rate is policy-proof</span> $g_{se}=(1+n)^{\varphi/(1-\varphi)}-1$. The right-hand side is assembled entirely from $n$ and $\varphi$; the saving rate $s$ does not appear. Hence $\partial g_{se}/\partial s=0$: raising $s$ from 0.15 to 0.25 leaves the long-run growth rate exactly where it was.</div><div class="step"><span class="step-label">Step 2 — but the level rises</span> The per-effective-worker steady state solves $s\,\tilde k^{*a}=(\text{effective break-even})\,\tilde k^*$, giving $\tilde k^*\propto s^{1/(1-a)}$ with $a=\alpha+\varphi(1-\alpha)<1$, so $1/(1-a)>0$ and $\tilde k^*$ is increasing in $s$. Then $\tilde y^*=\tilde k^{*a}$ rises too. Since output per worker is $y_t=\tilde y_t A_t$ and $A_t$ keeps growing at the unchanged rate $g_{se}$, the whole $\log y$ path lifts to a higher <em>parallel</em> track. A permanent <strong>level effect</strong>, zero growth effect.</div><div class="key-result"><strong>$\varphi<1$:</strong> policy shifts the intercept of $\log y(t)$ up; the slope $g_{se}$ is fixed by $n$ and $\varphi$.</div><div class="step"><span class="step-label">Step 3 — AK: the rate itself moves</span> With $\varphi=1$, $n=0$, the growth rate is $g_e=sA-\delta$. Differentiate: $\partial g_e/\partial s=A>0$. Raising $s$ from 0.15 to 0.25 raises $g_e$ permanently by $A\cdot 0.10$. A permanent <strong>growth effect</strong>: the slope of $\log y(t)$ increases.</div><div class="key-result"><strong>$\varphi=1$:</strong> policy raises the slope of $\log y(t)$ forever — the paths diverge.</div><p><strong>General principle.</strong> When capital (broadly, the accumulable factor) faces diminishing returns ($a<1$, i.e. $\varphi<1$), policy can only relocate the economy to a higher <em>level</em> path; the long-run slope is pinned by population growth and the spillover. When diminishing returns just vanish ($a=1$, $\varphi=1$), the same policy bends the <em>slope</em> permanently. The single parameter $\varphi$ — through whether $a$ is below or equal to 1 — decides which. The knife-edge of Exercise 2 is also the knife-edge of policy.</p><h3>Visualize</h3><p>The grey dashed line is the baseline. The teal curve is semi-endogenous: it tracks the baseline until $t=10$, rises above it through a transition, then settles onto a higher line <em>parallel</em> to the baseline — the level effect. The rust curve is truly endogenous: from $t=10$ it takes a permanently steeper slope and pulls away from the baseline without bound — the growth effect. Same policy, two qualitatively different geometries.</p><p><strong>The transitory burst.</strong> Right after the saving rate jumps, the semi-endogenous economy finds itself <em>below</em> its new, higher steady state $\tilde k^*$. In that region investment exceeds break-even, so capital per effective worker climbs and output per worker grows <em>faster</em> than its long-run rate $g_{se}$. As $\tilde k_t$ approaches the new $\tilde k^*$ the gap closes and growth eases back to $g_{se}$. The burst is exactly the ordinary Solow transition — finite, front-loaded, and self-extinguishing — which is why it raises the level permanently but not the slope. (The figure renders this as the temporary steepening of the teal curve between $t=10$ and roughly $t=30$.)</p><h3>Numeric inversion</h3><div class="step"><span class="step-label">Country 1</span> Long-run growth 2.0% before and after, but a permanent ~18% level gap. Growth rate untouched, level permanently shifted ⇒ a <em>level effect</em> ⇒ <strong>semi-endogenous</strong> ($\varphi<1$). Policy moved the intercept, not the slope.</div><div class="step"><span class="step-label">Country 2</span> Long-run growth rose 2.0%→2.6% and the path keeps diverging ⇒ a <em>growth effect</em> ⇒ <strong>truly endogenous</strong> ($\varphi=1$). Policy moved the slope.</div><p><strong>Why the growth number alone is not enough for Country 1.</strong> “2.0% after” is consistent with two different worlds: one where the policy did nothing, and one where it produced a pure level effect (same eventual slope, higher track). What distinguishes them is not the post-policy growth <em>rate</em> but the permanent <em>level</em> gap relative to the extrapolated old path. You must look at the intercept, not the slope, to detect a level effect — which is precisely why the visualization, not a single growth statistic, is the diagnostic.</p><h3>Methodology reflection</h3><p>The level-vs-growth distinction is the entire policy stake because only truly-endogenous growth promises a policymaker a <em>permanent rise in the growth rate</em> — a lever on the slope of $\log y$, which compounds without limit. Semi-endogenous growth (and exogenous Solow) offer only level effects: worth having, but one-off — the economy ends up richer, not permanently faster. That is a categorical difference in what economic policy can achieve. The catch is that the permanent-growth promise lives entirely on the $\varphi=1$ knife-edge of Exercise 2: a spillover even slightly weaker than $\varphi=1$ collapses the growth effect back into a (very slow) level effect. So the most exciting policy claim in growth theory rests on the least robust assumption in it — which is exactly the tension Cozzi wants a 6/6 answer to name, not hide.</p><h4>Putting numbers on the growth effect</h4><div class="step"><span class="step-label">AK calibration</span> Take Bolboaca's $\varphi=1$ economy: $\alpha=0.33$, $n=0$, $\delta=0.1$, $L_0=1$, so $A=L^{1-\alpha}=1$ and $g_e=sA-\delta=s-0.1$. At $s=0.15$, $g_e=0.05$; at $s=0.25$, $g_e=0.15$. The saving-rate rise <strong>triples</strong> the long-run growth rate, from 5% to 15% a year — permanently.</div><p>Run the identical $s:0.15\to 0.25$ change in the $\varphi=0.6$ economy and $g_{se}=(1+n)^{\varphi/(1-\varphi)}-1$ does not move at all; only $\tilde k^*$ and the level path rise. One experiment, two universes — and the only thing that changed between them is $\varphi$.</p><h4>The policy distinction in one table</h4><table><thead><tr><th>Regime</th><th>Effect of $s\uparrow$ on the path</th><th>Permanent?</th><th>Structural advice it implies</th></tr></thead><tbody><tr><td>Exogenous Solow / semi-endogenous ($\varphi<1$)</td><td>level shift (parallel)</td><td>level: yes; growth: no</td><td>one-off level gains; semi-endo's awkward "promote population growth"</td></tr><tr><td>Truly endogenous / AK ($\varphi=1$)</td><td>slope change (diverges)</td><td>growth: yes</td><td>raise $s$ or the R&amp;D share $s_R$ for permanently faster growth</td></tr></tbody></table><h4>Why this is the exam's favourite pairing</h4><p>"Derive $X$ and discuss the policy implications" is the recurring Module-4/5 template, and it rewards exactly this two-step: show <em>mathematically</em> that $g_{se}$ has no $s$ (or that $\partial g_e/\partial s=A>0$), then translate it for a finance minister — level effects are worth having but one-off, growth effects compound forever. The 4/6 answer writes the algebra and stops; the 6/6 answer states the level-vs-growth dichotomy out loud and flags that the permanent-growth promise rides on the fragile $\varphi=1$ knife-edge. Naming the fragility is the differentiator, because honest economics is what the intuition mark rewards.</p><h4>The cliffhanger into Module 5</h4><p>This exercise also sets up the next module. The dilemma is that the only model offering a permanent growth effect — strictly-endogenous AK / Romer with $\varphi=1$ — is exactly the one carrying the empirically fatal scale effect of Exercise 4. Module 5's truly-endogenous-without-scale-effects model is engineered to escape the dilemma: by the dilution assumption (growth driven by the research <em>share</em> $s_R$, not the headcount $L$), it keeps the permanent growth effect — policy moves the <em>slope</em> via $s_R$ — while discarding the scale effect that sank the raw AK story. In the language of this exercise, it is the model that delivers a growth effect without paying the scale-effect price; whether demography lets it do so is the threshold-$\bar n$ question that Module 5 answers.</p></div></div>
+<div class="show-all-row">
+<button class="show-all-btn" type="button" onclick="revealAllSolutions()">Reveal all solutions</button>
+</div>
+</div>
+
+<script>
+function nextHint(btn){
+  const move=btn.closest('.sub-move');
+  const total=parseInt(move.dataset.hintsTotal);
+  let shown=parseInt(move.dataset.hintsShown||'0');
+  const next=shown+1;
+  const hint=move.querySelector('.hint[data-idx="'+next+'"]');
+  if(hint){
+    hint.classList.add('shown');
+    move.dataset.hintsShown=next;
+  }
+  if(next>=total){
+    btn.hidden=true;
+  }else{
+    btn.textContent='Hint '+(next+1)+' / '+total;
+  }
+}
+function toggleSolution(btn){
+  const card=btn.closest('.exercise');
+  const sol=card.querySelector('.solution');
+  const shown=sol.classList.toggle('shown');
+  btn.textContent=shown?'Hide solution':'Show solution';
+}
+function revealAllSolutions(){
+  document.querySelectorAll('.solution').forEach(s=>s.classList.add('shown'));
+  document.querySelectorAll('.solution-btn').forEach(b=>b.textContent='Hide solution');
+}
+document.addEventListener('DOMContentLoaded',()=>{
+  renderMathInElement(document.body,{delimiters:[
+    {left:"$$",right:"$$",display:true},
+    {left:"$",right:"$",display:false},
+    {left:"\\(",right:"\\)",display:false},
+    {left:"\\[",right:"\\]",display:true}
+  ]});
+});
+</script>
+</body>
+</html>

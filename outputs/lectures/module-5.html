@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lecture: Endogenous Growth without Scale Effects</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script>
+window.MacroFigures = window.MacroFigures || (function() {
+
+  function linspace(a, b, n) {
+    const out = [];
+    for (let i = 0; i < n; i++) out.push(a + (b - a) * i / (n - 1));
+    return out;
+  }
+
+  function compileExpr(expr, paramNames) {
+    return new Function('k', 'p',
+      'const {' + paramNames.join(',') + '} = p; return ' + expr + ';');
+  }
+
+  function compileScalarExpr(expr, paramNames) {
+    if (typeof expr === 'number') return () => expr;
+    if (typeof expr === 'string') {
+      return new Function('p',
+        'const {' + paramNames.join(',') + '} = p; return ' + expr + ';');
+    }
+    return () => null;
+  }
+
+  function findIntersection(xs, y1s, y2s) {
+    for (let i = 1; i < xs.length; i++) {
+      const d0 = y1s[i-1] - y2s[i-1];
+      const d1 = y1s[i] - y2s[i];
+      if (d0 === 0) return { x: xs[i-1], y: y1s[i-1] };
+      if (d0 * d1 < 0) {
+        const t = d0 / (d0 - d1);
+        return {
+          x: xs[i-1] + t * (xs[i] - xs[i-1]),
+          y: y1s[i-1] + t * (y1s[i] - y1s[i-1])
+        };
+      }
+    }
+    return null;
+  }
+
+  function findExtremum(xs, ys, kind) {
+    let idx = 0;
+    for (let i = 1; i < ys.length; i++) {
+      if (kind === 'max' ? ys[i] > ys[idx] : ys[i] < ys[idx]) idx = i;
+    }
+    return { x: xs[idx], y: ys[idx] };
+  }
+
+  function buildCurveData(curve, xs, params, paramNames) {
+    if (curve.type === 'time_series') {
+      // Discrete recursion: k_{t+1} = recursion(k_t, p), starting from initial.
+      const T = (curve.t_range && curve.t_range[1]) || 50;
+      const t0 = (curve.t_range && curve.t_range[0]) || 0;
+      const initFn = compileScalarExpr(curve.initial, paramNames);
+      const recFn = new Function('k', 'p',
+        'const {' + paramNames.join(',') + '} = p; return ' + curve.recursion + ';');
+      const ts = [t0], ks = [initFn(params)];
+      for (let t = t0 + 1; t <= T; t++) {
+        ks.push(recFn(ks[ks.length - 1], params));
+        ts.push(t);
+      }
+      return { x: ts, y: ks };
+    }
+    if (curve.type === 'piecewise') {
+      // [{when: "k < 10", expr: "..."}], else expr at end
+      const fns = curve.pieces.map(p => ({
+        when: p.when ? new Function('k', 'p',
+          'const {' + paramNames.join(',') + '} = p; return ' + p.when + ';') : null,
+        fn: compileExpr(p.expr, paramNames)
+      }));
+      return {
+        x: xs,
+        y: xs.map(k => {
+          for (const piece of fns) {
+            if (!piece.when || piece.when(k, params)) return piece.fn(k, params);
+          }
+          return null;
+        })
+      };
+    }
+    // default: type === 'expr'
+    const fn = compileExpr(curve.expr, paramNames);
+    return { x: xs, y: xs.map(k => fn(k, params)) };
+  }
+
+  function buildPanel(panel, params, paramNames, panelHostId) {
+    let xs;
+    // For panels containing only time_series curves, x_range may be omitted.
+    if (panel.x_range) {
+      xs = linspace(panel.x_range[0], panel.x_range[1], panel.n_points || 200);
+    } else {
+      xs = [];
+    }
+
+    const curveData = panel.curves.map(c => buildCurveData(c, xs, params, paramNames));
+
+    const traces = panel.curves.map((c, i) => ({
+      x: curveData[i].x, y: curveData[i].y,
+      name: c.name, mode: c.mode || 'lines',
+      line: { color: c.color, width: c.width || 1.6, dash: c.dash || 'solid' },
+      marker: { size: c.marker_size || 5, color: c.color, line: { color: 'white', width: 1 } }
+    }));
+
+    const shapes = [];
+    const annotations = [];
+    const readoutParts = [];
+
+    for (const m of (panel.markers || [])) {
+      let pt = null;
+      let line = null;
+
+      if (m.type === 'intersection') {
+        pt = findIntersection(curveData[m.curves[0]].x, curveData[m.curves[0]].y, curveData[m.curves[1]].y);
+      } else if (m.type === 'maximum' || m.type === 'minimum') {
+        const kind = m.type === 'maximum' ? 'max' : 'min';
+        pt = findExtremum(curveData[m.curve].x, curveData[m.curve].y, kind);
+      } else if (m.type === 'vertical_line') {
+        const x = compileScalarExpr(m.at, paramNames)(params);
+        line = { type: 'line', x0: x, x1: x, yref: 'paper', y0: 0, y1: 1,
+                 line: { color: m.color || '#5a7378', dash: m.dash || 'dash', width: 1 } };
+        if (m.label) annotations.push({
+          x: x, y: 0, xref: 'x', yref: 'paper', text: m.label,
+          showarrow: false, yshift: -18, font: { size: 11, color: '#111' }
+        });
+      } else if (m.type === 'horizontal_line') {
+        const y = compileScalarExpr(m.at, paramNames)(params);
+        line = { type: 'line', y0: y, y1: y, xref: 'paper', x0: 0, x1: 1,
+                 line: { color: m.color || '#5a7378', dash: m.dash || 'dash', width: 1 } };
+        if (m.label) annotations.push({
+          x: 1, y: y, xref: 'paper', yref: 'y', text: m.label,
+          showarrow: false, xshift: -8, yshift: -8, font: { size: 11, color: '#111' }
+        });
+      } else if (m.type === 'tangent_line') {
+        const x0 = compileScalarExpr(m.at, paramNames)(params);
+        const fn = compileExpr(panel.curves[m.curve].expr, paramNames);
+        const h = Math.max(0.001, Math.abs(x0) * 0.001);
+        const slope = (fn(x0 + h, params) - fn(x0 - h, params)) / (2 * h);
+        const y0v = fn(x0, params);
+        const xMin = panel.x_range[0], xMax = panel.x_range[1];
+        traces.push({
+          x: [xMin, xMax],
+          y: [y0v + slope * (xMin - x0), y0v + slope * (xMax - x0)],
+          mode: 'lines', name: m.label || 'tangent',
+          line: { color: m.color || '#16a34a', dash: 'dot', width: 2 }, showlegend: !!m.label
+        });
+        pt = { x: x0, y: y0v };
+      } else if (m.type === 'asymptote') {
+        const fn = compileExpr(panel.curves[m.curve].expr, paramNames);
+        const yInf = fn(1e9, params);
+        line = { type: 'line', y0: yInf, y1: yInf, xref: 'paper', x0: 0, x1: 1,
+                 line: { color: m.color || '#94a3b8', dash: 'dot', width: 1 } };
+        if (m.label) annotations.push({
+          x: 0.98, y: yInf, xref: 'paper', yref: 'y', text: m.label,
+          showarrow: false, xanchor: 'right', yshift: -8, font: { size: 11, color: '#666' }
+        });
+      } else if (m.type === 'area') {
+        // Shaded region between curves[0] and curves[1]
+        const ys1 = curveData[m.curves[0]].y;
+        const ys2 = curveData[m.curves[1]].y;
+        traces.push({
+          x: [...curveData[m.curves[0]].x, ...curveData[m.curves[0]].x.slice().reverse()],
+          y: [...ys1, ...ys2.slice().reverse()],
+          fill: 'toself', fillcolor: m.color || 'rgba(37,99,235,0.15)',
+          line: { width: 0 }, name: m.label || 'area', hoverinfo: 'skip',
+          showlegend: !!m.label
+        });
+      } else if (m.type === 'label_point') {
+        const x = compileScalarExpr(m.x, paramNames)(params);
+        const y = compileScalarExpr(m.y, paramNames)(params);
+        pt = { x, y };
+      }
+
+      if (pt) {
+        const pointTrace = {
+          x: [pt.x], y: [pt.y], mode: 'markers',
+          marker: { size: 8, color: m.color || '#003135', line: { color: 'white', width: 1.5 } },
+          name: m.label, showlegend: false,
+          hovertemplate: (m.label ? m.label + ' = ' : '') + '(%{x:.3f}, %{y:.3f})<extra></extra>'
+        };
+        // label_point markers render the label TEXT next to the dot; other marker
+        // types (intersection, max/min) write their label via annotations / guides.
+        if (m.type === 'label_point' && m.label) {
+          pointTrace.mode = 'markers+text';
+          pointTrace.text = [m.label];
+          pointTrace.textposition = m.textposition || 'top right';
+          pointTrace.textfont = {
+            size: 13, color: m.color || '#003135',
+            family: 'JetBrains Mono, ui-monospace, monospace', weight: 700
+          };
+        }
+        traces.push(pointTrace);
+        if (m.guide === 'vertical') {
+          shapes.push({ type: 'line', x0: pt.x, x1: pt.x, y0: 0, y1: pt.y,
+                        line: { color: '#5a7378', dash: 'dash', width: 1 } });
+        } else if (m.guide === 'horizontal') {
+          shapes.push({ type: 'line', xref: 'paper', x0: 0, x1: 1, y0: pt.y, y1: pt.y,
+                        line: { color: '#5a7378', dash: 'dash', width: 1 } });
+        } else if (m.guide === 'both') {
+          shapes.push({ type: 'line', x0: pt.x, x1: pt.x, y0: 0, y1: pt.y,
+                        line: { color: '#5a7378', dash: 'dash', width: 1 } });
+          shapes.push({ type: 'line', xref: 'paper', x0: 0, x1: 1, y0: pt.y, y1: pt.y,
+                        line: { color: '#5a7378', dash: 'dash', width: 1 } });
+        }
+        if (m.label && m.guide === 'vertical') annotations.push({
+          x: pt.x, y: 0, xref: 'x', yref: 'y', text: m.label + ' = ' + pt.x.toFixed(2),
+          showarrow: false, yshift: -18, font: { size: 11, color: '#111' }
+        });
+        readoutParts.push(panel.id + ': ' + (m.label || '?') +
+                          ' = ' + pt.x.toFixed(3) + ', y = ' + pt.y.toFixed(3));
+      }
+      if (line) shapes.push(line);
+    }
+
+    const layout = {
+      font: { family: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+              color: '#003135', size: 12 },
+      xaxis: { title: { text: panel.x_label, font: { size: 12, color: '#5a7378' } },
+               gridcolor: '#e6eef0', zerolinecolor: '#d4e1e4', linecolor: '#d4e1e4',
+               tickfont: { color: '#5a7378', size: 11 } },
+      yaxis: { title: { text: panel.y_label, font: { size: 12, color: '#5a7378' } },
+               gridcolor: '#e6eef0', zerolinecolor: '#d4e1e4', linecolor: '#d4e1e4',
+               tickfont: { color: '#5a7378', size: 11 } },
+      shapes: shapes, annotations: annotations,
+      margin: { t: 28, r: 20, b: 50, l: 60 },
+      title: panel.title ? { text: panel.title, font: { size: 13, color: '#024950' } } : undefined,
+      legend: { x: 0.02, y: 0.98, bgcolor: 'rgba(255,255,255,0.9)',
+                bordercolor: '#d4e1e4', borderwidth: 1, font: { size: 11, color: '#003135' } },
+      plot_bgcolor: '#ffffff', paper_bgcolor: '#ffffff'
+    };
+
+    Plotly.react(panelHostId, traces, layout, { responsive: true, displayModeBar: false });
+    return readoutParts;
+  }
+
+  function renderFigure(spec, hostId) {
+    const root = document.getElementById(hostId);
+    if (!root) { console.warn('Figure host not found:', hostId); return; }
+    const paramNames = Object.keys(spec.params);
+    const defaults = JSON.parse(JSON.stringify(spec.params));
+    const params = JSON.parse(JSON.stringify(spec.params));
+
+    const panels = spec.panels || [{
+      id: 'main', x_range: spec.x_range, n_points: spec.n_points,
+      x_label: spec.x_label, y_label: spec.y_label,
+      curves: spec.curves, markers: spec.markers
+    }];
+
+    function renderAll() {
+      const readoutLines = [];
+      panels.forEach((p, i) => {
+        const lines = buildPanel(p, params, paramNames, hostId + '-panel-' + i);
+        readoutLines.push(...lines);
+      });
+      const readoutEl = root.querySelector('.mf-readout');
+      if (readoutEl) readoutEl.textContent = readoutLines.join('   |   ');
+    }
+
+    // Wire sliders
+    (spec.sliders || []).forEach(s => {
+      const sl = root.querySelector('[data-slider="' + s.param + '"]');
+      const vsp = root.querySelector('[data-value="' + s.param + '"]');
+      if (sl) sl.addEventListener('input', e => {
+        params[s.param] = parseFloat(e.target.value);
+        if (vsp) vsp.textContent = params[s.param].toFixed(s.decimals || 2);
+        renderAll();
+      });
+    });
+
+    // Reset button
+    const resetBtn = root.querySelector('.mf-reset');
+    if (resetBtn) resetBtn.addEventListener('click', () => {
+      Object.assign(params, JSON.parse(JSON.stringify(defaults)));
+      (spec.sliders || []).forEach(s => {
+        const sl = root.querySelector('[data-slider="' + s.param + '"]');
+        const vsp = root.querySelector('[data-value="' + s.param + '"]');
+        if (sl) sl.value = defaults[s.param];
+        if (vsp) vsp.textContent = defaults[s.param].toFixed(s.decimals || 2);
+      });
+      renderAll();
+    });
+
+    renderAll();
+  }
+
+  return { renderFigure };
+})();
+</script>
+<style>
+:root{
+  --bg:#fdf6e3;
+  --card:#ffffff;
+  --border:#e6dcc4;
+  --text:#003135;
+  --muted:#5a7378;
+  --accent:#024950;
+  --accent-2:#0FA4AF;
+  --accent-bg:rgba(15,164,175,0.10);
+  --key:#964734;
+  --key-bg:rgba(150,71,52,0.07);
+  --box-fill:#003135;
+  --box-text:#e6f4f5;
+  --box-line:#0FA4AF;
+  --nav-w:220px;
+  --col-w:760px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background-color:var(--bg)}
+body{
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  color:var(--text);
+  line-height:1.7;
+  font-weight:400;
+  font-feature-settings:"cv11","ss01","ss03";
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+  /* Subtle paper grain: fractal noise tinted warm brown at low alpha */
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.45  0 0 0 0 0.35  0 0 0 0 0.20  0 0 0 0.06 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  background-repeat:repeat;
+  background-attachment:fixed;
+}
+.layout{display:block;min-height:100vh}
+nav{
+  width:var(--nav-w);
+  position:fixed;top:0;left:0;height:100vh;overflow-y:auto;
+  background:transparent;
+  border-right:1px solid var(--border);
+  padding:2.5rem 1.25rem;
+}
+nav h2{
+  font-size:.72rem;
+  text-transform:uppercase;
+  color:var(--muted);
+  margin-bottom:1.25rem;
+  letter-spacing:.12em;
+  font-weight:600;
+}
+nav a{
+  display:block;
+  padding:.45rem .6rem;
+  font-size:.84rem;
+  color:var(--muted);
+  text-decoration:none;
+  border-radius:5px;
+  margin-bottom:1px;
+  font-weight:400;
+  transition:color .15s, background .15s;
+}
+nav a:hover{color:var(--text);background:rgba(2,73,80,0.04)}
+nav a.active{color:var(--accent);background:var(--accent-bg);font-weight:500}
+main{
+  margin-left:var(--nav-w);
+  padding:4rem max(2rem, calc((100vw - var(--nav-w) - var(--col-w)) / 2)) 5rem;
+}
+h1{
+  font-size:2.5rem;
+  font-weight:300;
+  letter-spacing:-0.03em;
+  line-height:1.15;
+  margin-bottom:.6rem;
+  color:var(--text);
+}
+.meta{
+  color:var(--muted);
+  font-size:.85rem;
+  font-weight:400;
+  letter-spacing:.01em;
+  margin-bottom:3rem;
+  padding-bottom:1.25rem;
+  border-bottom:1px solid var(--border);
+}
+.section{margin-bottom:3.5rem}
+.section h2{
+  font-size:1.55rem;
+  font-weight:400;
+  letter-spacing:-0.02em;
+  color:var(--accent);
+  margin-bottom:1.25rem;
+  padding-bottom:.7rem;
+  border-bottom:1px solid var(--border);
+}
+.section h3{
+  font-size:1.05rem;
+  font-weight:500;
+  letter-spacing:-0.01em;
+  margin:1.75rem 0 .8rem;
+  color:var(--text);
+}
+.section p{margin-bottom:1.1rem;font-weight:400}
+.section ol,.section ul{margin:0 0 1.1rem 1.5rem}
+.section li{margin-bottom:.4rem}
+a{color:var(--accent-2);text-decoration:none;border-bottom:1px solid transparent;transition:border-color .15s}
+a:hover{border-bottom-color:var(--accent-2)}
+strong{font-weight:600;color:var(--text)}
+em{font-style:italic}
+/* HUD-style callouts: dark fill, light text, cyan tracer outline,
+   extension line out of one corner ending in a small square endpoint */
+.key-concept,.example{
+  position:relative;
+  background:var(--box-fill);
+  color:var(--box-text);
+  padding:1.4rem 1.65rem;
+  margin:2.25rem 0;
+  border-radius:0;
+  outline:1px solid var(--box-line);
+  outline-offset:4px;
+  font-weight:400;
+}
+.key-concept p,.example p{margin-bottom:.8rem}
+.key-concept p:last-child,.example p:last-child{margin-bottom:0}
+.key-concept strong{color:#e8826a;font-weight:600;letter-spacing:.02em}
+.example strong{color:var(--box-line);font-weight:600;letter-spacing:.02em}
+.key-concept code,.example code{
+  background:rgba(255,255,255,0.08);
+  color:var(--box-line);
+}
+.key-concept .katex,.example .katex{color:var(--box-text)}
+/* HUD tracer: 3 staggered bold strokes + an open square endpoint.
+   Uses mask-image so the stroke color = var(--box-line) and the rect
+   interior is genuinely transparent (page bg + texture show through). */
+.key-concept::before,.example::before{
+  content:'';
+  position:absolute;
+  width:74px;
+  height:60px;
+  pointer-events:none;
+  background-color:var(--box-line);
+  -webkit-mask-repeat:no-repeat;
+          mask-repeat:no-repeat;
+  -webkit-mask-position:center;
+          mask-position:center;
+}
+/* key-concept: tracer in the RIGHT gutter, lines extend rightward */
+.key-concept::before{
+  top:14px;
+  right:-82px;
+  -webkit-mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 74 60'><line x1='0' y1='9' x2='48' y2='9' stroke='black' stroke-width='3'/><line x1='0' y1='28' x2='22' y2='28' stroke='black' stroke-width='3'/><line x1='0' y1='47' x2='34' y2='47' stroke='black' stroke-width='3'/><rect x='56' y='4' width='10' height='10' fill='none' stroke='black' stroke-width='1.6'/></svg>");
+          mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 74 60'><line x1='0' y1='9' x2='48' y2='9' stroke='black' stroke-width='3'/><line x1='0' y1='28' x2='22' y2='28' stroke='black' stroke-width='3'/><line x1='0' y1='47' x2='34' y2='47' stroke='black' stroke-width='3'/><rect x='56' y='4' width='10' height='10' fill='none' stroke='black' stroke-width='1.6'/></svg>");
+}
+/* example: tracer in the LEFT gutter, lines extend leftward (mirrored) */
+.example::before{
+  bottom:14px;
+  left:-82px;
+  -webkit-mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 74 60'><line x1='26' y1='9' x2='74' y2='9' stroke='black' stroke-width='3'/><line x1='52' y1='28' x2='74' y2='28' stroke='black' stroke-width='3'/><line x1='40' y1='47' x2='74' y2='47' stroke='black' stroke-width='3'/><rect x='8' y='4' width='10' height='10' fill='none' stroke='black' stroke-width='1.6'/></svg>");
+          mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 74 60'><line x1='26' y1='9' x2='74' y2='9' stroke='black' stroke-width='3'/><line x1='52' y1='28' x2='74' y2='28' stroke='black' stroke-width='3'/><line x1='40' y1='47' x2='74' y2='47' stroke='black' stroke-width='3'/><rect x='8' y='4' width='10' height='10' fill='none' stroke='black' stroke-width='1.6'/></svg>");
+}
+.key-concept::after,.example::after{display:none}
+@media(max-width:1100px){
+  .key-concept::before,.example::before{display:none}
+}
+.graph-container{
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:8px;
+  padding:1.5rem;
+  margin:1.5rem 0;
+  text-align:center;
+}
+.graph-container svg{max-width:100%}
+table{
+  width:100%;
+  border-collapse:collapse;
+  margin:1.5rem 0;
+  background:var(--card);
+  border-radius:6px;
+  overflow:hidden;
+  border:1px solid var(--border);
+  font-size:.9rem;
+}
+th,td{padding:.7rem .9rem;border-bottom:1px solid var(--border);text-align:left}
+tr:last-child td{border-bottom:none}
+th{
+  background:var(--accent-bg);
+  font-weight:600;
+  color:var(--accent);
+  letter-spacing:.01em;
+}
+code{
+  background:#e6eef0;
+  color:var(--accent);
+  padding:.12rem .42rem;
+  border-radius:3px;
+  font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:.85em;
+  font-weight:500;
+}
+pre{
+  background:#003135;
+  color:#dceef0;
+  padding:1.25rem;
+  border-radius:8px;
+  overflow-x:auto;
+  margin:1.5rem 0;
+  font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:.82rem;
+  line-height:1.6;
+  font-weight:400;
+}
+pre code{background:none;color:inherit;padding:0;font-weight:400}
+.figure{
+  margin:1.75rem 0;
+  padding:1.25rem;
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:8px;
+  text-align:center;
+}
+.figure svg{max-width:100%}
+.figure figcaption{
+  margin-top:.75rem;
+  font-size:.85rem;
+  color:var(--muted);
+  line-height:1.6;
+  text-align:left;
+}
+.figure figcaption strong{color:var(--accent)}
+.katex{font-size:1.02em}
+.katex-display{margin:1.25rem 0;overflow-x:auto;overflow-y:hidden}
+
+.mf-figure { margin: 1.75rem 0; padding: 1.25rem; background: #ffffff;
+             border: 1px solid #b8dcd9; border-radius: 0; }
+.mf-figure h4 { margin: 0 0 0.8rem 0; font-size: 1rem; font-weight: 600;
+                color: #024950; letter-spacing: -0.01em; }
+.mf-panels { display: grid; gap: 1rem; }
+.mf-panels.cols-2 { grid-template-columns: 1fr 1fr; }
+@media (max-width: 720px) { .mf-panels.cols-2 { grid-template-columns: 1fr; } }
+.mf-panel { min-height: 380px; }
+.mf-sliders { display: grid; gap: 0.35rem; margin-top: 1.25rem; padding: 0;
+              background: transparent; border: none; }
+.mf-slider-row { display: grid; grid-template-columns: 160px 1fr 70px;
+                 align-items: center; gap: 0.9rem; }
+.mf-slider-row label { font-size: 0.76rem; color: #5a7378; font-weight: 400;
+                       letter-spacing: 0.01em; }
+.mf-slider-row input[type=range] {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 16px; background: transparent; margin: 0; padding: 0;
+  cursor: pointer;
+}
+.mf-slider-row input[type=range]::-webkit-slider-runnable-track {
+  height: 1px; background: #b8dcd9; border: none;
+}
+.mf-slider-row input[type=range]::-moz-range-track {
+  height: 1px; background: #b8dcd9; border: none;
+}
+.mf-slider-row input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  height: 9px; width: 9px; border-radius: 50%;
+  background: #0FA4AF; border: none; margin-top: -4px;
+  cursor: pointer; transition: transform .12s, background .12s;
+}
+.mf-slider-row input[type=range]::-moz-range-thumb {
+  height: 9px; width: 9px; border-radius: 50%;
+  background: #0FA4AF; border: none;
+  cursor: pointer; transition: transform .12s, background .12s;
+}
+.mf-slider-row input[type=range]:hover::-webkit-slider-thumb {
+  background: #024950; transform: scale(1.25);
+}
+.mf-slider-row input[type=range]:hover::-moz-range-thumb {
+  background: #024950; transform: scale(1.25);
+}
+.mf-slider-row .mf-value { font-family: 'JetBrains Mono', ui-monospace, monospace;
+                           text-align: right; color: #024950; font-weight: 400;
+                           font-size: 0.76rem; }
+.mf-slider-row .mf-value::before { content: ''; }
+.mf-reset { background: transparent; border: none;
+            padding: 0.35rem 0; margin-top: 0.4rem; cursor: pointer; font-size: 0.72rem;
+            color: #5a7378; justify-self: start; letter-spacing: 0.05em;
+            text-transform: uppercase; font-family: inherit;
+            border-bottom: 1px solid transparent; transition: color .15s, border-color .15s; }
+.mf-reset:hover { color: #024950; border-bottom-color: #0FA4AF; }
+.mf-readout { font-family: 'JetBrains Mono', ui-monospace, monospace;
+              font-size: 0.74rem; color: #964734; font-weight: 400;
+              margin-top: 0.6rem; padding: 0.4rem 0;
+              border-top: 1px dashed #b8dcd9; min-height: 1rem;
+              letter-spacing: 0.01em; }
+.mf-caption { font-size: 0.84rem; color: #5a7378; line-height: 1.6;
+              margin-top: 1rem; padding: 0.75rem 0 0;
+              border-top: 1px solid #b8dcd9; }
+.mf-caption strong { color: #024950; font-weight: 600; letter-spacing: 0.01em; }
+
+@media(max-width:900px){
+  nav{display:none}
+  main{margin-left:0;padding:2rem 1.25rem 3rem}
+  h1{font-size:1.7rem}
+}
+</style>
+</head>
+<body>
+<div class="layout">
+<nav>
+<h2>Contents</h2>
+<a href="#sec-big-picture">1. The Big Picture: A Prediction That Was Too Good</a><a href="#sec-objects">2. The Objects: Two Knobs That Generate Three Theories</a><a href="#sec-mechanics">3. The Core Mechanics: Where Each Growth Rate Comes From</a><a href="#sec-properties">4. Properties &amp; Proofs: Steady States and the Hybrid Theorem</a><a href="#sec-examples">5. Worked Examples: Two Economies and a Simulation</a><a href="#sec-traps">6. Connections, Policy, and Common Traps</a><a href="#sec-summary">7. Summary &amp; Formula Reference</a>
+</nav>
+<main>
+<h1>Lecture: Endogenous Growth without Scale Effects</h1>
+<div class="meta">Macroeconomics III — Module 5 (Cozzi's lecture notes) — 2026-05-30</div>
+<div class="section" id="sec-big-picture"><h2>1. The Big Picture: A Prediction That Was Too Good</h2><p>Here is a question that should nag at you after the R&amp;D models of the previous module. If ideas are what drive growth, and ideas come from people, then a bigger economy — more potential inventors — should grow <em>faster</em>. More heads, more ideas, faster progress. The first generation of R&amp;D-based growth models (Romer 1990, and the Chapter&nbsp;9 model you have seen) say exactly this. The prediction even has a name: the <strong>scale effect</strong>. It is one of the cleanest, most intuitive predictions in all of growth theory.</p><p>It is also flatly wrong.</p><p>Think about what actually happened. The number of scientists and engineers doing R&amp;D in the rich world exploded after the Second World War — in the United States the research workforce rose roughly <em>five-fold</em> between 1950 and 1990. If the growth rate were proportional to the number of researchers, productivity growth should have rocketed upward over those decades. It did not. Measured TFP growth was flat, and arguably <em>declined</em>. Charles Jones made this point sharply in 1995, and it became the single most damaging piece of evidence against first-generation endogenous growth theory.</p><p>So the field had a problem, and it found two different ways out. Both kill the scale effect; they disagree about almost everything else.</p><div class='key-concept'><strong>The two escape routes (the heart of this module):</strong><br>&bull; <strong>Semi-endogenous growth</strong> (Jones 1995, Kortum 1997, Segerstrom 1998): assume ideas get <em>harder to find</em> as the stock of knowledge grows. Then the long-run growth rate ends up pinned to the population <em>growth</em> rate $n$, not the population <em>level</em> — no scale effect. The catch: if growth is set by $n$ alone, then policy (subsidies, patents, research funding) <em>cannot</em> change long-run growth at all.<br>&bull; <strong>Truly endogenous growth without scale effects</strong> (Smulders &amp; van de Klundert 1995, Dinopoulos &amp; Thompson 1998, Peretto 1998, Young 1998, Howitt 1999): assume that as population grows it adds not just researchers but new products, firms, and sectors, so R&amp;D is spread ever more thinly. Then what matters is the <em>fraction</em> of the labour force in R&amp;D, not the level — again no scale effect. But because that fraction is something policy <em>can</em> move, here policy changes long-run growth <em>permanently</em>.</div><p>Two escapes, opposite verdicts on policy. Semi-endogenous: policy is impotent in the long run. Truly endogenous: policy is king. And here is the uncomfortable part — both theories fit the available data about equally well. The empirical estimates that would let us tell them apart are frustratingly close to the knife-edge. So which one is right?</p><p>Cozzi's (2017) answer — the climax of this module, and the reason it has its own lecture — is: <em>maybe both.</em> Build a model that is a genuine blend of the two mechanisms, and ask which one wins in the long run. The startling result, the one the exam keeps asking about, is that the answer does <strong>not</strong> depend on how much weight you put on each theory. It depends on <strong>demography</strong>. If population grows fast enough, the semi-endogenous mechanism takes over and policy is impotent; if population grows slowly, stagnates, or shrinks, the truly-endogenous mechanism takes over and policy is powerful. And since the threshold that separates these two worlds <em>itself depends on policy</em>, a government can in principle flip the entire economy from one regime to the other. In Cozzi's words: "policy could make policy itself more effective for growth."</p><p>That is where we are going. This module has no textbook chapter behind it — it is Cozzi's own research programme, and it is mock-exam-load-bearing (the recurring "derive and discuss the policy implications of the Cozzi (2017) hybrid model" question). Everything we need we will build from scratch. Let us start by pinning down the objects.</p></div><div class="section" id="sec-objects"><h2>2. The Objects: Two Knobs That Generate Three Theories</h2><p>Every model in this module shares the same skeleton, and almost all the disagreement lives in <em>one equation</em>. So let us lay down the shared skeleton first, then zoom in on the equation that does all the work.</p><h3>The shared skeleton</h3><p>Output is produced from capital and <em>technology-augmented</em> labour, exactly as in the technology-augmented Solow world:</p><div class='key-concept'>$$Y_t = K_t^{\alpha}\,(A_t L_{Yt})^{1-\alpha}$$</div><p>Reading the symbols: $Y_t$ is output; $K_t$ is the capital stock; $A_t$ is the level of <em>labour-augmenting technology</em> (knowledge — bigger $A_t$ means each worker is effectively worth more); $L_{Yt}$ is the labour employed in <em>goods production</em>; and $\alpha\in(0,1)$ is the capital share (the Cobb-Douglas exponent on capital). The combination $A_t L_{Yt}$ is "effective labour" in the goods sector.</p><p>Why $L_{Yt}$ and not just $L_t$? Because in these models the labour force is <em>split</em> between two jobs: making goods, and making ideas. Total labour $L_t$ divides as</p><p>$$L_{Yt} + L_{At} = L_t, \qquad L_{At} = s_R\,L_t.$$</p><p>Here $L_{At}$ is the labour employed in the <strong>R&amp;D sector</strong>, and $s_R$ is the fraction of the workforce doing research. This fraction has a name we will use constantly:</p><div class='key-concept'><strong>R&amp;D share $s_R$:</strong> the fraction of the total labour force employed in research and development, $s_R \equiv L_{At}/L_t$. It is a number between 0 and 1 (empirically a percent or two). Crucially, it is a <em>policy variable</em> — subsidies, patent protection, public labs, and graduate funding all push on $s_R$.</div><p>Capital accumulates out of saving, and population grows at a constant rate, the usual way:</p><p>$$K_{t+1} = s\,Y_t + (1-\delta)K_t, \qquad L_{t+1} = (1+n)L_t,$$</p><p>where $s$ is the saving rate, $\delta$ the depreciation rate, and $n$ the population growth rate. So far this is just Solow with a labour split. Nothing here distinguishes the three theories. The distinction lives entirely in how the R&amp;D sector turns researchers into new ideas.</p><h3>The one equation that matters: the R&amp;D production function</h3><p>New technology is produced by the research sector. The generic form is</p><div class='key-concept'>$$\underbrace{A_{t+1}-A_t}_{\text{new ideas this period}} = \rho\; \underbrace{A_t^{\varphi}}_{\text{knowledge you stand on}}\;\underbrace{(\text{R\&D input})^{\lambda}}_{\text{research effort}}$$</div><p>Let us read every piece, because the whole module is an argument about two of these symbols. $A_{t+1}-A_t$ is the <em>flow</em> of new technology — the direct output of the R&amp;D sector. $\rho>0$ is a productivity constant (how good researchers are). The term $A_t^{\varphi}$ says that today's <em>stock</em> of knowledge feeds back into the production of new knowledge — researchers "stand on the shoulders" of existing ideas. And the last term is the research effort, raised to a power $\lambda\in(0,1]$ that captures duplication ("stepping on toes": two labs racing to the same patent partly waste each other's effort, so doubling researchers less-than-doubles output).</p><p>Now the two knobs. Everything in this module is generated by two independent choices in this single equation.</p><div class='key-concept'><strong>Knob 1 — the knowledge-returns exponent $\varphi$.</strong> Does the existing stock of knowledge make new discovery <em>easier without limit</em> ($\varphi=1$, constant returns to the knowledge stock) or does it eventually get <em>harder</em> ($\varphi&lt;1$, diminishing returns — the "fishing-out" idea: the easy fish get caught first)?<br><br><strong>Knob 2 — the R&amp;D input: level or share?</strong> Is the research effort measured by the <em>level</em> of R&amp;D labour $L_{At}$ (so a bigger economy means more total research) or by the <em>share</em> $s_R$ (so only the fraction in research matters, regardless of size)?</div><p><em>(One notation warning, because it bites students every year: the $\varphi$ here is the R&amp;D knowledge-returns exponent — it has nothing to do with human capital. This module has no human-capital model, so we are free to use $\varphi$ for this and only this.)</em></p><p>Turn the two knobs and you get exactly the three theories from the big picture. Figure&nbsp;1 lays them out as a two-by-two map — keep it in your head for the rest of the lecture.</p><div class='figure' id='fig-model-map'><svg viewBox='0 0 520 360' xmlns='http://www.w3.org/2000/svg' font-family='sans-serif' font-size='12.5'><defs><marker id='arrhead' markerWidth='9' markerHeight='9' refX='7' refY='3' orient='auto'><path d='M0,0 L7,3 L0,6 Z' fill='#16a34a'/></marker></defs><text x='260' y='22' text-anchor='middle' font-size='14' font-weight='bold'>What goes into the R&amp;D equation?</text><text x='150' y='44' text-anchor='middle' fill='#444'>R&amp;D input = LEVEL $L_A$</text><text x='390' y='44' text-anchor='middle' fill='#444'>R&amp;D input = SHARE $s_R$</text><text x='18' y='130' text-anchor='middle' fill='#444' transform='rotate(-90 18 200)'>knowledge returns &#966;</text><text x='40' y='110' text-anchor='middle' fill='#444' transform='rotate(-90 40 110)'>&#966;=1</text><text x='40' y='270' text-anchor='middle' fill='#444' transform='rotate(-90 40 270)'>&#966;&lt;1</text><rect x='60' y='58' width='180' height='110' rx='6' fill='#fee2e2' stroke='#dc2626' stroke-width='1.5'/><text x='150' y='80' text-anchor='middle' font-weight='bold' fill='#991b1b'>Romer / Ch&nbsp;9</text><text x='150' y='98' text-anchor='middle' font-size='11' fill='#991b1b'>with SCALE EFFECT</text><text x='150' y='122' text-anchor='middle' font-size='11'>bigger population</text><text x='150' y='138' text-anchor='middle' font-size='11'>&#8658; faster growth</text><text x='150' y='158' text-anchor='middle' font-size='11' font-weight='bold' fill='#dc2626'>&#10007; rejected by data</text><rect x='300' y='58' width='180' height='110' rx='6' fill='#dcfce7' stroke='#16a34a' stroke-width='2'/><text x='390' y='80' text-anchor='middle' font-weight='bold' fill='#166534'>Truly endogenous</text><text x='390' y='98' text-anchor='middle' font-size='11' fill='#166534'>NO scale effect</text><text x='390' y='122' text-anchor='middle' font-size='11'>Howitt, Peretto,</text><text x='390' y='138' text-anchor='middle' font-size='11'>Young, Smulders</text><text x='390' y='158' text-anchor='middle' font-size='11' font-weight='bold' fill='#16a34a'>&#10003; policy permanent</text><rect x='60' y='192' width='180' height='110' rx='6' fill='#dbeafe' stroke='#2563eb' stroke-width='2'/><text x='150' y='214' text-anchor='middle' font-weight='bold' fill='#1e40af'>Semi-endogenous</text><text x='150' y='232' text-anchor='middle' font-size='11' fill='#1e40af'>Jones, Kortum, Segerstrom</text><text x='150' y='256' text-anchor='middle' font-size='11'>growth tied to $n$</text><text x='150' y='272' text-anchor='middle' font-size='11'>policy only temporary</text><text x='150' y='292' text-anchor='middle' font-size='11' font-weight='bold' fill='#2563eb'>no scale, but $n$ rules</text><rect x='300' y='192' width='180' height='110' rx='6' fill='#f1f5f9' stroke='#94a3b8' stroke-width='1' stroke-dasharray='4,3'/><text x='390' y='230' text-anchor='middle' font-size='11' fill='#64748b'>(not a standard model:</text><text x='390' y='248' text-anchor='middle' font-size='11' fill='#64748b'>ties growth to the</text><text x='390' y='266' text-anchor='middle' font-size='11' fill='#64748b'>growth of $s_R$)</text><path d='M 245 247 C 280 247, 300 200, 360 172' fill='none' stroke='#16a34a' stroke-width='2' stroke-dasharray='5,3' marker-end='url(#arrhead)'/><text x='250' y='335' text-anchor='middle' font-size='11.5' fill='#166534' font-weight='bold'>Cozzi's hybrid = blend of the blue cell + the green cell</text></svg><figcaption><strong>Figure 1.</strong> The two knobs and the three theories. Moving UP the left column (turn $\varphi$ from $&lt;1$ to $1$ while keeping the <em>level</em> $L_A$) gives the scale effect — empirically rejected (red). Moving RIGHT along the top row (keep $\varphi=1$ but switch to the <em>share</em> $s_R$) removes the scale effect and makes policy permanent (green). The semi-endogenous model (blue) keeps $\varphi&lt;1$ and the level. Cozzi's hybrid, built later, is a weighted blend of the blue and green cells — and the surprise is that demography, not the blend weight, decides which one wins.</figcaption></div><p>With the map in hand, here are the three R&amp;D equations explicitly. Notice they differ <em>only</em> in the two knobs — same $\rho$, same $\lambda$, same skeleton.</p><table><thead><tr><th>Theory</th><th>$\varphi$</th><th>input</th><th>R&amp;D equation</th></tr></thead><tbody><tr><td>Semi-endogenous (Jones)</td><td>$\varphi&lt;1$</td><td>level $L_{At}$</td><td>$A_{t+1}-A_t=\rho A_t^{\varphi} L_{At}^{\lambda}$</td></tr><tr><td>Romer w/ scale effect (Ch&nbsp;9)</td><td>$\varphi=1$</td><td>level $L_{At}$</td><td>$A_{t+1}-A_t=\rho A_t L_{At}^{\lambda}$</td></tr><tr><td>Truly endogenous, no scale</td><td>$\varphi=1$</td><td>share $s_{Rt}$</td><td>$A_{t+1}-A_t=\rho A_t s_{Rt}^{\lambda}$</td></tr></tbody></table><p>Before we start turning these into growth rates, three more definitions we will lean on — stated plainly so they never sneak in as a parenthetical later.</p><div class='key-concept'><strong>Scale effect:</strong> the property that the long-run <em>growth rate</em> rises with the <em>size</em> (level) of the population or economy. A model has a scale effect if a bigger country, holding all rates fixed, grows faster forever.<br><br><strong>Semi-endogenous growth:</strong> a regime in which the long-run growth rate is determined by exogenous demographics (the population growth rate $n$) and policy can shift growth only <em>temporarily</em>, during the transition.<br><br><strong>Truly (fully) endogenous growth:</strong> a regime in which the long-run growth rate is determined by choices that policy can move — here the R&amp;D share $s_R$ — so policy changes growth <em>permanently</em>.<br><br><strong>Balanced growth path (BGP):</strong> a long-run state in which every "per-effective-worker" variable is constant and every per-capita variable grows at the same constant rate. It is the steady state of these models.</div><h3>Notation, fixed for the whole lecture</h3><p>Macro notation drifts between sources; we pin one convention now and never deviate.</p><table><thead><tr><th>Symbol</th><th>Meaning</th></tr></thead><tbody><tr><td>$Y_t,\,K_t,\,L_t$</td><td>output, capital, total labour</td></tr><tr><td>$A_t$</td><td>labour-augmenting technology (the knowledge stock)</td></tr><tr><td>$L_{Yt},\,L_{At}$</td><td>labour in goods production / in R&amp;D, with $L_{Yt}+L_{At}=L_t$</td></tr><tr><td>$s_R$</td><td>R&amp;D employment share, $L_{At}/L_t$ <em>(policy lever)</em></td></tr><tr><td>$\alpha$</td><td>capital share / Cobb-Douglas capital exponent</td></tr><tr><td>$\varphi$</td><td>knowledge-returns exponent in R&amp;D ($\varphi=1$ constant, $\varphi&lt;1$ diminishing). <em>NOT human capital — there is none here.</em></td></tr><tr><td>$\lambda$</td><td>R&amp;D effort exponent (duplication / "stepping on toes", $0&lt;\lambda\le 1$)</td></tr><tr><td>$\rho$</td><td>R&amp;D productivity constant</td></tr><tr><td>$\alpha_{sem}$</td><td>weight on the semi-endogenous mechanism in the hybrid (§4). <em>NOT the same $\alpha$ as the capital share!</em></td></tr><tr><td>$n,\,\delta,\,s$</td><td>population growth, depreciation, saving rate</td></tr><tr><td>$\tilde{k}=K/(AL),\ \tilde{y}=Y/(AL)$</td><td>capital / output <em>per effective worker</em> (tilde = per effective worker)</td></tr><tr><td>$g^{se},\,g^{e},\,g^{h}$</td><td>BGP technology growth rate: semi-endogenous / truly-endogenous / hybrid</td></tr><tr><td>$X^{*}$</td><td>steady-state (BGP) value of $X$</td></tr></tbody></table><p>Time is <em>discrete</em> throughout (we work with $A_{t+1}-A_t$, never $\dot A$). Now let us turn the R&amp;D equations into growth rates — that is where the three theories reveal their personalities.</p></div><div class="section" id="sec-mechanics"><h2>3. The Core Mechanics: Where Each Growth Rate Comes From</h2><p>We now have three R&amp;D equations that differ only in two knobs. The job of this section is to extract the <em>long-run growth rate of technology</em> from each, and to see — concretely — why $\varphi$ and the level-vs-share choice have the dramatic consequences the map promised. Let us take them one at a time.</p><h3>3.1 The dilution story: why the share, not the level</h3><p>Start with the intuition behind the truly-endogenous model, because it is the genuinely new idea. Why on earth would only the <em>fraction</em> of researchers matter, and not how many there are?</p><p>The picture is this. An economy is not one big lab working on one big problem. It is thousands of sectors, each with its own products and its own technical frontier. R&amp;D done in the semiconductor industry mostly helps semiconductors; it does little for, say, agriculture. So what raises <em>aggregate</em> productivity is R&amp;D <em>per sector</em>. Now ask what happens when population doubles. You get twice as many researchers, yes — but you also get twice as many products, firms, and sectors for them to spread across. R&amp;D per sector is unchanged. Figure&nbsp;2 traces the chain.</p><div class='figure' id='fig-dilution'><svg viewBox='0 0 520 250' xmlns='http://www.w3.org/2000/svg' font-family='sans-serif' font-size='12'><defs><marker id='ar2' markerWidth='9' markerHeight='9' refX='7' refY='3' orient='auto'><path d='M0,0 L7,3 L0,6 Z' fill='#475569'/></marker></defs><rect x='20' y='40' width='130' height='52' rx='6' fill='#dbeafe' stroke='#2563eb' stroke-width='1.5'/><text x='85' y='62' text-anchor='middle' font-weight='bold'>Population $L$</text><text x='85' y='80' text-anchor='middle'>doubles</text><rect x='195' y='40' width='130' height='52' rx='6' fill='#dbeafe' stroke='#2563eb' stroke-width='1.5'/><text x='260' y='62' text-anchor='middle' font-weight='bold'># of sectors</text><text x='260' y='80' text-anchor='middle'>doubles too</text><rect x='370' y='40' width='130' height='52' rx='6' fill='#fef9c3' stroke='#ca8a04' stroke-width='1.5'/><text x='435' y='58' text-anchor='middle' font-weight='bold'>R&amp;D labour</text><text x='435' y='75' text-anchor='middle'>$L_A=s_R L$</text><text x='435' y='89' text-anchor='middle'>doubles</text><line x1='150' y1='66' x2='190' y2='66' stroke='#475569' stroke-width='1.5' marker-end='url(#ar2)'/><line x1='325' y1='66' x2='365' y2='66' stroke='#475569' stroke-width='1.5' marker-end='url(#ar2)'/><path d='M 435 92 L 435 130' stroke='#475569' stroke-width='1.5' marker-end='url(#ar2)'/><rect x='300' y='135' width='200' height='48' rx='6' fill='#fee2e2' stroke='#dc2626' stroke-width='1.5'/><text x='400' y='155' text-anchor='middle'>but spread across</text><text x='400' y='172' text-anchor='middle' font-weight='bold'>twice as many sectors</text><path d='M 300 159 L 235 159' stroke='#475569' stroke-width='1.5' marker-end='url(#ar2)'/><rect x='30' y='135' width='200' height='48' rx='6' fill='#dcfce7' stroke='#16a34a' stroke-width='2'/><text x='130' y='155' text-anchor='middle'>R&amp;D <strong>per sector</strong></text><text x='130' y='172' text-anchor='middle' font-weight='bold'>unchanged</text><path d='M 130 183 L 130 205' stroke='#475569' stroke-width='1.5' marker-end='url(#ar2)'/><text x='260' y='225' text-anchor='middle' font-weight='bold' fill='#166534'>Growth depends on the SHARE $s_R$, not the level $L_A$ &nbsp;&#8658;&nbsp; no scale effect</text></svg><figcaption><strong>Figure 2.</strong> The dilution mechanism. Doubling the population doubles the number of researchers <em>and</em> the number of sectors they must serve, so research effort per sector — the thing that actually drives aggregate productivity — is unchanged. This is why the truly-endogenous model replaces the level $L_{At}$ with the share $s_R$: it is the only piece that survives dilution. Switzerland and the United States can grow at the same long-run rate if they devote the same fraction of their workforce to R&amp;D.</figcaption></div><p>That single substitution — <em>level $L_{At}\rightarrow$ share $s_R$</em> — is knob&nbsp;2, and Figure&nbsp;2 is the entire economic justification for it. Now let us see what it does to the growth rate, alongside knob&nbsp;1.</p><h3>3.2 Semi-endogenous: growth chained to demography</h3><p>Take the semi-endogenous R&amp;D equation, $A_{t+1}-A_t=\rho A_t^{\varphi}L_{At}^{\lambda}$ with $\varphi&lt;1$. The technology growth rate is the flow divided by the stock:</p><p>$$g_t \equiv \frac{A_{t+1}-A_t}{A_t} = \rho\,A_t^{\varphi}L_{At}^{\lambda}\,/\,A_t = \rho\,A_t^{\varphi-1}L_{At}^{\lambda}.$$</p><p>Read that middle step: we divided $\rho A_t^{\varphi}L_{At}^{\lambda}$ by $A_t$, and $A_t^{\varphi}/A_t = A_t^{\varphi-1}$. Now stare at the exponent $\varphi-1$. Since $\varphi&lt;1$, we have $\varphi-1&lt;0$, so $A_t^{\varphi-1}=1/A_t^{1-\varphi}$ is <em>shrinking</em> as knowledge $A_t$ accumulates. In words: as the economy gets more advanced, each existing idea contributes less to making the next one — discovery gets harder. Left alone, this force drives the growth rate to zero.</p><p>What can offset it? Only a rising research input $L_{At}$. So a <em>constant</em> growth rate requires the two forces — the shrinking $A_t^{\varphi-1}$ and the (hopefully) growing $L_{At}^{\lambda}$ — to exactly cancel. Let us impose that. On a balanced growth path $g_t$ is constant, which means $A_t^{\varphi-1}L_{At}^{\lambda}$ must be constant, i.e. its value at $t+1$ equals its value at $t$. Take the ratio and set it to 1:</p><p>$$\frac{A_{t+1}^{\varphi-1}L_{A,t+1}^{\lambda}}{A_t^{\varphi-1}L_{At}^{\lambda}} = 1.$$</p><p>Now we substitute the growth factors. Because $A$ grows at the (constant, to-be-found) rate $g^{se}$, we have $A_{t+1}/A_t = 1+g^{se}$, so $A_{t+1}^{\varphi-1}/A_t^{\varphi-1} = (1+g^{se})^{\varphi-1}$. And R&amp;D labour $L_{At}=s_R L_t$ grows at the population rate $n$, so $L_{A,t+1}/L_{At}=1+n$ and $L_{A,t+1}^{\lambda}/L_{At}^{\lambda}=(1+n)^{\lambda}$. The condition becomes</p><p>$$(1+g^{se})^{\varphi-1}(1+n)^{\lambda}=1.$$</p><p>We want $g^{se}$, so isolate the term containing it. Multiply both sides by $(1+g^{se})^{1-\varphi}$ (that flips the negative exponent to positive):</p><p>$$(1+n)^{\lambda}=(1+g^{se})^{1-\varphi}.$$</p><p>Raise both sides to the power $1/(1-\varphi)$ to free $1+g^{se}$, then subtract 1:</p><div class='key-concept'>$$g^{se} = (1+n)^{\frac{\lambda}{1-\varphi}} - 1 \;\simeq\; \frac{\lambda\,n}{1-\varphi}.$$</div><p>The approximation on the right uses $\ln(1+x)\approx x$ for small $x$: taking logs of $1+g^{se}=(1+n)^{\lambda/(1-\varphi)}$ gives $g^{se}\approx \frac{\lambda}{1-\varphi}\,n$. Now read the result, because it is the soul of semi-endogenous growth: <strong>the long-run growth rate is proportional to the population growth rate $n$.</strong> Set $n=0$ and $g^{se}=0$ — growth dies. Notice what is <em>absent</em>: $s_R$ does not appear. Doubling the research share raises the <em>level</em> of $L_{At}$ once, but the growth rate depends on how fast $L_{At}$ <em>grows</em>, which is $n$ — untouched by $s_R$. That is precisely why, in this world, <em>policy cannot move long-run growth</em>: only demographics can.</p><h3>3.3 Truly endogenous: growth you can buy</h3><p><em>We now switch to the truly-endogenous model.</em> What changed: both knobs move at once — we set $\varphi=1$ (constant returns to knowledge) <em>and</em> replace the level $L_{At}$ with the share $s_{Rt}$. Throughout we take the share constant, $s_{Rt}=s_R$. The R&amp;D equation becomes $A_{t+1}-A_t=\rho A_t s_R^{\lambda}$. Divide by $A_t$ to get the growth rate:</p><p>$$g_t = \frac{A_{t+1}-A_t}{A_t} = \frac{\rho A_t s_R^{\lambda}}{A_t} = \rho\,s_R^{\lambda} \equiv g^{e}.$$</p><p>Watch what just happened: with $\varphi=1$ the stock $A_t$ in the numerator and the $A_t$ we divide by <em>cancel exactly</em>. There is no leftover $A_t^{\varphi-1}$ term to erode growth. So the growth rate is <em>immediately</em> constant — no balanced-growth-path argument needed — and equal to $g^{e}=\rho s_R^{\lambda}$.</p><div class='key-concept'><strong>Truly-endogenous growth rate:</strong> $\;g^{e}=\rho\,s_R^{\lambda}.$ Reading it: growth rises with the R&amp;D productivity $\rho$ and, decisively, with the <em>level</em> of the research share $s_R$. It does not contain $n$ at all.</div><p>Two payoffs fall out at once. First, $g^e$ depends on the <em>level</em> of $s_R$, and $s_R$ is a policy lever — so a permanent rise in the research share <em>permanently</em> raises growth. Second, $g^e$ contains no population term, so the size of the economy is irrelevant: no scale effect. Figure&nbsp;3 shows the policy lever directly.</p><div class="mf-figure" id="fig-ge-vs-sr"><div class="mf-panels "><div id="fig-ge-vs-sr-panel-0" class="mf-panel"></div></div><div class="mf-readout"></div><div class="mf-sliders"><div class="mf-slider-row"><label>duplication exponent λ</label><input type="range" data-slider="lambda" min="0.4" max="1.0" step="0.05" value="0.8"><span class="mf-value">= <span data-value="lambda">0.80</span></span></div><div class="mf-slider-row"><label>R&D productivity ρ</label><input type="range" data-slider="rho" min="0.5" max="2.0" step="0.1" value="1.0"><span class="mf-value">= <span data-value="rho">1.0</span></span></div><button type="button" class="mf-reset">Reset to defaults</button></div><p class="mf-caption"><strong>Figure 3. Truly-endogenous growth as a function of the R&D share.</strong> Long-run technology growth g^e = rho·s_R^lambda. Drag s_R along the x-axis: growth always rises with the research SHARE — this is the policy lever the semi-endogenous model lacks. The curve is concave because lambda<1 ('stepping on toes': doubling researchers less-than-doubles output). Drag lambda toward 1 to flatten the duplication penalty.</p><script>(function(){var spec={"id": "fig-ge-vs-sr", "title": "Figure 3. Truly-endogenous growth as a function of the R&D share", "caption": "Long-run technology growth g^e = rho\u00b7s_R^lambda. Drag s_R along the x-axis: growth always rises with the research SHARE \u2014 this is the policy lever the semi-endogenous model lacks. The curve is concave because lambda<1 ('stepping on toes': doubling researchers less-than-doubles output). Drag lambda toward 1 to flatten the duplication penalty.", "params": {"rho": 1.0, "lambda": 0.8}, "panels": [{"id": "main", "x_range": [0.0, 0.15], "n_points": 200, "x_label": "R&D employment share, s_R", "y_label": "long-run growth, g^e", "curves": [{"type": "expr", "name": "g^e = rho\u00b7s_R^lambda", "expr": "rho * Math.pow(k, lambda)", "color": "#16a34a", "width": 3}], "markers": [{"type": "vertical_line", "label": "typical s_R \u2248 4%", "at": "0.04", "color": "#666", "dash": "dash"}]}], "sliders": [{"param": "lambda", "min": 0.4, "max": 1.0, "step": 0.05, "label": "duplication exponent \u03bb", "decimals": 2}, {"param": "rho", "min": 0.5, "max": 2.0, "step": 0.1, "label": "R&D productivity \u03c1", "decimals": 1}]};var hostId="fig-ge-vs-sr";function go(){if(!window.MacroFigures){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.MacroFigures not defined. Did FIGURE_JS load before this snippet?</div>");return;}if(!window.Plotly){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.Plotly not loaded.</div>");return;}try{window.MacroFigures.renderFigure(spec,hostId);}catch(e){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Render error: "+e.message+"</div>");}}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",go);}else{go();}})();</script></div><p>Notice in Figure&nbsp;3 that the curve is <em>concave</em>: the exponent $\lambda&lt;1$ means doubling the research share less-than-doubles growth — the "stepping-on-toes" duplication again. But the curve always slopes <em>up</em>: more research share, more growth, forever. That upward slope is exactly what was missing from $g^{se}$, where $s_R$ did not appear at all.</p><h3>3.4 The foil: keep $\varphi=1$ but keep the level — and the scale effect returns</h3><p>It is worth seeing the rejected model explicitly, because it shows that <em>both</em> knobs are doing work. Suppose we set $\varphi=1$ (good) but stubbornly keep the <em>level</em> $L_{At}$ (knob 2 unturned). This is the Chapter&nbsp;9 / Romer model, $A_{t+1}-A_t=\rho A_t L_{At}^{\lambda}$. Dividing by $A_t$:</p><p>$$g_t = \rho\,L_{At}^{\lambda}.$$</p><p>Now the growth rate depends on the <em>level</em> of R&amp;D labour. As population grows, $L_{At}=s_R L_t$ grows without bound, and so does growth — faster and faster, forever. That is the scale effect, and it is the prediction Jones showed the data reject. The fix in the truly-endogenous model is precisely to divide that runaway level by the dilution it causes, leaving the bounded share $s_R$.</p><h3>3.5 The whole contrast in one picture</h3><p>Now put $g^{se}$ and $g^{e}$ side by side as functions of $n$ — this single picture, Figure&nbsp;4, <em>is</em> the difference between the two surviving theories.</p><div class="mf-figure" id="fig-gse-vs-ge"><div class="mf-panels "><div id="fig-gse-vs-ge-panel-0" class="mf-panel"></div></div><div class="mf-readout"></div><div class="mf-sliders"><div class="mf-slider-row"><label>knowledge returns φ</label><input type="range" data-slider="phi" min="0.1" max="0.95" step="0.05" value="0.4"><span class="mf-value">= <span data-value="phi">0.40</span></span></div><div class="mf-slider-row"><label>duplication exponent λ</label><input type="range" data-slider="lambda" min="0.4" max="1.0" step="0.05" value="0.8"><span class="mf-value">= <span data-value="lambda">0.80</span></span></div><div class="mf-slider-row"><label>R&D share s_R</label><input type="range" data-slider="sR" min="0.01" max="0.1" step="0.005" value="0.04"><span class="mf-value">= <span data-value="sR">0.040</span></span></div><button type="button" class="mf-reset">Reset to defaults</button></div><p class="mf-caption"><strong>Figure 4. The one difference that splits the two theories.</strong> Both long-run growth rates as functions of population growth n. The semi-endogenous rate g^se(n) (blue) passes through the ORIGIN — at n=0 it is zero, so killing population growth kills growth. The truly-endogenous rate g^e (green, flat) ignores n entirely — growth continues even at n=0 or n<0. Where the rising blue curve crosses the flat green line is, essentially, the hybrid threshold of §4. Drag phi toward 1 and watch g^se(n) steepen dramatically.</p><script>(function(){var spec={"id": "fig-gse-vs-ge", "title": "Figure 4. The one difference that splits the two theories", "caption": "Both long-run growth rates as functions of population growth n. The semi-endogenous rate g^se(n) (blue) passes through the ORIGIN \u2014 at n=0 it is zero, so killing population growth kills growth. The truly-endogenous rate g^e (green, flat) ignores n entirely \u2014 growth continues even at n=0 or n<0. Where the rising blue curve crosses the flat green line is, essentially, the hybrid threshold of \u00a74. Drag phi toward 1 and watch g^se(n) steepen dramatically.", "params": {"phi": 0.4, "lambda": 0.8, "rho": 1.0, "sR": 0.04}, "panels": [{"id": "main", "x_range": [-0.01, 0.06], "n_points": 200, "x_label": "population growth rate, n", "y_label": "long-run technology growth", "curves": [{"type": "expr", "name": "g^se(n) semi-endogenous", "expr": "Math.pow(1 + k, lambda / (1 - phi)) - 1", "color": "#2563eb", "width": 3}, {"type": "expr", "name": "g^e truly-endogenous", "expr": "rho * Math.pow(sR, lambda)", "color": "#16a34a", "width": 3}], "markers": [{"type": "intersection", "label": "n where g^se = g^e", "curves": [0, 1], "color": "#111", "guide": "vertical"}, {"type": "vertical_line", "label": "n = 0", "at": "0", "color": "#666", "dash": "dot"}]}], "sliders": [{"param": "phi", "min": 0.1, "max": 0.95, "step": 0.05, "label": "knowledge returns \u03c6", "decimals": 2}, {"param": "lambda", "min": 0.4, "max": 1.0, "step": 0.05, "label": "duplication exponent \u03bb", "decimals": 2}, {"param": "sR", "min": 0.01, "max": 0.1, "step": 0.005, "label": "R&D share s_R", "decimals": 3}]};var hostId="fig-gse-vs-ge";function go(){if(!window.MacroFigures){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.MacroFigures not defined. Did FIGURE_JS load before this snippet?</div>");return;}if(!window.Plotly){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.Plotly not loaded.</div>");return;}try{window.MacroFigures.renderFigure(spec,hostId);}catch(e){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Render error: "+e.message+"</div>");}}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",go);}else{go();}})();</script></div><p>Look at what Figure&nbsp;4 shows. The semi-endogenous rate $g^{se}(n)$ passes <em>through the origin</em>: at $n=0$ it is zero, and it climbs as $n$ rises. Kill population growth and you kill semi-endogenous growth. The truly-endogenous rate $g^{e}=\rho s_R^{\lambda}$ is a <em>flat horizontal line</em>: it does not care about $n$ at all — even at $n=0$, or with a shrinking population $n&lt;0$, growth continues at $\rho s_R^{\lambda}$. The point where the rising curve crosses the flat line is going to matter enormously in §4 — it is, essentially, the threshold that decides the hybrid model. Hold that thought.</p><h3>3.6 Closing the truly-endogenous model: capital and the per-effective-worker form</h3><p>The R&amp;D block gave us $g^{e}$. To get output per person we still need the capital side. The complete truly-endogenous model is the skeleton from §2 with the truly-endogenous R&amp;D equation plugged in:</p><div class='key-concept'>$$Y_t=K_t^{\alpha}(A_tL_{Yt})^{1-\alpha},\quad A_{t+1}-A_t=\rho A_t s_R^{\lambda},\quad K_{t+1}=sY_t+(1-\delta)K_t,$$ $$L_{t+1}=(1+n)L_t,\quad L_{Yt}+L_{At}=L_t,\quad L_{At}=s_RL_t.$$</div><p>This looks like a lot of moving parts, but the trick — the same one used for technology-augmented Solow — tames it: measure everything <em>per effective worker</em>. Define $\tilde{k}_t\equiv K_t/(A_tL_t)$ and $\tilde{y}_t\equiv Y_t/(A_tL_t)$. Let us reduce output first. Divide $Y_t=K_t^{\alpha}(A_tL_{Yt})^{1-\alpha}$ by $A_tL_t$. Since $L_{Yt}=(1-s_R)L_t$ (the goods-sector share of labour is what is left after R&amp;D takes $s_R$):</p><p>$$\tilde{y}_t = \frac{K_t^{\alpha}(A_tL_{Yt})^{1-\alpha}}{A_tL_t}.$$</p><p>Write $K_t^{\alpha}=(A_tL_t)^{\alpha}\tilde{k}_t^{\alpha}$ (just multiplying and dividing by $(A_tL_t)^{\alpha}$, using $\tilde k_t=K_t/(A_tL_t)$), and $L_{Yt}=(1-s_R)L_t$, so $(A_tL_{Yt})^{1-\alpha}=(A_tL_t)^{1-\alpha}(1-s_R)^{1-\alpha}$. The numerator becomes $(A_tL_t)^{\alpha}\tilde{k}_t^{\alpha}\cdot(A_tL_t)^{1-\alpha}(1-s_R)^{1-\alpha}=(A_tL_t)\,\tilde{k}_t^{\alpha}(1-s_R)^{1-\alpha}$. Dividing by $A_tL_t$ cancels the $(A_tL_t)$:</p><div class='key-concept'>$$\tilde{y}_t=\tilde{k}_t^{\alpha}(1-s_R)^{1-\alpha}.$$</div><p>Output per effective worker is just the usual $\tilde k^{\alpha}$, shrunk by the factor $(1-s_R)^{1-\alpha}$ because a slice $s_R$ of labour is off doing research instead of making goods. Now the law of motion for $\tilde{k}$. Start from $K_{t+1}=sY_t+(1-\delta)K_t$ and divide by $A_{t+1}L_{t+1}=(1+g^{e})(1+n)A_tL_t$ — that is the level of effective labour next period, since $A$ grows at $g^{e}$ and $L$ at $n$:</p><p>$$\tilde{k}_{t+1}=\frac{K_{t+1}}{A_{t+1}L_{t+1}}=\frac{sY_t+(1-\delta)K_t}{(1+g^{e})(1+n)A_tL_t}.$$</p><p>Split the right-hand side over its two terms and recognise $Y_t/(A_tL_t)=\tilde{y}_t=\tilde{k}_t^{\alpha}(1-s_R)^{1-\alpha}$ and $K_t/(A_tL_t)=\tilde{k}_t$:</p><div class='key-concept'>$$\tilde{k}_{t+1}=\frac{1}{(1+n)(1+g^{e})}\Big[s\,\tilde{k}_t^{\alpha}(1-s_R)^{1-\alpha}+(1-\delta)\tilde{k}_t\Big].$$</div><p>This is the familiar Solow transition, with one new face: the denominator carries $(1+g^{e})$ alongside $(1+n)$. Technological progress <em>dilutes</em> capital per effective worker just as population growth does — every period, the same capital must be spread over an effective-labour pool that grew by both $n$ and $g^{e}$. That extra dilution term is the only mark the R&amp;D sector leaves on the capital dynamics. In §4 we find where this settles down.</p></div><div class="section" id="sec-properties"><h2>4. Properties &amp; Proofs: Steady States and the Hybrid Theorem</h2><p>Two tasks here. First, finish the truly-endogenous model by finding its steady state — a quick, satisfying payoff. Then the main event: build Cozzi's hybrid and prove the regime-switching theorem that the exam is built around.</p><h3>4.1 The steady state of the truly-endogenous model</h3><p>A balanced growth path is where $\tilde{k}$ stops moving: $\tilde{k}_{t+1}=\tilde{k}_t\equiv\tilde{k}^{*}$. Let us impose that on the transition we just derived. Restating it so it is in front of us:</p><p>$$\tilde{k}_{t+1}=\frac{1}{(1+n)(1+g^{e})}\Big[s\,\tilde{k}_t^{\alpha}(1-s_R)^{1-\alpha}+(1-\delta)\tilde{k}_t\Big].$$</p><p>Set both $\tilde{k}$'s to $\tilde{k}^{*}$ and multiply through by $(1+n)(1+g^{e})$:</p><p>$$(1+n)(1+g^{e})\,\tilde{k}^{*}=s\,(\tilde{k}^{*})^{\alpha}(1-s_R)^{1-\alpha}+(1-\delta)\tilde{k}^{*}.$$</p><p>Collect the $\tilde{k}^{*}$ terms on the left. Subtract $(1-\delta)\tilde{k}^{*}$:</p><p>$$\big[(1+n)(1+g^{e})-(1-\delta)\big]\tilde{k}^{*}=s\,(\tilde{k}^{*})^{\alpha}(1-s_R)^{1-\alpha}.$$</p><p>The bracket is worth expanding, because it is the "effective break-even" rate. $(1+n)(1+g^{e})-(1-\delta)=1+n+g^{e}+ng^{e}-1+\delta=n+g^{e}+\delta+ng^{e}$. So</p><p>$$\big(n+g^{e}+\delta+ng^{e}\big)\tilde{k}^{*}=s\,(\tilde{k}^{*})^{\alpha}(1-s_R)^{1-\alpha}.$$</p><p>Now divide both sides by $(\tilde{k}^{*})^{\alpha}$ and by $(n+g^{e}+\delta+ng^{e})$ to gather the powers of $\tilde k^*$. Using $(\tilde k^*)/(\tilde k^*)^{\alpha}=(\tilde k^*)^{1-\alpha}$:</p><p>$$(\tilde{k}^{*})^{1-\alpha}=\frac{s\,(1-s_R)^{1-\alpha}}{n+g^{e}+\delta+ng^{e}}.$$</p><p>Finally raise to the power $1/(1-\alpha)$. Note $\big[(1-s_R)^{1-\alpha}\big]^{1/(1-\alpha)}=(1-s_R)$:</p><div class='key-concept'>$$\tilde{k}^{*}=\left(\frac{s}{n+g^{e}+\delta+ng^{e}}\right)^{\frac{1}{1-\alpha}}(1-s_R),\qquad \tilde{y}^{*}=\left(\frac{s}{n+g^{e}+\delta+ng^{e}}\right)^{\frac{\alpha}{1-\alpha}}(1-s_R).$$</div><p>(The $\tilde y^{*}$ formula is just $\tilde y^{*}=(\tilde k^{*})^{\alpha}(1-s_R)^{1-\alpha}$ with $\tilde k^*$ substituted — same algebra, one fewer power.) Reading $\tilde k^*$: more saving $s$ pushes it up; more dilution ($n,g^{e},\delta$) pushes it down; and the $(1-s_R)$ factor knocks it down because researchers are not making goods to invest. Figure&nbsp;5 is the Solow diagram for this steady state.</p><div class="mf-figure" id="fig-solow-tilde"><div class="mf-panels cols-2"><div id="fig-solow-tilde-panel-0" class="mf-panel"></div><div id="fig-solow-tilde-panel-1" class="mf-panel"></div></div><div class="mf-readout"></div><div class="mf-sliders"><div class="mf-slider-row"><label>saving rate s</label><input type="range" data-slider="s" min="0.05" max="0.5" step="0.01" value="0.25"><span class="mf-value">= <span data-value="s">0.25</span></span></div><div class="mf-slider-row"><label>R&D share s_R</label><input type="range" data-slider="sR" min="0.01" max="0.15" step="0.005" value="0.04"><span class="mf-value">= <span data-value="sR">0.040</span></span></div><div class="mf-slider-row"><label>population growth n</label><input type="range" data-slider="n" min="0.0" max="0.05" step="0.005" value="0.04"><span class="mf-value">= <span data-value="n">0.040</span></span></div><div class="mf-slider-row"><label>capital share α</label><input type="range" data-slider="alpha" min="0.2" max="0.5" step="0.01" value="0.33"><span class="mf-value">= <span data-value="alpha">0.33</span></span></div><button type="button" class="mf-reset">Reset to defaults</button></div><p class="mf-caption"><strong>Figure 5. The Solow machine in per-effective-worker units.</strong> LEFT: saving s·k̃^α·(1−s_R)^(1−α) (blue) versus effective break-even (n+g^e+δ+n·g^e)·k̃ (red); they cross at k̃*. RIGHT: the same k̃* as the fixed point where the transition curve meets the 45° line. Drag s_R up and watch BOTH effects pull k̃* left — the saving curve drops (less labour in goods) and the break-even line tilts up (g^e = ρs_R^λ rises). That double hit is special to R&D models.</p><script>(function(){var spec={"id": "fig-solow-tilde", "title": "Figure 5. The Solow machine in per-effective-worker units", "caption": "LEFT: saving s\u00b7k\u0303^\u03b1\u00b7(1\u2212s_R)^(1\u2212\u03b1) (blue) versus effective break-even (n+g^e+\u03b4+n\u00b7g^e)\u00b7k\u0303 (red); they cross at k\u0303*. RIGHT: the same k\u0303* as the fixed point where the transition curve meets the 45\u00b0 line. Drag s_R up and watch BOTH effects pull k\u0303* left \u2014 the saving curve drops (less labour in goods) and the break-even line tilts up (g^e = \u03c1s_R^\u03bb rises). That double hit is special to R&D models.", "params": {"alpha": 0.33, "s": 0.25, "sR": 0.04, "n": 0.04, "delta": 0.1, "rho": 1.0, "lambda": 0.8}, "panels": [{"id": "solow", "title": "Solow diagram (per effective worker)", "x_range": [0.02, 3.0], "n_points": 200, "x_label": "capital per effective worker, k\u0303", "y_label": "per effective worker", "curves": [{"type": "expr", "name": "saving s\u00b7k\u0303^\u03b1\u00b7(1\u2212s_R)^(1\u2212\u03b1)", "expr": "s * Math.pow(k, alpha) * Math.pow(1 - sR, 1 - alpha)", "color": "#2563eb", "width": 3}, {"type": "expr", "name": "break-even (n+g^e+\u03b4+ng^e)\u00b7k\u0303", "expr": "(n + rho * Math.pow(sR, lambda) + delta + n * rho * Math.pow(sR, lambda)) * k", "color": "#dc2626", "width": 3}], "markers": [{"type": "intersection", "label": "k\u0303*", "curves": [0, 1], "color": "#111", "guide": "vertical"}]}, {"id": "transition", "title": "Transition diagram", "x_range": [0.02, 3.0], "n_points": 200, "x_label": "k\u0303_t", "y_label": "k\u0303_{t+1}", "curves": [{"type": "expr", "name": "k\u0303_{t+1}(k\u0303_t)", "expr": "(s * Math.pow(k, alpha) * Math.pow(1 - sR, 1 - alpha) + (1 - delta) * k) / ((1 + n) * (1 + rho * Math.pow(sR, lambda)))", "color": "#2563eb", "width": 3}, {"type": "expr", "name": "45\u00b0", "expr": "k", "color": "#16a34a", "width": 2, "dash": "dash"}], "markers": [{"type": "intersection", "label": "k\u0303*", "curves": [0, 1], "color": "#111", "guide": "vertical"}]}], "sliders": [{"param": "s", "min": 0.05, "max": 0.5, "step": 0.01, "label": "saving rate s", "decimals": 2}, {"param": "sR", "min": 0.01, "max": 0.15, "step": 0.005, "label": "R&D share s_R", "decimals": 3}, {"param": "n", "min": 0.0, "max": 0.05, "step": 0.005, "label": "population growth n", "decimals": 3}, {"param": "alpha", "min": 0.2, "max": 0.5, "step": 0.01, "label": "capital share \u03b1", "decimals": 2}]};var hostId="fig-solow-tilde";function go(){if(!window.MacroFigures){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.MacroFigures not defined. Did FIGURE_JS load before this snippet?</div>");return;}if(!window.Plotly){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.Plotly not loaded.</div>");return;}try{window.MacroFigures.renderFigure(spec,hostId);}catch(e){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Render error: "+e.message+"</div>");}}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",go);}else{go();}})();</script></div><p>Figure&nbsp;5 is the Solow machine you know, in per-effective-worker clothes. The left panel crosses where saving $s\tilde k^{\alpha}(1-s_R)^{1-\alpha}$ meets break-even $(n+g^{e}+\delta+ng^{e})\tilde k$; the right panel shows the same $\tilde k^{*}$ as the fixed point of the transition curve against the 45&deg; line. Drag $s_R$ up and watch <em>two</em> things move at once: the saving curve shifts down (less labour in goods) <em>and</em> the break-even line tilts up (because $g^{e}=\rho s_R^{\lambda}$ rises) — both pull $\tilde k^{*}$ left. That double effect is special to these R&amp;D models.</p><p>What about actual income per person? Once $\tilde{k}$ has settled at $\tilde{k}^{*}$, the ratio $\tilde y=Y/(AL)$ is constant, so $y=Y/L=\tilde{y}A$ grows at exactly the rate of $A$. Formally, in the long run</p><p>$$\frac{y_{t+1}-y_t}{y_t}\;\xrightarrow[t\to\infty]{}\;\frac{A_{t+1}-A_t}{A_t}=\rho s_R^{\lambda}=g^{e}.$$</p><p>So per-capita growth is ultimately <em>technology</em> growth — capital just rides along. Everything funnels back to the R&amp;D sector and the growth rate it produces. This is why the entire hybrid analysis below is conducted on the technology growth rate alone: <em>solve the R&amp;D block and you have solved the model.</em></p><h3>4.2 The hybrid model: what if both mechanisms are real?</h3><p><em>We now move to Cozzi's (2017) hybrid model.</em> What changed: instead of choosing one R&amp;D equation, we assume the true law of technological progress is a <em>weighted sum</em> of the semi-endogenous and the truly-endogenous mechanisms. What we assume: a fixed weight $\alpha_{sem}\in(0,1)$ on the semi-endogenous piece, a constant research share $s_{Rt}=s_R$, and otherwise the identical skeleton (production, capital, population) from §2. The R&amp;D equation is now</p><div class='key-concept'>$$A_{t+1}-A_t=\underbrace{\alpha_{sem}\,\rho A_t^{\varphi}L_{At}^{\lambda}}_{\text{semi-endogenous part}}+\underbrace{(1-\alpha_{sem})\,\rho A_t s_R^{\lambda}}_{\text{truly-endogenous part}}.$$</div><p>The weight $\alpha_{sem}$ is how much of reality is the diminishing-returns/level mechanism; $1-\alpha_{sem}$ is how much is the constant-returns/share mechanism. <strong>Warning, every year on the exam:</strong> this $\alpha_{sem}$ is <em>not</em> the capital share $\alpha$ from the production function — it just happens to share a Greek letter. Dividing by $A_t$ gives the hybrid growth rate (using $A_t^{\varphi}/A_t=A_t^{\varphi-1}$ in the first term and the cancellation $A_t/A_t=1$ in the second):</p><p>$$g_t=\alpha_{sem}\,\rho A_t^{\varphi-1}L_{At}^{\lambda}+(1-\alpha_{sem})\,\rho s_R^{\lambda}.$$</p><p>It nests both theories cleanly: set $\alpha_{sem}=1$ and you have pure semi-endogenous; set $\alpha_{sem}=0$ and you have pure truly-endogenous; in between sits an entire class of models. Cozzi's point is that one of these intermediate models might be the true one — so any conclusion robust across the whole class is worth taking seriously.</p><div class='key-concept'><strong>The tempting wrong answer.</strong> Surely, you think, the long-run growth rate is just the weighted average of the two ingredient rates: $g^{h}\stackrel{?}{=}\alpha_{sem}\,g^{se}+(1-\alpha_{sem})\,g^{e}$. This feels obvious. It is <em>wrong</em>, and seeing why is the whole insight of the model.</div><h3>4.3 The three-case theorem</h3><p>The trick is to ask not "what is the average?" but "which term <em>survives</em> in the long run?" Look again at $g_t=\alpha_{sem}\rho A_t^{\varphi-1}L_{At}^{\lambda}+(1-\alpha_{sem})\rho s_R^{\lambda}$. The second term is a constant, $(1-\alpha_{sem})\rho s_R^{\lambda}$. The first term carries the factor $A_t^{\varphi-1}=1/A_t^{1-\varphi}$, which (since $\varphi&lt;1$) shrinks as knowledge grows — <em>unless</em> the rising $L_{At}^{\lambda}$ holds it up. Whether the first term lives or dies is the entire question, and it turns on how fast population grows.</p><p><strong>Case 1 — constant population ($n=0$).</strong> Then $L_{At}=s_RL$ is constant; call it $L_A$. So $g_t=\alpha_{sem}\rho A_t^{\varphi-1}L_A^{\lambda}+(1-\alpha_{sem})\rho s_R^{\lambda}$. Notice $g_t\ge(1-\alpha_{sem})\rho s_R^{\lambda}&gt;0$ always — growth never stops, so $A_t\to\infty$. But then $A_t^{\varphi-1}=1/A_t^{1-\varphi}\to 0$: with $L_A$ pinned down and $A_t$ exploding, the first term is crushed to nothing. In the limit</p><p>$$g^{h}=0+(1-\alpha_{sem})\rho s_R^{\lambda}=(1-\alpha_{sem})\,g^{e}.$$</p><p>Growth is <em>fully endogenous</em> (just scaled by $1-\alpha_{sem}$). The semi-endogenous mechanism, starved of population growth, vanishes.</p><p><strong>Case 2 — shrinking population ($n&lt;0$).</strong> Now $L_{At}=s_RL_t\to 0$, so the first term's $L_{At}^{\lambda}\to 0$ <em>and</em> $A_t^{\varphi-1}\to 0$ — it dies even faster. Same conclusion: $g^{h}=(1-\alpha_{sem})g^{e}$. <em>Fully endogenous again.</em> Strikingly, the model predicts ongoing growth even as the population dwindles.</p><p><strong>Case 3 — growing population ($n&gt;0$).</strong> This is the interesting one, and it needs the ratio trick. Move the constant term to the left so the surviving-or-dying term is isolated:</p><p>$$g_t-(1-\alpha_{sem})\rho s_R^{\lambda}=\alpha_{sem}\rho A_t^{\varphi-1}L_{At}^{\lambda}.$$</p><p>Write the same equation one period later (just advance every $t$ to $t+1$):</p><p>$$g_{t+1}-(1-\alpha_{sem})\rho s_R^{\lambda}=\alpha_{sem}\rho A_{t+1}^{\varphi-1}L_{A,t+1}^{\lambda}.$$</p><p>Divide the second equation by the first. The constants $\alpha_{sem}\rho$ cancel, and we use $A_{t+1}/A_t=1+g_t$ and $L_{A,t+1}/L_{At}=1+n$:</p><p>$$\frac{g_{t+1}-(1-\alpha_{sem})\rho s_R^{\lambda}}{g_t-(1-\alpha_{sem})\rho s_R^{\lambda}}=(1+g_t)^{\varphi-1}(1+n)^{\lambda}.$$</p><p>On a balanced growth path the growth rate is constant, $g_{t+1}=g_t=g^{h}$, so the entire left-hand side is just $1$. That leaves</p><p>$$1=(1+g^{h})^{\varphi-1}(1+n)^{\lambda}.$$</p><p>But this is <em>exactly</em> the semi-endogenous balanced-growth condition from §3.2! Solving it the same way — multiply by $(1+g^h)^{1-\varphi}$, raise to $1/(1-\varphi)$, subtract 1 — gives</p><div class='key-concept'>$$g^{h}=(1+n)^{\frac{\lambda}{1-\varphi}}-1=g^{se}.$$</div><p>So with a growing population the hybrid grows at the <em>pure semi-endogenous rate</em>. The truly-endogenous piece, despite its weight $1-\alpha_{sem}$, does not show up in the growth rate at all. But — and this is the catch that creates the threshold — this BGP only makes sense if the first (semi-endogenous) term is actually the <em>larger</em> one, i.e. if $g^{se}&gt;(1-\alpha_{sem})g^{e}$. If instead the constant endogenous term is bigger, then $A_t$ grows faster than $L_{At}^{\lambda/(1-\varphi)}$, the first term collapses to zero after all, and we are back in the fully-endogenous outcome $g^{h}=(1-\alpha_{sem})g^{e}$.</p><h3>4.4 The threshold $\bar{n}$</h3><p>So everything hinges on the contest $g^{se}(n)$ versus $(1-\alpha_{sem})g^{e}$. The semi-endogenous rate wins — and prevails — exactly when $n$ is large enough that $g^{se}(n)$ overtakes the endogenous floor. The break-even population growth rate $\bar{n}$ is where they are equal:</p><p>$$(1+\bar{n})^{\frac{\lambda}{1-\varphi}}-1=(1-\alpha_{sem})\rho s_R^{\lambda}.$$</p><p>Solve for $\bar{n}$: add 1 to both sides, raise both sides to the power $(1-\varphi)/\lambda$ (the inverse of the exponent on the left), then subtract 1:</p><div class='key-concept'>$$\bar{n}=\Big[(1-\alpha_{sem})\rho s_R^{\lambda}+1\Big]^{\frac{1-\varphi}{\lambda}}-1.$$ Regime rule: if $n&gt;\bar n$ the economy grows at $g^{h}=g^{se}$ (semi-endogenous wins); if $n&lt;\bar n$ it grows at $g^{h}=(1-\alpha_{sem})g^{e}$ (truly-endogenous wins).</div><p>Figure&nbsp;6 draws the whole verdict. The steady-state growth rate $g^{h}$ is the <em>upper envelope</em> of the flat endogenous floor and the rising semi-endogenous curve — flat for $n&lt;\bar n$, climbing for $n&gt;\bar n$, with a kink exactly at $\bar n$.</p><div class="mf-figure" id="fig-hybrid-regime"><div class="mf-panels "><div id="fig-hybrid-regime-panel-0" class="mf-panel"></div></div><div class="mf-readout"></div><div class="mf-sliders"><div class="mf-slider-row"><label>semi-endo weight α_sem</label><input type="range" data-slider="alphasem" min="0.0" max="1.0" step="0.05" value="0.4"><span class="mf-value">= <span data-value="alphasem">0.40</span></span></div><div class="mf-slider-row"><label>R&D share s_R</label><input type="range" data-slider="sR" min="0.01" max="0.1" step="0.005" value="0.04"><span class="mf-value">= <span data-value="sR">0.040</span></span></div><div class="mf-slider-row"><label>knowledge returns φ</label><input type="range" data-slider="phi" min="0.1" max="0.95" step="0.05" value="0.4"><span class="mf-value">= <span data-value="phi">0.40</span></span></div><div class="mf-slider-row"><label>duplication exponent λ</label><input type="range" data-slider="lambda" min="0.4" max="1.0" step="0.05" value="0.8"><span class="mf-value">= <span data-value="lambda">0.80</span></span></div><button type="button" class="mf-reset">Reset to defaults</button></div><p class="mf-caption"><strong>Figure 6. The hybrid verdict: which engine wins depends on n.</strong> Steady-state hybrid growth g^h (thick) as the UPPER ENVELOPE of the flat endogenous floor (1−α_sem)g^e (red dashed) and the rising semi-endogenous curve g^se(n) (blue dashed). The kink is the threshold n̄. Below n̄ the truly-endogenous engine wins (flat, policy-sensitive); above n̄ the semi-endogenous engine wins (rising with n, policy-impotent). Markers: the two worked-example economies sit on opposite sides. Drag s_R — the floor rises AND n̄ slides right.</p><script>(function(){var spec={"id": "fig-hybrid-regime", "title": "Figure 6. The hybrid verdict: which engine wins depends on n", "caption": "Steady-state hybrid growth g^h (thick) as the UPPER ENVELOPE of the flat endogenous floor (1\u2212\u03b1_sem)g^e (red dashed) and the rising semi-endogenous curve g^se(n) (blue dashed). The kink is the threshold n\u0304. Below n\u0304 the truly-endogenous engine wins (flat, policy-sensitive); above n\u0304 the semi-endogenous engine wins (rising with n, policy-impotent). Markers: the two worked-example economies sit on opposite sides. Drag s_R \u2014 the floor rises AND n\u0304 slides right.", "params": {"alphasem": 0.4, "phi": 0.4, "lambda": 0.8, "rho": 1.0, "sR": 0.04}, "panels": [{"id": "main", "x_range": [0.0, 0.08], "n_points": 240, "x_label": "population growth rate, n", "y_label": "steady-state growth, g^h", "curves": [{"type": "piecewise", "name": "g^h (realized)", "pieces": [{"when": "Math.pow(1 + k, lambda / (1 - phi)) - 1 < (1 - alphasem) * rho * Math.pow(sR, lambda)", "expr": "(1 - alphasem) * rho * Math.pow(sR, lambda)"}, {"expr": "Math.pow(1 + k, lambda / (1 - phi)) - 1"}], "color": "#7c3aed", "width": 4}, {"type": "expr", "name": "g^se(n) semi-endo", "expr": "Math.pow(1 + k, lambda / (1 - phi)) - 1", "color": "#2563eb", "width": 1.5, "dash": "dash"}, {"type": "expr", "name": "(1\u2212\u03b1_sem)g^e floor", "expr": "(1 - alphasem) * rho * Math.pow(sR, lambda)", "color": "#dc2626", "width": 1.5, "dash": "dash"}], "markers": [{"type": "vertical_line", "label": "n\u0304 threshold", "at": "Math.pow((1 - alphasem) * rho * Math.pow(sR, lambda) + 1, (1 - phi) / lambda) - 1", "color": "#111", "dash": "dot"}, {"type": "label_point", "label": "Economy 2 (n=2%, endo)", "x": "0.02", "y": "(1 - alphasem) * rho * Math.pow(sR, lambda)", "color": "#16a34a"}, {"type": "label_point", "label": "Economy 1 (n=4%, semi)", "x": "0.04", "y": "Math.pow(1.04, lambda / (1 - phi)) - 1", "color": "#2563eb"}]}], "sliders": [{"param": "alphasem", "min": 0.0, "max": 1.0, "step": 0.05, "label": "semi-endo weight \u03b1_sem", "decimals": 2}, {"param": "sR", "min": 0.01, "max": 0.1, "step": 0.005, "label": "R&D share s_R", "decimals": 3}, {"param": "phi", "min": 0.1, "max": 0.95, "step": 0.05, "label": "knowledge returns \u03c6", "decimals": 2}, {"param": "lambda", "min": 0.4, "max": 1.0, "step": 0.05, "label": "duplication exponent \u03bb", "decimals": 2}]};var hostId="fig-hybrid-regime";function go(){if(!window.MacroFigures){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.MacroFigures not defined. Did FIGURE_JS load before this snippet?</div>");return;}if(!window.Plotly){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.Plotly not loaded.</div>");return;}try{window.MacroFigures.renderFigure(spec,hostId);}catch(e){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Render error: "+e.message+"</div>");}}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",go);}else{go();}})();</script></div><p>Now we can say <em>why</em> the naive weighted average was wrong. The long-run growth rate is not a blend of the two mechanisms — it is a <strong>winner-take-all</strong> outcome in which one mechanism's term survives the limit and the other's is annihilated. Which one survives is decided by a race between $A_t^{1-\varphi}$ (knowledge accumulation, set by growth itself) and $L_{At}^{\lambda}$ (research labour, set by population growth $n$). Demography is the referee. And — read it off the formula — $\bar n$ depends on $s_R$: the threshold itself is a policy variable. That is the hinge for everything in §6.</p></div><div class="section" id="sec-examples"><h2>5. Worked Examples: Two Economies and a Simulation</h2><p>Abstract theorems land better once you have pushed real numbers through them. We use the exact calibration from Bolboaca's exercise session, so the numbers are the ones you would meet in a problem set.</p><h3>5.1 Two economies that differ only in $n$</h3><p>Take the parameters $\alpha=0.33$, $\alpha_{sem}=0.40$, $\varphi=0.40$, $\lambda=0.80$, $\delta=0.10$, $s=0.25$, $s_R=0.04$, $\rho=1$. Two economies share all of these; they differ <em>only</em> in population growth: Economy&nbsp;1 has $n=0.04$, Economy&nbsp;2 has $n=0.02$. Which regime is each in? We need the threshold $\bar n$.</p><div class='example'><strong>Step 1 — the endogenous floor.</strong> $g^{e}=\rho s_R^{\lambda}=1\times 0.04^{0.8}$. Since $0.04^{0.8}=e^{0.8\ln 0.04}=e^{0.8\times(-3.2189)}=e^{-2.575}=0.0761$, we get $g^{e}=0.0761$. The floor is $(1-\alpha_{sem})g^{e}=0.60\times0.0761=0.0457$.<br><br><strong>Step 2 — the threshold.</strong> $\bar n=[(1-\alpha_{sem})\rho s_R^{\lambda}+1]^{(1-\varphi)/\lambda}-1=[0.0457+1]^{0.6/0.8}-1=1.0457^{0.75}-1$. Now $1.0457^{0.75}=e^{0.75\ln 1.0457}=e^{0.75\times0.04467}=e^{0.03350}=1.03407$, so $\bar n=0.0341$, i.e. about $3.41\%$.<br><br><strong>Step 3 — classify.</strong> Economy&nbsp;1 has $n=4.0\%&gt;\bar n=3.41\%$ &#8658; <em>semi-endogenous</em> regime. Economy&nbsp;2 has $n=2.0\%&lt;3.41\%$ &#8658; <em>fully-endogenous</em> regime.<br><br><strong>Step 4 — the growth rates.</strong> Economy&nbsp;1: $g^{h}=g^{se}=(1.04)^{0.8/0.6}-1=(1.04)^{1.3333}-1=e^{1.3333\times0.03922}-1=e^{0.05229}-1=0.0537\approx 0.054$. Economy&nbsp;2: $g^{h}=(1-\alpha_{sem})g^{e}=0.0457\approx0.046$.</div><p>Pause on how counter-intuitive this is. Economy&nbsp;2 has the <em>lower</em> population growth, yet it is the one where policy works — it sits in the fully-endogenous regime, so a rise in $s_R$ there would lift growth permanently. Economy&nbsp;1, growing its population faster, is trapped in the semi-endogenous regime where only demography moves long-run growth. Slower population growth is what <em>unlocks</em> the policy lever. These are the two economies plotted as the markers on Figure&nbsp;6 — Economy&nbsp;2 on the flat part, Economy&nbsp;1 up on the rising part. Their full steady states differ accordingly:</p><table><thead><tr><th>Quantity</th><th>Economy&nbsp;1 ($n=0.04$, semi)</th><th>Economy&nbsp;2 ($n=0.02$, endo)</th></tr></thead><tbody><tr><td>BGP growth $g^{h}$</td><td>$0.054$</td><td>$0.046$</td></tr><tr><td>$\tilde k^{*}$</td><td>$1.382$</td><td>$1.759$</td></tr><tr><td>$\tilde y^{*}$</td><td>$1.083$</td><td>$1.172$</td></tr><tr><td>$\tilde c^{*}=(1-s)\tilde y^{*}$</td><td>$0.812$</td><td>$0.879$</td></tr></tbody></table><p>One subtlety worth flagging, because it is a classic slip: when you compute $\tilde k^{*}$ for these economies you must use the <em>realized</em> BGP growth in the dilution term $n+g+\delta+ng$ — that is $g^{se}=0.054$ for Economy&nbsp;1 and $(1-\alpha_{sem})g^{e}=0.046$ for Economy&nbsp;2, <em>not</em> the raw $g^{e}=0.076$. Plugging Economy&nbsp;1's numbers, $n+g+\delta+ng=0.04+0.054+0.10+0.04\times0.054=0.196$, and $\tilde k^{*}=(0.25/0.196)^{1/0.67}\times0.96=1.2745^{1.4925}\times0.96=1.436\times0.96=1.379\approx1.382$ — matching the table. Use the wrong $g$ and you will miss it.</p><h3>5.2 Sketching a numerical simulation</h3><p>The exam very often asks you to "explain how you would numerically simulate" a model — not to run it, just to lay out the recipe. Here is the recipe for the response of growth to a fall in population growth, the experiment in the slides.</p><div class='key-concept'><strong>Simulation recipe.</strong><br>1. Fix the parameters ($\alpha,\varphi,\lambda,\delta,s,s_R,\rho$) and the initial population $L_0$.<br>2. Choose the initial technology $A_0$ <em>so the economy starts exactly on its BGP</em> (otherwise you confound the shock with start-up transients). On the semi-endogenous BGP $g^{se}=\rho A_t^{\varphi-1}L_{At}^{\lambda}$ holds, and solving that for the level gives $$A_0=\left(\frac{\rho\,(s_RL_0)^{\lambda}}{g^{se}}\right)^{\frac{1}{1-\varphi}}.$$ With $s_R=0.04,L_0=1,\lambda=0.8,\varphi=0.4,\rho=1$ and $g^{se}=0.0537$: $A_0=(0.0761/0.0537)^{1/0.6}=1.418^{1.667}=1.79$.<br>3. Set $\tilde k_0=\tilde k^{*}$ likewise, so capital also starts on the BGP.<br>4. Iterate the system period by period: each period compute $Y_t$, update $A_{t+1}$ from the R&amp;D equation, $K_{t+1}$ from the capital equation, $L_{t+1}$ from population growth, then form $y_t=Y_t/L_t$ and its growth rate $g_{y,t}$.<br>5. At $t=10$, drop $n$ permanently (say $0.04\to0.02$) and keep iterating. Plot $g_{y,t}$.</div><p>What does the plot look like? Figure&nbsp;7 sketches it. The drop in $n$ lowers the long-run technology growth (fewer new researchers each period), so the economy must converge <em>down</em> to a new, lower BGP growth rate. But on the way there is a twist: with population growing more slowly, the existing capital is shared among fewer new workers, so $\tilde k$ and $\tilde y$ <em>rise</em> toward higher steady-state values. That transitional rise in $\tilde y$ temporarily pushes per-worker growth <em>up</em> — above its old level — for a handful of periods, before the lower technology growth wins out.</p><div class="mf-figure" id="fig-sim-gy"><div class="mf-panels "><div id="fig-sim-gy-panel-0" class="mf-panel"></div></div><div class="mf-readout"></div><div class="mf-sliders"><div class="mf-slider-row"><label>new population growth n'</label><input type="range" data-slider="nnew" min="0.0" max="0.038" step="0.002" value="0.02"><span class="mf-value">= <span data-value="nnew">0.020</span></span></div><div class="mf-slider-row"><label>knowledge returns φ</label><input type="range" data-slider="phi" min="0.1" max="0.95" step="0.05" value="0.4"><span class="mf-value">= <span data-value="phi">0.40</span></span></div><div class="mf-slider-row"><label>duplication exponent λ</label><input type="range" data-slider="lambda" min="0.4" max="1.0" step="0.05" value="0.8"><span class="mf-value">= <span data-value="lambda">0.80</span></span></div><button type="button" class="mf-reset">Reset to defaults</button></div><p class="mf-caption"><strong>Figure 7. Simulated response of growth to a permanent fall in n.</strong> Schematic of the simulated path of per-worker output growth g_y when population growth drops permanently at t=10 (from 4% to the slider value). Growth OVERSHOOTS upward for about six periods — slower population growth means existing capital is shared among fewer new workers, so k̃ and ỹ rise transitionally — then converges DOWN to a new, lower steady-state growth rate g^se(n_new). The overshoot's exact height comes from iterating the model; its shape (hump then convergence) is robust.</p><script>(function(){var spec={"id": "fig-sim-gy", "title": "Figure 7. Simulated response of growth to a permanent fall in n", "caption": "Schematic of the simulated path of per-worker output growth g_y when population growth drops permanently at t=10 (from 4% to the slider value). Growth OVERSHOOTS upward for about six periods \u2014 slower population growth means existing capital is shared among fewer new workers, so k\u0303 and \u1ef9 rise transitionally \u2014 then converges DOWN to a new, lower steady-state growth rate g^se(n_new). The overshoot's exact height comes from iterating the model; its shape (hump then convergence) is robust.", "params": {"phi": 0.4, "lambda": 0.8, "nnew": 0.02}, "panels": [{"id": "main", "x_range": [0, 50], "n_points": 300, "x_label": "period t", "y_label": "growth of output per worker, g_y", "curves": [{"type": "piecewise", "name": "g_y path (schematic)", "pieces": [{"when": "k <= 10", "expr": "Math.pow(1.04, lambda / (1 - phi)) - 1"}, {"expr": "(Math.pow(1 + nnew, lambda / (1 - phi)) - 1) + (Math.pow(1.04, lambda / (1 - phi)) - Math.pow(1 + nnew, lambda / (1 - phi))) * Math.exp(-(k - 10) / 10) + 0.006 * (k - 10) * Math.exp(-(k - 10) / 5)"}], "color": "#7c3aed", "width": 3}], "markers": [{"type": "vertical_line", "label": "n drops", "at": "10", "color": "#666", "dash": "dash"}, {"type": "horizontal_line", "label": "old steady state", "at": "Math.pow(1.04, lambda / (1 - phi)) - 1", "color": "#94a3b8", "dash": "dot"}, {"type": "horizontal_line", "label": "new steady state", "at": "Math.pow(1 + nnew, lambda / (1 - phi)) - 1", "color": "#dc2626", "dash": "dot"}]}], "sliders": [{"param": "nnew", "min": 0.0, "max": 0.038, "step": 0.002, "label": "new population growth n'", "decimals": 3}, {"param": "phi", "min": 0.1, "max": 0.95, "step": 0.05, "label": "knowledge returns \u03c6", "decimals": 2}, {"param": "lambda", "min": 0.4, "max": 1.0, "step": 0.05, "label": "duplication exponent \u03bb", "decimals": 2}]};var hostId="fig-sim-gy";function go(){if(!window.MacroFigures){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.MacroFigures not defined. Did FIGURE_JS load before this snippet?</div>");return;}if(!window.Plotly){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.Plotly not loaded.</div>");return;}try{window.MacroFigures.renderFigure(spec,hostId);}catch(e){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Render error: "+e.message+"</div>");}}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",go);}else{go();}})();</script></div><p>So the honest answer to "what happens to growth when population growth falls?" is: <em>up briefly, then down to a permanently lower level</em> (in this semi-endogenous calibration). Figure&nbsp;7 shows the hump lasting about six periods — short-lived, exactly as the slides note. Drag the slider for the new $n$ to see the new floor move: the deeper the demographic drop, the lower the eventual growth rate. (The hump is drawn schematically; its exact height comes from iterating the system, but its shape — overshoot then convergence — is a real and robust feature.)</p></div><div class="section" id="sec-traps"><h2>6. Connections, Policy, and Common Traps</h2><p>This section does double duty: it collects the mistakes that cost marks, and it develops the policy discussion that the mock exam explicitly demands ("derive <em>and discuss the policy implications</em> of the Cozzi 2017 hybrid model"). Lead with the traps, because avoiding them is free marks.</p><h3>6.1 Three traps that cost marks every year</h3><table><thead><tr><th>Trap</th><th>The mistake</th><th>The correction</th></tr></thead><tbody><tr><td>Naive average</td><td>Writing $g^{h}=\alpha_{sem}g^{se}+(1-\alpha_{sem})g^{e}$</td><td>It is winner-take-all, $g^{h}=\max\{g^{se},(1-\alpha_{sem})g^{e}\}$ depending on $n$ vs $\bar n$. One term <em>survives</em> the limit; the other is annihilated.</td></tr><tr><td>$\alpha_{sem}$ vs $\alpha$</td><td>Treating the hybrid weight as the capital share</td><td>$\alpha_{sem}$ is the weight on the semi-endogenous mechanism in the R&amp;D equation; $\alpha$ is the Cobb-Douglas capital exponent in production. Unrelated.</td></tr><tr><td>Wrong $g$ in $\tilde k^{*}$</td><td>Using $g^{e}$ in the dilution term when the economy is actually in the semi-endogenous regime</td><td>Use the <em>realized</em> BGP growth $g^{h}$ (which equals $g^{se}$ when $n&gt;\bar n$) in $n+g+\delta+ng$.</td></tr></tbody></table><p>The first trap is the one Cozzi cares about most — it <em>is</em> the model's headline result. If an exam answer states the naive average, it has missed the entire point.</p><h3>6.2 Why the scale effect was rejected — the empirical backbone</h3><p>Recall from §1 that the whole module exists because the scale effect failed. It is worth stating the evidence precisely, because exam questions pair "explain the model" with "describe the evidence for and against." The logic of the rejection is in Figure&nbsp;8.</p><div class="mf-figure" id="fig-scale-fail"><div class="mf-panels "><div id="fig-scale-fail-panel-0" class="mf-panel"></div></div><div class="mf-readout"></div><div class="mf-sliders"><div class="mf-slider-row"><label>scale-effect strength (lower = steeper)</label><input type="range" data-slider="scale" min="20" max="100" step="5" value="40"><span class="mf-value">= <span data-value="scale">40</span></span></div><button type="button" class="mf-reset">Reset to defaults</button></div><p class="mf-caption"><strong>Figure 8. Why the scale effect was rejected (stylized).</strong> Stylized illustration of the Jones (1995) critique — NOT plotted data. The number of researchers in advanced economies rose several-fold over the twentieth century. A scale-effect model predicts productivity growth should have ACCELERATED with it (blue, rising). Actual measured TFP growth stayed roughly FLAT, even drifting down (red). The gap between prediction and reality is why the scale effect was abandoned — and why this whole module exists. Drag the scale strength: no matter how steep the prediction, reality stays flat.</p><script>(function(){var spec={"id": "fig-scale-fail", "title": "Figure 8. Why the scale effect was rejected (stylized)", "caption": "Stylized illustration of the Jones (1995) critique \u2014 NOT plotted data. The number of researchers in advanced economies rose several-fold over the twentieth century. A scale-effect model predicts productivity growth should have ACCELERATED with it (blue, rising). Actual measured TFP growth stayed roughly FLAT, even drifting down (red). The gap between prediction and reality is why the scale effect was abandoned \u2014 and why this whole module exists. Drag the scale strength: no matter how steep the prediction, reality stays flat.", "params": {"scale": 40}, "panels": [{"id": "main", "x_range": [1950, 2010], "n_points": 200, "x_label": "year", "y_label": "TFP growth rate", "curves": [{"type": "expr", "name": "predicted by scale-effect model", "expr": "0.02 * Math.exp((k - 1950) / scale)", "color": "#2563eb", "width": 3}, {"type": "expr", "name": "actual TFP growth", "expr": "0.018 + 0.003 * Math.sin((k - 1950) / 6)", "color": "#dc2626", "width": 3}], "markers": []}], "sliders": [{"param": "scale", "min": 20, "max": 100, "step": 5, "label": "scale-effect strength (lower = steeper)", "decimals": 0}]};var hostId="fig-scale-fail";function go(){if(!window.MacroFigures){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.MacroFigures not defined. Did FIGURE_JS load before this snippet?</div>");return;}if(!window.Plotly){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.Plotly not loaded.</div>");return;}try{window.MacroFigures.renderFigure(spec,hostId);}catch(e){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Render error: "+e.message+"</div>");}}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",go);}else{go();}})();</script></div><p>The argument, due to Jones (1995): the number of researchers in the advanced economies rose enormously over the twentieth century — in the US, the R&amp;D workforce grew several-fold in the postwar decades. A model with a scale effect (the red-cell model of Figure&nbsp;1) predicts that productivity growth should have <em>accelerated</em> in step (the rising blue line in Figure&nbsp;8). Instead, measured TFP growth was roughly flat, even drifting down (the red line). The prediction and the data diverge wildly — so the scale effect is rejected. <em>Both</em> surviving theories were built to pass this test, and they do.</p><p>On the supportive side, the evidence is kinder to the R&amp;D-share logic. Across firms and over the long run, higher R&amp;D <em>intensity</em> — research spending or research employment as a share of value added — is robustly associated with higher productivity growth. The truly-endogenous model can be recast in terms of R&amp;D as a share of GDP rather than of employment and delivers the same long-run conclusions. So the share-based mechanism has real empirical footing. The honest summary is the one Cozzi gives: estimates of $\varphi$ come out below but <em>close</em> to 1, which is maddeningly inconclusive — it rules neither theory out. That inconclusiveness is the entire motivation for building a hybrid.</p><h3>6.3 Policy: the part the exam grades hardest</h3><p>Here is the chain of policy implications, from the simplest to Cozzi's punchline.</p><p><strong>(a) Semi-endogenous vs truly-endogenous: temporary vs permanent.</strong> In a semi-endogenous world, an R&amp;D subsidy that raises $s_R$ lifts growth only <em>during the transition</em> — long-run growth snaps back to $\lambda n/(1-\varphi)$, set by demography. In a truly-endogenous world, the same subsidy raises growth <em>permanently</em>, to $\rho s_R^{\lambda}$. Same policy, opposite long-run verdict — and which verdict holds depends on which regime you are in.</p><p><strong>(b) The hybrid's twist: policy can move the threshold.</strong> Because $\bar n=[(1-\alpha_{sem})\rho s_R^{\lambda}+1]^{(1-\varphi)/\lambda}-1$ rises with $s_R$, a government that raises the research share <em>pushes the threshold up</em>. If it pushes $\bar n$ above the actual $n$, the economy flips from the semi-endogenous regime (policy impotent) into the fully-endogenous regime (policy potent). Figure&nbsp;9 runs exactly this experiment.</p><div class="mf-figure" id="fig-policy-threshold"><div class="mf-panels "><div id="fig-policy-threshold-panel-0" class="mf-panel"></div></div><div class="mf-readout"></div><div class="mf-sliders"><div class="mf-slider-row"><label>population growth n</label><input type="range" data-slider="n" min="0.0" max="0.04" step="0.002" value="0.01"><span class="mf-value">= <span data-value="n">0.010</span></span></div><div class="mf-slider-row"><label>semi-endo weight α_sem</label><input type="range" data-slider="alphasem" min="0.0" max="1.0" step="0.05" value="0.5"><span class="mf-value">= <span data-value="alphasem">0.50</span></span></div><div class="mf-slider-row"><label>knowledge returns φ</label><input type="range" data-slider="phi" min="0.1" max="0.95" step="0.05" value="0.5"><span class="mf-value">= <span data-value="phi">0.50</span></span></div><div class="mf-slider-row"><label>duplication exponent λ</label><input type="range" data-slider="lambda" min="0.4" max="1.0" step="0.05" value="0.9"><span class="mf-value">= <span data-value="lambda">0.90</span></span></div><button type="button" class="mf-reset">Reset to defaults</button></div><p class="mf-caption"><strong>Figure 9. Policy experiment: raising the R&D share flips the regime.</strong> Hybrid growth g^h as a function of the research share s_R, holding population growth n fixed. At LOW s_R the curve is flat (semi-endogenous regime — R&D policy does nothing for long-run growth, only n matters). Past the threshold the curve LIFTS OFF (endogenous regime — growth rises with every point of s_R). The flat-to-rising kink is the regime flip. With Cozzi's calibration (n=1%), moving s_R from 1% to 3% (the EU Lisbon target) crosses the threshold: 'policy makes policy effective.' Drag n down to shrink the flat zone.</p><script>(function(){var spec={"id": "fig-policy-threshold", "title": "Figure 9. Policy experiment: raising the R&D share flips the regime", "caption": "Hybrid growth g^h as a function of the research share s_R, holding population growth n fixed. At LOW s_R the curve is flat (semi-endogenous regime \u2014 R&D policy does nothing for long-run growth, only n matters). Past the threshold the curve LIFTS OFF (endogenous regime \u2014 growth rises with every point of s_R). The flat-to-rising kink is the regime flip. With Cozzi's calibration (n=1%), moving s_R from 1% to 3% (the EU Lisbon target) crosses the threshold: 'policy makes policy effective.' Drag n down to shrink the flat zone.", "params": {"alphasem": 0.5, "phi": 0.5, "lambda": 0.9, "rho": 1.0, "n": 0.01}, "panels": [{"id": "main", "x_range": [0.0, 0.06], "n_points": 240, "x_label": "R&D employment share, s_R", "y_label": "steady-state growth, g^h", "curves": [{"type": "piecewise", "name": "g^h (realized)", "pieces": [{"when": "(1 - alphasem) * rho * Math.pow(k, lambda) < Math.pow(1 + n, lambda / (1 - phi)) - 1", "expr": "Math.pow(1 + n, lambda / (1 - phi)) - 1"}, {"expr": "(1 - alphasem) * rho * Math.pow(k, lambda)"}], "color": "#7c3aed", "width": 4}, {"type": "expr", "name": "semi-endo rate g^se(n)", "expr": "Math.pow(1 + n, lambda / (1 - phi)) - 1", "color": "#2563eb", "width": 1.5, "dash": "dash"}, {"type": "expr", "name": "endo rate (1\u2212\u03b1_sem)\u03c1s_R^\u03bb", "expr": "(1 - alphasem) * rho * Math.pow(k, lambda)", "color": "#16a34a", "width": 1.5, "dash": "dash"}], "markers": [{"type": "vertical_line", "label": "s_R threshold (flip)", "at": "Math.pow((Math.pow(1 + n, lambda / (1 - phi)) - 1) / ((1 - alphasem) * rho), 1 / lambda)", "color": "#111", "dash": "dot"}, {"type": "label_point", "label": "Lisbon start s_R=1%", "x": "0.01", "y": "Math.pow(1 + n, lambda / (1 - phi)) - 1", "color": "#2563eb"}, {"type": "label_point", "label": "Lisbon target s_R=3%", "x": "0.03", "y": "(1 - alphasem) * rho * Math.pow(0.03, lambda)", "color": "#16a34a"}]}], "sliders": [{"param": "n", "min": 0.0, "max": 0.04, "step": 0.002, "label": "population growth n", "decimals": 3}, {"param": "alphasem", "min": 0.0, "max": 1.0, "step": 0.05, "label": "semi-endo weight \u03b1_sem", "decimals": 2}, {"param": "phi", "min": 0.1, "max": 0.95, "step": 0.05, "label": "knowledge returns \u03c6", "decimals": 2}, {"param": "lambda", "min": 0.4, "max": 1.0, "step": 0.05, "label": "duplication exponent \u03bb", "decimals": 2}]};var hostId="fig-policy-threshold";function go(){if(!window.MacroFigures){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.MacroFigures not defined. Did FIGURE_JS load before this snippet?</div>");return;}if(!window.Plotly){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Runtime missing: window.Plotly not loaded.</div>");return;}try{window.MacroFigures.renderFigure(spec,hostId);}catch(e){document.getElementById(hostId).insertAdjacentHTML("afterbegin","<div style=\"color:#dc2626;padding:1rem;border:2px dashed #dc2626\">Render error: "+e.message+"</div>");}}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",go);}else{go();}})();</script></div><p>Figure&nbsp;9 plots $g^{h}$ against the research share $s_R$, holding $n$ fixed. At low $s_R$ the curve is <em>flat</em> — you are in the semi-endogenous regime, where pouring money into R&amp;D does nothing for long-run growth (only $n$ matters). Push $s_R$ past the threshold and the curve <em>lifts off</em>: now you are in the endogenous regime and growth rises with every extra point of research share. The flat-to-rising kink is the regime flip. Use Cozzi's own calibration ($\rho=1,\varphi=0.5,\lambda=0.9,\alpha_{sem}=0.5,n=0.01$): raising $s_R$ from $1\%$ to $3\%$ — the European Union's old Lisbon-Strategy target — moves the threshold $\bar n$ from $0.44\%$ to $1.18\%$. Since actual $n=1\%$, that change carries the economy from $n&gt;\bar n$ (semi-endogenous, where the policy itself was useless long-run) to $n&lt;\bar n$ (fully endogenous, where it is potent). In Cozzi's striking phrase: <strong>"policy could make policy itself more effective for growth."</strong> The first dose of R&amp;D policy changes the regime so that the next dose finally bites.</p><p><strong>(c) Demography writes history.</strong> Step back and read $\bar n$ as a statement about eras. When world population growth is very slow — the Malthusian past, or a depopulating future — the economy sits below $\bar n$, in the fully-endogenous regime. When population growth is fast — the centuries after the Industrial Revolution — it sits above $\bar n$, in the semi-endogenous regime. So the model tells a long historical story: fully-endogenous growth dominant in antiquity, semi-endogenous taking over as population accelerated, and — as more countries pass through the demographic transition to low fertility — fully-endogenous growth re-emerging. The model's boldest long-run prediction: <em>if humanity does not grow without bound, the fully-endogenous, policy-sensitive regime will rule the very long run.</em> Strikingly, this holds <em>whatever</em> $\alpha_{sem}$ is — the world could be 99% semi-endogenous in its mechanics, and slow population growth would still hand the long run to the endogenous regime.</p><h3>6.4 Where this sits in the course</h3><p>Module&nbsp;4 gave you the Chapter&nbsp;9 R&amp;D model with its scale effect — the red cell of Figure&nbsp;1, with R&amp;D equation $A_{t+1}-A_t=\rho A_t L_{At}^{\lambda}$ and growth rising in the population <em>level</em>. This module is the repair: dilution turns the level into the share and kills the scale effect, and the hybrid reconciles the two surviving theories. For the exam, the load-bearing target is the mock's recurring Question&nbsp;3, "derive and discuss the policy implications of the Cozzi (2017) hybrid model" — which is exactly §4.2&ndash;4.4 (the derivation) plus §6.3 (the discussion). Structure such an answer the way Cozzi grades: (1) motivate — two strong theories, opposite policy verdicts; (2) the model — the linear-combination R&amp;D equation; (3) the result — the three cases and the threshold $\bar n$, with Figure&nbsp;6; (4) the economics — winner-take-all by demography, and policy moving the threshold. The diagram is graded content, not decoration.</p><p><em>Beyond exam scope, but useful:</em> Cozzi's companion paper (2017b, <em>Economics Letters</em> 155) generalises the hybrid to continuous time and to non-linear combinations of the two mechanisms; the discrete-time version here is all the exam requires. And Cozzi (2007) microfounds knowledge creation through quality-ladder patent races — the machinery beneath the aggregate $\rho A^{\varphi}(\cdot)^{\lambda}$ shorthand we have used throughout.</p></div><div class="section" id="sec-summary"><h2>7. Summary &amp; Formula Reference</h2><p>The module in four sentences. (1) The early R&amp;D models predicted a <em>scale effect</em> — bigger populations grow faster — which the data flatly reject. (2) Two repairs survive: <em>semi-endogenous</em> growth ($\varphi&lt;1$, level $L_A$), where growth is chained to population growth $n$ and policy is impotent long-run; and <em>truly-endogenous</em> growth without scale effects ($\varphi=1$, share $s_R$), where growth is $\rho s_R^{\lambda}$ and policy is permanent. (3) Cozzi's <em>hybrid</em> blends them, and the long-run growth rate is not the blend but a <em>winner-take-all</em> decided by demography: semi-endogenous if $n&gt;\bar n$, fully-endogenous if $n&lt;\bar n$. (4) Because $\bar n$ rises with the research share, <em>policy can move the threshold</em> — policy can make policy effective.</p><div class='key-concept'><strong>The one thing to remember:</strong> in the hybrid, you do not average the two growth rates — you ask which mechanism's term <em>survives</em> the long-run limit, and demography ($n$ relative to $\bar n$) is the referee.</div><h3>Formula reference</h3><table><thead><tr><th>Object</th><th>Formula</th><th>Note</th></tr></thead><tbody><tr><td>Production</td><td>$Y_t=K_t^{\alpha}(A_tL_{Yt})^{1-\alpha}$</td><td>$L_{Yt}=(1-s_R)L_t$</td></tr><tr><td>R&amp;D (semi-endo)</td><td>$A_{t+1}-A_t=\rho A_t^{\varphi}L_{At}^{\lambda},\ \varphi&lt;1$</td><td>level, diminishing</td></tr><tr><td>R&amp;D (truly-endo)</td><td>$A_{t+1}-A_t=\rho A_t s_R^{\lambda}$</td><td>share, $\varphi=1$</td></tr><tr><td>R&amp;D (hybrid)</td><td>$A_{t+1}-A_t=\alpha_{sem}\rho A_t^{\varphi}L_{At}^{\lambda}+(1-\alpha_{sem})\rho A_ts_R^{\lambda}$</td><td>$\alpha_{sem}\ne\alpha$</td></tr><tr><td>Semi-endo growth</td><td>$g^{se}=(1+n)^{\lambda/(1-\varphi)}-1\simeq\dfrac{\lambda n}{1-\varphi}$</td><td>zero at $n=0$</td></tr><tr><td>Truly-endo growth</td><td>$g^{e}=\rho s_R^{\lambda}$</td><td>policy lever</td></tr><tr><td>Hybrid growth</td><td>$g^{h}=\begin{cases}g^{se}, & n&gt;\bar n\\ (1-\alpha_{sem})g^{e}, & n&lt;\bar n\end{cases}$</td><td>winner-take-all</td></tr><tr><td>Threshold</td><td>$\bar n=\big[(1-\alpha_{sem})\rho s_R^{\lambda}+1\big]^{(1-\varphi)/\lambda}-1$</td><td>rises with $s_R$</td></tr><tr><td>Per-effective output</td><td>$\tilde y_t=\tilde k_t^{\alpha}(1-s_R)^{1-\alpha}$</td><td>$\tilde y=Y/(AL)$</td></tr><tr><td>$\tilde k$ transition</td><td>$\tilde k_{t+1}=\dfrac{s\tilde k_t^{\alpha}(1-s_R)^{1-\alpha}+(1-\delta)\tilde k_t}{(1+n)(1+g)}$</td><td>$g$ = realized BGP growth</td></tr><tr><td>Steady state</td><td>$\tilde k^{*}=\Big(\dfrac{s}{n+g+\delta+ng}\Big)^{1/(1-\alpha)}(1-s_R)$</td><td>$\tilde y^{*}=(\tilde k^{*})^{\alpha}(1-s_R)^{1-\alpha}$</td></tr><tr><td>Long-run per-capita growth</td><td>$\dfrac{y_{t+1}-y_t}{y_t}\to g$</td><td>income grows at technology rate</td></tr><tr><td>Initial $A_0$ (sim)</td><td>$A_0=\big(\rho(s_RL_0)^{\lambda}/g^{se}\big)^{1/(1-\varphi)}$</td><td>start on the BGP</td></tr></tbody></table></p></div>
+</main>
+</div>
+<script>
+renderMathInElement(document.body,{delimiters:[{left:"$$",right:"$$",display:true},{left:"$",right:"$",display:false},{left:"\\(",right:"\\)",display:false},{left:"\\[",right:"\\]",display:true}]});
+const obs=new IntersectionObserver(entries=>{entries.forEach(e=>{if(e.isIntersecting){document.querySelectorAll("nav a").forEach(a=>a.classList.remove("active"));const a=document.querySelector(`nav a[href="#${e.target.id}"]`);if(a)a.classList.add("active")}})},{threshold:0.3});
+document.querySelectorAll(".section").forEach(s=>obs.observe(s));
+</script>
+</body>
+</html>
